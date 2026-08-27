@@ -23,6 +23,7 @@ from db_manager import (
     init_db,
     save_po,
     delete_po,
+    clear_all_pos_db,
     get_all_pos,
     get_po_by_folio,
     get_all_partidas,
@@ -1279,27 +1280,48 @@ elif menu == "🛠️ Mantenimiento de la App":
         
     st.write("---")
     
-    b_col1, b_col2 = st.columns(2)
+    b_col1, b_col2, b_col3 = st.columns(3)
     with b_col1:
-        st.subheader("💾 1. Descargar Respaldo de Base de Datos (Backup)")
-        st.write("Descarga una copia completa e íntegra del archivo SQLite `po_tracker.db` para salvaguarda de seguridad.")
+        st.subheader("💾 1. Descargar Respaldo")
+        st.write("Descarga una copia íntegra del archivo SQLite `po_tracker.db`.")
         if db_file.exists():
             with open(db_file, "rb") as fp:
                 st.download_button(
-                    label="📥 Descargar Backup SQLite (.db)",
+                    label="📥 Descargar Backup (.db)",
                     data=fp.read(),
                     file_name=f"backup_po_tracker_{datetime.date.today().strftime('%Y%m%d')}.db",
                     mime="application/x-sqlite3",
                     type="primary"
                 )
         else:
-            st.warning("La base de datos aún no contiene registros.")
+            st.warning("Sin registros.")
             
     with b_col2:
-        st.subheader("🔄 2. Sincronización Forzada de Archivos Excel")
-        st.write("Regenera de forma inmediata los catálogos `BD_POs_Cabecera.xlsx` y `BD_Requerimientos_POs.xlsx` en el directorio compartido.")
-        if st.button("⚡ Ejecutar Resincronización Forzada", use_container_width=True):
+        st.subheader("🔄 2. Resincronizar Excel")
+        st.write("Regenera de inmediato `BD_POs_Cabecera.xlsx` y `BD_Requerimientos_POs.xlsx`.")
+        if st.button("⚡ Resincronizar Excel", use_container_width=True):
             export_sync_to_excel()
-            st.success("✅ Archivos Excel resincronizados exitosamente.")
+            st.success("✅ Archivos Excel actualizados.")
+            
+    with b_col3:
+        st.subheader("🗑️ 3. Limpieza Total (0 POs)")
+        st.write("Vacía todas las POs de prueba para iniciar la ingesta limpia de las 58 órdenes.")
+        if st.button("🚨 Limpiar Base de Datos (0 POs)", type="secondary", use_container_width=True):
+            st.session_state['confirm_reset_all_db'] = True
+            
+    if st.session_state.get('confirm_reset_all_db'):
+        st.warning("⚠️ ¿Confirmas que deseas eliminar todas las órdenes registradas para dejar el catálogo en 0 POs?")
+        cy, cn = st.columns(2)
+        with cy:
+            if st.button("Sí, limpiar todo y reiniciar a 0 POs", type="primary", use_container_width=True):
+                ok_c, msg_c = clear_all_pos_db()
+                if ok_c:
+                    st.success(msg_c)
+                    st.session_state.pop('confirm_reset_all_db', None)
+                    st.rerun()
+        with cn:
+            if st.button("Cancelar", use_container_width=True):
+                st.session_state.pop('confirm_reset_all_db', None)
+                st.rerun()
 
 

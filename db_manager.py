@@ -106,9 +106,24 @@ def init_db():
     
     conn.commit()
     conn.close()
+
+def clear_all_pos_db(usuario='Usuario'):
+    """Limpia completamente todas las tablas de POs en SQLite y vacía los archivos Excel."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM po_cabecera')
+    cursor.execute('DELETE FROM po_partidas')
+    cursor.execute('DELETE FROM po_historial')
+    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute('''
+        INSERT INTO po_historial (po, fecha_hora, usuario, accion, detalle)
+        VALUES (?, ?, ?, ?, ?)
+    ''', ('SISTEMA', now_str, usuario, 'Limpieza Total', 'Se reinició la base de datos a 0 POs para comenzar carga limpia ordenada.'))
+    conn.commit()
+    conn.close()
     
-    # Importar POs heredadas si la BD está vacía
-    import_existing_pos_from_remisiones()
+    export_sync_to_excel()
+    return True, "Base de datos reseteada con éxito. Catálogo limpio listo (0 POs)."
 
 def import_existing_pos_from_remisiones():
     conn = get_connection()

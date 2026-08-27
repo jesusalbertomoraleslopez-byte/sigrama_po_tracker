@@ -98,91 +98,118 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
     all_partidas = []
     cabecera = {}
     
-    # 1. Intentar extracción por Tablas Nativas de PyMuPDF (Excelente para formatos de 1 a N páginas)
-    for page_idx, page in enumerate(doc):
-        tabs = page.find_tables()
-        if tabs and tabs.tables:
-            for t in tabs.tables:
-                df = t.to_pandas()
-                cols = [str(c).replace('\n', ' ').strip().upper() for c in df.columns]
-                df.columns = cols
-                
-                c_cant = next((c for c in cols if 'CANTIDAD' in c), None)
-                c_unid = next((c for c in cols if 'UNIDAD' in c), None)
-                c_clave = next((c for c in cols if 'CLAVE' in c), None)
-                c_prod = next((c for c in cols if 'PRODUCTO' in c), None)
-                c_pu = next((c for c in cols if 'UNITARIO' in c), None)
-                c_pt = next((c for c in cols if 'TOTAL' in c and 'SUB' not in c and 'NETO' not in c), None)
-                c_fecha = next((c for c in cols if 'ENTREGA' in c or 'FECHA' in c), None)
-                
-                if c_cant and (c_prod or c_clave):
-                    for _, row in df.iterrows():
-                        val_cant_raw = str(row.get(c_cant, '')).strip()
-                        # Validar si es cantidad numérica válida
-                        m_num = re.match(r'^(\d+(?:\.\d+)?)$', val_cant_raw.replace(',', ''))
-                        if not m_num:
-                            continue
-                        cant = float(m_num.group(1))
-                        if cant <= 0:
-                            continue
-                            
-                        unidad = str(row.get(c_unid, 'PIEZA')).strip().upper() if c_unid else 'PIEZA'
-                        if unidad.lower() == 'nan' or not unidad:
-                            unidad = 'PIEZA'
-                            
-                        # Columna 3: Clave / SKU Cliente (ej. ISSIV00055, SWB01431)
-                        sku_cliente = str(row.get(c_clave, '')).strip().upper() if c_clave else ''
-                        if sku_cliente.lower() == 'nan':
-                            sku_cliente = ''
-                            
-                        # Columna 4: Producto (Renglón 1 = SKU Planta / Nuestro, Renglón 2 = Descripción)
-                        prod_raw = str(row.get(c_prod, '')).strip() if c_prod else ''
-                        prod_lines = [l.strip() for l in prod_raw.split('\n') if l.strip() and l.strip().lower() != 'nan']
-                        
-                        sku_nuestro = ''
-                        desc_producto = ''
-                        if len(prod_lines) >= 2:
-                            sku_nuestro = prod_lines[0].strip().upper()
-                            desc_producto = ' '.join(prod_lines[1:]).strip()
-                        elif len(prod_lines) == 1:
-                            line = prod_lines[0].strip()
-                            if re.match(r'^[A-Z0-9\-_]{5,20}$', line.upper()):
-                                sku_nuestro = line.upper()
-                                desc_producto = f"Material {line}"
-                            else:
-                                sku_nuestro = sku_cliente if sku_cliente else 'SKU-AUTO'
-                                desc_producto = line
-                        else:
-                            sku_nuestro = sku_cliente
-                            desc_producto = f"Material {sku_cliente}"
-                            
-                        val_pu_raw = str(row.get(c_pu, '0')).strip().replace(',', '')
-                        pu = float(val_pu_raw) if re.match(r'^\d+(?:\.\d+)?$', val_pu_raw) else 0.0
-                        
-                        val_pt_raw = str(row.get(c_pt, '0')).strip().replace(',', '')
-                        pt = float(val_pt_raw) if re.match(r'^\d+(?:\.\d+)?$', val_pt_raw) else (cant * pu)
-                        
-                        fecha_ent_raw = str(row.get(c_fecha, '')).strip() if c_fecha else ''
-                        m_fent = re.search(r'(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})', fecha_ent_raw)
-                        if m_fent:
-                            fecha_ent = f"{m_fent.group(1)}/{m_fent.group(2)}/{m_fent.group(3)}"
-                        else:
-                            fecha_ent = fecha_ent_raw if fecha_ent_raw.lower() != 'nan' else ''
-                            
-                        all_partidas.append({
-                            'item_no': len(all_partidas) + 1,
-                            'sku_cliente': sku_cliente,
-                            'clave_sku': sku_nuestro,
-                            'descripcion_producto': desc_producto,
-                            'cantidad_requerida': cant,
-                            'unidad': unidad,
-                            'precio_unitario': pu,
-                            'precio_total': pt,
-                            'fecha_entrega': fecha_ent,
-                            'parcialidad': 'P1',
-                            'observaciones_partida': ''
-                        })
+    # 1. Extracción de Partidas mediante Agrupación Espacial por Coordenadas (Y-clustering)
+    # Patrón Principal: Cantidad Unidad SKU_Cliente SKU_Nuestro P_Unitario P_Total Fecha
+    patron_fila_item = re.compile(
+        r'^(\d+(?:\.\d+)?)\s+'                     # 1: Cantidad (ej. 16.00)
+        r'(PIEZA|PZA|KG|METRO|JGO|LOTE|SER)\s+'   # 2: Unidad
+        r'([A-Z0-9\-_]{4,15})\s+'                 # 3: SKU Cliente (ej. ISSIV00055, SWB01431)
+        r'([A-Z0-9\-_/]{4,25})\s+'                # 4: SKU Nuestro / Planta (ej. 11-A-9836-01, PP19380-03)
+        r'([\d,]+(?:\.\d{2})?)\s+'                # 5: P. Unitario (ej. 1,089.57)
+        r'([\d,]+(?:\.\d{2})?)\s+'                # 6: P. Total (ej. 17,433.12)
+        r'(\d{1,2}/\d{1,2}/\d{4})',               # 7: Fecha Entrega (ej. 07/09/2026)
+        re.IGNORECASE
+    )
     
+    patron_fila_alt = re.compile(
+        r'^(\d+(?:\.\d+)?)\s+'
+        r'(PIEZA|PZA|KG|METRO|JGO|LOTE|SER)\s+'
+        r'([A-Z0-9\-_]{4,15})\s+'
+        r'(.+?)\s+'
+        r'([\d,]+(?:\.\d{2})?)\s+'
+        r'([\d,]+(?:\.\d{2})?)\s+'
+        r'(\d{1,2}/\d{1,2}/\d{4})',
+        re.IGNORECASE
+    )
+
+    for page_idx, page in enumerate(doc):
+        words = page.get_text('words')
+        if not words:
+            continue
+            
+        lines_by_y = {}
+        for w in words:
+            x0, y0, x1, y1, word = w[0], w[1], w[2], w[3], w[4]
+            found_y = None
+            for y_center in lines_by_y:
+                if abs(y_center - y0) < 4:
+                    found_y = y_center
+                    break
+            if found_y is None:
+                found_y = y0
+                lines_by_y[found_y] = []
+            lines_by_y[found_y].append((x0, word))
+
+        sorted_ys = sorted(lines_by_y.keys())
+        
+        i = 0
+        while i < len(sorted_ys):
+            y = sorted_ys[i]
+            # En página 1, saltar encabezado superior
+            if page_idx == 0 and y < 320:
+                i += 1
+                continue
+                
+            line_words = sorted(lines_by_y[y], key=lambda x: x[0])
+            line_text = ' '.join([w[1] for w in line_words]).strip()
+            
+            # Detener si llegamos al pie de página con totales
+            if any(k in line_text.upper() for k in ['SUBTOTAL:', 'IMPORTE NETO:', 'OBSERVACIONES', 'FACTURAR A:', 'TOTAL']):
+                if page_idx == 0 and y > 360:
+                    i += 1
+                    continue
+            
+            m = patron_fila_item.search(line_text)
+            if not m:
+                m = patron_fila_alt.search(line_text)
+                
+            if m:
+                cant = float(m.group(1).replace(',', ''))
+                unidad = m.group(2).upper()
+                sku_cli = m.group(3).strip().upper()
+                sku_nuestro = m.group(4).strip().upper()
+                pu = float(m.group(5).replace(',', ''))
+                pt = float(m.group(6).replace(',', ''))
+                f_ent = m.group(7).strip()
+                
+                # Buscar en la(s) siguiente(s) línea(s) la descripción del producto (Renglón 2)
+                desc_lines = []
+                j = i + 1
+                while j < len(sorted_ys):
+                    next_y = sorted_ys[j]
+                    next_words = sorted(lines_by_y[next_y], key=lambda x: x[0])
+                    next_text = ' '.join([w[1] for w in next_words]).strip()
+                    
+                    if patron_fila_item.search(next_text) or patron_fila_alt.search(next_text) or any(k in next_text.upper() for k in ['SUBTOTAL:', 'OBSERVACIONES', 'FACTURAR A:', 'TOTAL']):
+                        break
+                        
+                    # Filtrar palabras que pertenezcan al cuerpo de descripción (x < 450)
+                    desc_words_filtered = [w[1] for w in next_words if w[0] < 450]
+                    if desc_words_filtered:
+                        desc_str = ' '.join(desc_words_filtered).strip()
+                        if desc_str and desc_str.upper() not in ['FIRMA', 'COMPRADOR']:
+                            desc_lines.append(desc_str)
+                    j += 1
+                    if len(desc_lines) >= 2:
+                        break
+                        
+                desc_final = ' '.join(desc_lines) if desc_lines else f"Material {sku_nuestro}"
+                
+                all_partidas.append({
+                    'item_no': len(all_partidas) + 1,
+                    'sku_cliente': sku_cli,
+                    'clave_sku': sku_nuestro,
+                    'descripcion_producto': desc_final,
+                    'cantidad_requerida': cant,
+                    'unidad': unidad,
+                    'precio_unitario': pu,
+                    'precio_total': pt,
+                    'fecha_entrega': f_ent,
+                    'parcialidad': 'P1',
+                    'observaciones_partida': ''
+                })
+            i += 1
+            
     # 2. Extracción de Cabecera y Totales
     for page_idx, page in enumerate(doc):
         blocks = page.get_text("blocks")
@@ -311,49 +338,6 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
                 'color_texto': '#FFFFFF'
             }
             
-    # 3. Fallback de Partidas si find_tables no detectó filas tabulares
-    if not all_partidas:
-        for page_idx, page in enumerate(doc):
-            blocks = page.get_text("blocks")
-            for b in blocks:
-                x0, y0, x1, y1, text, _, _ = b
-                if 330 <= y0 <= 385 or (page_idx > 0 and 100 <= y0 <= 650):
-                    lines = [l.strip() for l in text.split('\n') if l.strip()]
-                    if len(lines) >= 4:
-                        fechas = [l for l in lines if re.match(r'^\d{1,2}/\d{1,2}/\d{4}$', l)]
-                        unidades = [l.upper() for l in lines if l.upper() in ('PIEZA', 'PZA', 'KG', 'METRO', 'JGO', 'LOTE')]
-                        nums = [float(l.replace(',', '')) for l in lines if re.match(r'^\d+(?:\.\d+)?$', l.replace(',', ''))]
-                        skus = [l for l in lines if re.match(r'^[A-Z0-9\-_]{5,18}$', l)]
-                        desc_words = [
-                            l for l in lines 
-                            if not re.match(r'^\d{1,2}/\d{1,2}/\d{4}$', l)
-                            and l.upper() not in ('PIEZA', 'PZA', 'KG', 'METRO', 'JGO', 'LOTE')
-                            and not re.match(r'^\d+(?:\.\d+)?$', l.replace(',', ''))
-                            and not re.match(r'^[A-Z0-9\-_]{5,18}$', l)
-                        ]
-                        
-                        if nums or skus:
-                            cant = nums[1] if len(nums) > 1 and nums[1] < 100000 else (nums[0] if nums else 1.0)
-                            pu = nums[0] if len(nums) > 0 else 0.0
-                            pt = nums[-1] if len(nums) > 2 else (cant * pu)
-                            sku_val = skus[0] if skus else 'SWB01431'
-                            desc_val = ' '.join(desc_words) if desc_words else f"Material {sku_val}"
-                            f_ent = fechas[0] if fechas else cabecera.get('fecha_pedido', '')
-                            
-                            all_partidas.append({
-                                'item_no': len(all_partidas) + 1,
-                                'sku_cliente': '',
-                                'clave_sku': sku_val,
-                                'descripcion_producto': desc_val,
-                                'cantidad_requerida': cant,
-                                'unidad': unidades[0] if unidades else 'PIEZA',
-                                'precio_unitario': pu,
-                                'precio_total': pt,
-                                'fecha_entrega': f_ent,
-                                'parcialidad': 'P1',
-                                'observaciones_partida': cabecera.get('observaciones', '')
-                            })
-                            
     doc.close()
     
     # Fallback final si la PO estaba totalmente vacía

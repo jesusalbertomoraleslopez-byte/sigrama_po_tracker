@@ -1319,15 +1319,6 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 st.subheader("🔵 Órdenes de Fabricación (OFs) y Estado en Taller")
                 ofs_list = cd_tracking.get('ofs_asociadas', [])
                 if ofs_list:
-                    st.success(f"Se encontraron **{len(ofs_list)}** Órdenes de Fabricación vinculadas a esta PO: `{', '.join(ofs_list)}`")
-                    df_ofs_view = cd_tracking.get('df_ofs', pd.DataFrame())
-                    if not df_ofs_view.empty:
-                        st.dataframe(df_ofs_view, use_container_width=True, hide_index=True)
-            # 2. Pestaña: Detalle de Corte y Doblez
-            with tab_corte_det:
-                st.subheader("🔵 Órdenes de Fabricación (OFs) y Estado en Taller")
-                ofs_list = cd_tracking.get('ofs_asociadas', [])
-                if ofs_list:
                     st.success(f"Se encontraron **{len(ofs_list)}** Órdenes de Fabricación vinculadas a esta PO:")
                     
                     # Lista estructurada de OFs

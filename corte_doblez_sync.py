@@ -66,21 +66,27 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno=""):
                (id_int_clean and len(id_int_clean) >= 2 and id_int_clean in normalize_po(of_num)):
                 matched_ofs.add(of_num)
                 
-    # 1.1 Si no hubo coincidencia por PO, rastreo inteligente por SKU en piezas de Pronest
+    # 1.1 Si no hubo coincidencia por PO, rastreo por SKU SOLO si la PO tiene remisiones despachadas
     if not matched_ofs and not df_partidas.empty and not df_pie.empty:
-        po_skus = []
-        for _, p_row in df_partidas.iterrows():
-            k1 = str(p_row.get('clave_sku', '')).strip().upper()
-            k2 = str(p_row.get('sku_cliente', '')).strip().upper()
-            if k1: po_skus.append(k1)
-            if k2: po_skus.append(k2)
-            
-        for _, pie_r in df_pie.iterrows():
-            pie_n = str(pie_r.get('no_pieza', '')).strip().upper()
-            if any(sku_matches(ps, pie_n) for ps in po_skus):
-                of_n = str(pie_r.get('of_number', '')).strip()
-                if of_n:
-                    matched_ofs.add(of_n)
+        from remisiones_sync import get_tracking_for_po as get_rem_tracking
+        rem_trk_chk = get_rem_tracking(po_str, df_partidas, id_interno=id_interno)
+        has_remisiones = float(rem_trk_chk.get('total_remisionado', 0) or 0) > 0 or len(rem_trk_chk.get('remisiones_asociadas', [])) > 0
+        
+        # Solo vincular OFs por SKU si la PO ya fue enviada o si el proyecto coincide
+        if has_remisiones:
+            po_skus = []
+            for _, p_row in df_partidas.iterrows():
+                k1 = str(p_row.get('clave_sku', '')).strip().upper()
+                k2 = str(p_row.get('sku_cliente', '')).strip().upper()
+                if k1: po_skus.append(k1)
+                if k2: po_skus.append(k2)
+                
+            for _, pie_r in df_pie.iterrows():
+                pie_n = str(pie_r.get('no_pieza', '')).strip().upper()
+                if any(sku_matches(ps, pie_n) for ps in po_skus):
+                    of_n = str(pie_r.get('of_number', '')).strip()
+                    if of_n:
+                        matched_ofs.add(of_n)
                 
     # 2. Filtrar piezas, avances y nidos de esas OFs
     df_pie_po = df_pie[df_pie['of_number'].isin(matched_ofs)] if not df_pie.empty and matched_ofs else pd.DataFrame()

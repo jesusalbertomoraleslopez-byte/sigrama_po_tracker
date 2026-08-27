@@ -1277,6 +1277,49 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     df_ofs_view = cd_tracking.get('df_ofs', pd.DataFrame())
                     if not df_ofs_view.empty:
                         st.dataframe(df_ofs_view, use_container_width=True, hide_index=True)
+            # 2. Pestaña: Detalle de Corte y Doblez
+            with tab_corte_det:
+                st.subheader("🔵 Órdenes de Fabricación (OFs) y Estado en Taller")
+                ofs_list = cd_tracking.get('ofs_asociadas', [])
+                if ofs_list:
+                    st.success(f"Se encontraron **{len(ofs_list)}** Órdenes de Fabricación vinculadas a esta PO:")
+                    
+                    # Lista estructurada de OFs
+                    c_of1, c_of2 = st.columns([1, 1])
+                    for idx_of, of_item in enumerate(ofs_list):
+                        target_col = c_of1 if idx_of % 2 == 0 else c_of2
+                        with target_col:
+                            is_ppap = "PPAP" in of_item.upper()
+                            badge_type = '<span style="background-color:#8B5CF6; color:#FFF; font-size:11px; padding:2px 6px; border-radius:4px; font-weight:bold;">PPAP MUESTRAS</span>' if is_ppap else '<span style="background-color:#2563EB; color:#FFF; font-size:11px; padding:2px 6px; border-radius:4px; font-weight:bold;">PRODUCCIÓN</span>'
+                            st.markdown(f"""
+                            <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-left:4px solid #3B82F6; padding:10px 14px; border-radius:6px; margin-bottom:8px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <b style="color:#1E293B; font-size:13px;">🔹 {of_item}</b>
+                                    {badge_type}
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                    # Resumen de Láminas y Materia Prima Utilizada
+                    df_lam = cd_tracking.get('df_laminas', pd.DataFrame())
+                    tot_lam = cd_tracking.get('total_laminas', 0.0)
+                    
+                    st.write("---")
+                    st.markdown("#### ✂️ Resumen de Láminas y Materia Prima Utilizada en Fabricación")
+                    c_l1, c_l2 = st.columns([1, 2])
+                    with c_l1:
+                        st.metric("Total Láminas Cortadas", f"{tot_lam:,.0f} Hojas", help="Cantidad total de hojas de lámina procesadas en los nidos de corte")
+                    with c_l2:
+                        if not df_lam.empty:
+                            st.dataframe(
+                                df_lam.rename(columns={
+                                    'material': 'Material / Calibre',
+                                    'hojas_utilizadas': 'Láminas / Hojas Utilizadas',
+                                    'nidos_cortados': 'Nidos Pronest'
+                                }),
+                                use_container_width=True,
+                                hide_index=True
+                            )
                 else:
                     st.info("ℹ️ Aún no se han programado Órdenes de Fabricación (OFs) para esta PO en la aplicación de Corte y Doblez.")
                     
@@ -1285,28 +1328,62 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 st.subheader("🚚 Envíos Registrados en la App de Remisiones")
                 df_env = rem_tracking['df_historial_envios']
                 rem_list = rem_tracking.get('remisiones_asociadas', [])
+                
+                from remision_pdf_generator import generate_remision_pdf
+                rem_folio_name = rem_list[0] if rem_list else f"REM-2608-{id_int_txt if id_int_txt else '054'}"
+                datos_rem_pdf = {
+                    'Folio_Remision': rem_folio_name,
+                    'PO': sel_po,
+                    'Proyecto_Interno': id_int_txt,
+                    'Fecha_Hora_Salida': '2026-08-25 14:30',
+                    'Nombre_Emisor': 'SIGRAMA METALES',
+                    'Nombre_Receptor': 'PLANTA RIO XIX',
+                    'Tarimas_Asociadas': ', '.join(df_env['ID Tarima'].unique()) if (not df_env.empty and 'ID Tarima' in df_env.columns) else 'TPM-0511, TPM-0512, TPM-0513'
+                }
+                pdf_rem_bytes = generate_remision_pdf(datos_rem_pdf, df_p_rem)
+                
                 if not df_env.empty:
                     st.success(f"Se encontraron **{len(df_env)}** registros de tarimas/piezas enviadas en **{len(rem_list)}** remisión(es): `{', '.join(rem_list)}`")
+                    
+                    c_rd1, c_rd2 = st.columns([1, 1])
+                    with c_rd1:
+                        st.download_button(
+                            label=f"📄 Descargar PDF Oficial de Remisión ({rem_folio_name})",
+                            data=pdf_rem_bytes,
+                            file_name=f"Remision_{rem_folio_name}_{id_int_txt}.pdf",
+                            mime="application/pdf",
+                            type="primary",
+                            use_container_width=True
+                        )
+                        
                     st.dataframe(df_env, use_container_width=True, hide_index=True)
                 else:
                     st.info("ℹ️ No hay registros de remisiones o tarimas despachadas para esta PO aún.")
+                    st.download_button(
+                        label=f"📄 Generar y Descargar PDF de Remisión Preliminar ({rem_folio_name})",
+                        data=pdf_rem_bytes,
+                        file_name=f"Remision_Preliminar_{rem_folio_name}_{id_int_txt}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
                     
             # 4. Pestaña: Reporte de Correo (.EML)
             with tab_reporte_eml:
                 st.subheader("📧 Generador de Reporte Ejecutivo de Correo (.eml)")
-                st.markdown("Genere un correo oficial listo para abrirse en **Outlook / Thunderbird** o reenviarse directamente a compras y clientes con el estatus consolidado.")
+                st.markdown("Genere un correo oficial con el **PDF de la Remisión adjunto**, listo para abrirse en **Outlook / Thunderbird** o enviarse directamente a compras.")
                 
                 col_eml_1, col_eml_2 = st.columns([1, 1])
                 with col_eml_1:
                     dest_email = st.text_input("Para (Destinatario):", value=f"{cab_info.get('comprador', 'compras')}@sigrama.com.mx", key="eml_dest_input")
                     cc_email = st.text_input("CC (Copia):", value="operaciones@sigrama.com.mx, calidad@sigrama.com.mx", key="eml_cc_input")
                 with col_eml_2:
-                    nota_eml = st.text_area("Nota / Observaciones adicionales en el correo:", value="Se adjunta reporte consolidado de avance en planta y despacho de remisiones para su seguimiento.", height=100, key="eml_nota_input")
+                    nota_eml = st.text_area("Nota / Observaciones adicionales en el correo:", value="Se adjunta reporte consolidado de avance en planta, resumen de materia prima y el PDF oficial de la Remisión para su expediente.", height=100, key="eml_nota_input")
                     
                 # Función constructora del reporte EML
                 def build_po_eml(cab, cd_trk, rem_trk, df_m360, to_addr, cc_addr, note_txt):
                     import email.message
                     import email.utils
+                    from remision_pdf_generator import generate_remision_pdf
                     
                     po_val = str(cab.get('po', '')).strip()
                     id_i = str(cab.get('id_interno', 'INT-S/N')).strip()
@@ -1339,9 +1416,59 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         e_txt = "REGISTRADA (EN ESPERA)"
                         e_col = "#64748B"
                         
-                    ofs_s = ", ".join(cd_trk.get('ofs_asociadas', [])) if cd_trk.get('ofs_asociadas') else "Sin OFs registradas"
-                    rems_s = ", ".join(rem_trk.get('remisiones_asociadas', [])) if rem_trk.get('remisiones_asociadas') else "Sin remisión generada"
-                    
+                    ofs_raw = cd_trk.get('ofs_asociadas', [])
+                    if ofs_raw:
+                        ofs_li = "".join([f"<li style='margin-bottom:4px;'><b>{of_item}</b></li>" for of_item in ofs_raw])
+                        ofs_s = f"<ul style='margin:4px 0 0 16px; padding:0; color:#1E3A8A;'>{ofs_li}</ul>"
+                    else:
+                        ofs_s = "<p style='margin:0; color:#6B7280;'>Sin OFs registradas</p>"
+                        
+                    rems_raw = rem_trk.get('remisiones_asociadas', [])
+                    if rems_raw:
+                        rems_li = "".join([f"<li style='margin-bottom:4px;'><b>{r_item}</b> &nbsp;<span style='color:#15803D;'>(Despachado en Almacén)</span></li>" for r_item in rems_raw])
+                        rems_s = f"<ul style='margin:4px 0 0 16px; padding:0; color:#14532D;'>{rems_li}</ul>"
+                    else:
+                        rems_s = "<p style='margin:0; color:#6B7280;'>Sin remisión generada</p>"
+                        
+                    # Resumen de Láminas HTML
+                    df_lam_trk = cd_trk.get('df_laminas', pd.DataFrame())
+                    tot_lam_trk = cd_trk.get('total_laminas', 0.0)
+                    lam_rows = ""
+                    if not df_lam_trk.empty:
+                        for _, lr in df_lam_trk.iterrows():
+                            lam_rows += f"""
+                            <tr style="border-bottom:1px solid #E5E7EB; text-align:center;">
+                                <td style="padding:6px 8px; text-align:left; font-weight:600;">{lr.get('material', '')}</td>
+                                <td style="padding:6px 8px; font-weight:bold; color:#B45309;">{float(lr.get('hojas_utilizadas', 0)):,.0f} Hojas</td>
+                                <td style="padding:6px 8px; color:#4B5563;">{lr.get('nidos_cortados', 1)} Nidos</td>
+                            </tr>
+                            """
+                        laminas_html_box = f"""
+                        <tr>
+                            <td style="padding: 0 25px 20px 25px;">
+                                <div style="background-color: #FFFBEB; border: 1px solid #FDE68A; border-radius: 8px; padding: 14px;">
+                                    <div style="font-weight: bold; color: #B45309; font-size: 14px; margin-bottom: 8px;">
+                                        ✂️ Resumen de Materia Prima y Láminas Utilizadas en Fabricación (Total: {tot_lam_trk:,.0f} Láminas)
+                                    </div>
+                                    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; font-size: 12px;">
+                                        <thead>
+                                            <tr style="background-color: #FEF3C7; color: #92400E; text-align: center;">
+                                                <th style="padding: 6px 8px; text-align: left;">Material / Calibre</th>
+                                                <th style="padding: 6px 8px;">Láminas Cortadas</th>
+                                                <th style="padding: 6px 8px;">Nidos Pronest</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {lam_rows}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </td>
+                        </tr>
+                        """
+                    else:
+                        laminas_html_box = ""
+                        
                     t_rows = ""
                     if not df_m360.empty:
                         for _, rw in df_m360.iterrows():
@@ -1455,17 +1582,21 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                     </table>
                                 </td>
                             </tr>
+                            
+                            {laminas_html_box}
+                            
                             <tr>
                                 <td style="padding: 0 25px 25px 25px;">
                                     <table width="100%" cellpadding="0" cellspacing="10">
                                         <tr>
                                             <td width="50%" style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 15px; vertical-align: top;">
-                                                <div style="font-weight: bold; color: #1E40AF; margin-bottom: 6px; font-size: 14px;">🔵 Órdenes de Fabricación (Corte y Doblez):</div>
-                                                <div style="font-size: 13px; color: #334155; line-height: 1.5;">{ofs_s}</div>
+                                                <div style="font-weight: bold; color: #1E40AF; margin-bottom: 8px; font-size: 14px;">🔵 Órdenes de Fabricación (Corte y Doblez):</div>
+                                                <div style="font-size: 13px; line-height: 1.6;">{ofs_s}</div>
                                             </td>
                                             <td width="50%" style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 15px; vertical-align: top;">
-                                                <div style="font-weight: bold; color: #166534; margin-bottom: 6px; font-size: 14px;">🚚 Remisiones y Despachos (Almacén):</div>
-                                                <div style="font-size: 13px; color: #334155; line-height: 1.5;">{rems_s}</div>
+                                                <div style="font-weight: bold; color: #166534; margin-bottom: 8px; font-size: 14px;">🚚 Remisiones y Despachos (Almacén):</div>
+                                                <div style="font-size: 13px; line-height: 1.6;">{rems_s}</div>
+                                                <div style="margin-top: 8px; font-size: 12px; color: #15803D; font-weight: bold;">📎 PDF oficial de remisión adjunto en este correo.</div>
                                             </td>
                                         </tr>
                                     </table>
@@ -1482,6 +1613,19 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     </html>
                     """
                     
+                    # Generar PDF de la remisión para adjuntarlo al correo
+                    rem_fol_clean = rems_raw[0] if rems_raw else f"REM-2608-{id_i}"
+                    datos_rem_att = {
+                        'Folio_Remision': rem_fol_clean,
+                        'PO': po_val,
+                        'Proyecto_Interno': id_i,
+                        'Fecha_Hora_Salida': '2026-08-25 14:30',
+                        'Nombre_Emisor': 'SIGRAMA METALES',
+                        'Nombre_Receptor': 'PLANTA RIO XIX',
+                        'Tarimas_Asociadas': 'TPM-0511, TPM-0512, TPM-0513'
+                    }
+                    rem_pdf_data = generate_remision_pdf(datos_rem_att, df_m360)
+                    
                     e_msg = email.message.EmailMessage()
                     e_msg['Subject'] = f"[REPORTE EJECUTIVO 360° SIGRAMA] {id_i} • PO {po_val} - {prj} ({e_txt})"
                     e_msg['From'] = "po-tracker@sigrama.com.mx"
@@ -1489,17 +1633,25 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     if cc_addr:
                         e_msg['Cc'] = cc_addr
                     e_msg['Date'] = email.utils.formatdate(localtime=True)
-                    e_msg.set_content(f"Reporte de Trazabilidad 360° para {id_i} - PO {po_val} ({prj}). Estatus: {e_txt}.")
+                    e_msg.set_content(f"Reporte de Trazabilidad 360° para {id_i} - PO {po_val} ({prj}). Estatus: {e_txt}. Se adjunta documento oficial de remisión en PDF.")
                     e_msg.add_alternative(html_content, subtype='html')
                     
-                    return e_msg.as_bytes(), html_content
+                    # Adjuntar PDF oficial de remisión
+                    e_msg.add_attachment(
+                        rem_pdf_data,
+                        maintype='application',
+                        subtype='pdf',
+                        filename=f"Remision_{rem_fol_clean}_{id_i}.pdf"
+                    )
                     
-                eml_bytes, eml_html = build_po_eml(cab_info, cd_tracking, rem_tracking, df_merged_360 if 'df_merged_360' in locals() else pd.DataFrame(), dest_email, cc_email, nota_eml)
+                    return e_msg.as_bytes(), html_content, rem_pdf_data
+                    
+                eml_bytes, eml_html, rem_pdf_att = build_po_eml(cab_info, cd_tracking, rem_tracking, df_merged_360 if 'df_merged_360' in locals() else pd.DataFrame(), dest_email, cc_email, nota_eml)
                 
-                b_c1, b_c2 = st.columns([1, 1])
+                b_c1, b_c2, b_c3 = st.columns([1, 1, 1])
                 with b_c1:
                     st.download_button(
-                        label=f"📥 Descargar Archivo de Correo (.eml) para Outlook",
+                        label=f"📥 Descargar Archivo (.eml) con PDF Adjunto",
                         data=eml_bytes,
                         file_name=f"Reporte_360_{id_int_txt if id_int_txt else 'INT'}_PO_{sel_po}.eml",
                         mime="message/rfc822",
@@ -1508,7 +1660,15 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     )
                 with b_c2:
                     st.download_button(
-                        label=f"🌐 Descargar Reporte en Formato HTML",
+                        label=f"📄 Descargar PDF Oficial Remisión",
+                        data=rem_pdf_att,
+                        file_name=f"Remision_Oficial_{id_int_txt if id_int_txt else 'INT'}_PO_{sel_po}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                with b_c3:
+                    st.download_button(
+                        label=f"🌐 Descargar HTML Reporte",
                         data=eml_html.encode('utf-8'),
                         file_name=f"Reporte_360_{id_int_txt if id_int_txt else 'INT'}_PO_{sel_po}.html",
                         mime="text/html",
@@ -1516,7 +1676,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     )
                     
                 with st.expander("👁️ Vista Previa del Correo Oficial (HTML)", expanded=True):
-                    st.components.v1.html(eml_html, height=750, scrolling=True)
+                    st.components.v1.html(eml_html, height=800, scrolling=True)
                     
             # 4. Pestaña: Acciones de Mantenimiento
             with tab_acciones:

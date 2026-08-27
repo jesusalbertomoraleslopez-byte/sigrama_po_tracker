@@ -1330,12 +1330,12 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 rem_list = rem_tracking.get('remisiones_asociadas', [])
                 
                 from remision_pdf_generator import generate_remision_pdf
-                rem_folio_name = rem_list[0] if rem_list else f"REM-2608-{id_int_txt if id_int_txt else '054'}"
+                rem_folio_name = rem_list[0] if rem_list else "E0125"
                 datos_rem_pdf = {
                     'Folio_Remision': rem_folio_name,
                     'PO': sel_po,
                     'Proyecto_Interno': id_int_txt,
-                    'Fecha_Hora_Salida': '2026-08-25 14:30',
+                    'Fecha_Hora_Salida': '25/08/2026',
                     'Nombre_Emisor': 'SIGRAMA METALES',
                     'Nombre_Receptor': 'PLANTA RIO XIX',
                     'Tarimas_Asociadas': ', '.join(df_env['ID Tarima'].unique()) if (not df_env.empty and 'ID Tarima' in df_env.columns) else 'TPM-0511, TPM-0512, TPM-0513'
@@ -1614,12 +1614,12 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     """
                     
                     # Generar PDF de la remisión para adjuntarlo al correo
-                    rem_fol_clean = rems_raw[0] if rems_raw else f"REM-2608-{id_i}"
+                    rem_fol_clean = rems_raw[0] if rems_raw else "E0125"
                     datos_rem_att = {
                         'Folio_Remision': rem_fol_clean,
                         'PO': po_val,
                         'Proyecto_Interno': id_i,
-                        'Fecha_Hora_Salida': '2026-08-25 14:30',
+                        'Fecha_Hora_Salida': '25/08/2026',
                         'Nombre_Emisor': 'SIGRAMA METALES',
                         'Nombre_Receptor': 'PLANTA RIO XIX',
                         'Tarimas_Asociadas': 'TPM-0511, TPM-0512, TPM-0513'

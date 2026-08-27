@@ -1,4 +1,4 @@
-﻿# Byte-compiled / optimized / DLL files
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *.class
@@ -22,7 +22,3 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Local databases & runtime cache
-data/*.db
-data/*.sqlite3
-data/*.log

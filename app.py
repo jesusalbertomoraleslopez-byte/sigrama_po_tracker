@@ -1134,7 +1134,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 estatus_color = "#64748B"
             
             id_int_txt = str(cab_info.get('id_interno', '')).strip()
-            id_int_badge = f'<span style="background-color:#EC2024; color:#FFFFFF; padding:4px 10px; border-radius:6px; font-weight:800; font-size:14px; margin-right:10px; display:inline-block;">{id_int_txt}</span>' if id_int_txt else '<span style="background-color:#555; color:#FFF; padding:4px 10px; border-radius:6px; font-size:12px; margin-right:10px;">SIN ID</span>'
+            id_int_badge = f'<span style="background-color:#EC2024; color:#FFFFFF; padding:6px 20px; border-radius:8px; font-weight:900; font-size:28px; margin-right:12px; display:inline-block; letter-spacing:1px; box-shadow:0 2px 4px rgba(0,0,0,0.3);">{id_int_txt}</span>' if id_int_txt else '<span style="background-color:#555; color:#FFF; padding:6px 16px; border-radius:8px; font-size:20px; margin-right:12px;">SIN ID</span>'
             
             with col_sel2:
                 c_s1, c_s2 = st.columns(2)
@@ -1144,21 +1144,21 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     st.metric("Llegada PO", str(cab_info.get('fecha_llegada', 'N/A')))
             
             st.markdown(f"""
-            <div style="background:#18181B; color:#FFFFFF; padding:20px; border-radius:10px; border-left:6px solid #EC2024; margin-bottom:20px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
-                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div style="background:#18181B; color:#FFFFFF; padding:24px 28px; border-radius:12px; border-left:8px solid #EC2024; margin-bottom:20px; box-shadow: 0 6px 12px rgba(0,0,0,0.25);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
                     <div>
-                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                        <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px; flex-wrap:wrap;">
                             {id_int_badge}
-                            <span style="font-size:22px; font-weight:800; color:#FFFFFF;">ORDEN DE COMPRA: <span style="color:#EC2024;">{sel_po}</span></span>
+                            <span style="font-size:36px; font-weight:900; color:#FFFFFF; letter-spacing:-0.5px;">ORDEN DE COMPRA: <span style="color:#EC2024;">{sel_po}</span></span>
                         </div>
-                        <p style="margin:0; font-size:14px; color:#D1D5DB;">
-                            🏗️ Proyecto: <b style="color:#FFFFFF;">{cab_info.get('proyecto', 'N/A')}</b> &nbsp;|&nbsp; 
+                        <p style="margin:6px 0 0 0; font-size:16px; color:#E5E7EB;">
+                            🏗️ Proyecto: <b style="color:#FFFFFF; font-size:17px;">{cab_info.get('proyecto', 'N/A')}</b> &nbsp;|&nbsp; 
                             👤 Solicitante: <b style="color:#FFFFFF;">{cab_info.get('solicitante', 'N/A')}</b> &nbsp;|&nbsp; 
                             💼 Comprador: <b style="color:#FFFFFF;">{cab_info.get('comprador', 'N/A')}</b>
                         </p>
                     </div>
                     <div style="text-align:right;">
-                        <span style="background-color:{estatus_color}; color:#FFFFFF; padding:8px 16px; border-radius:20px; font-weight:bold; font-size:14px; display:inline-block;">
+                        <span style="background-color:{estatus_color}; color:#FFFFFF; padding:10px 22px; border-radius:25px; font-weight:bold; font-size:17px; display:inline-block; box-shadow:0 3px 6px rgba(0,0,0,0.3);">
                             ● {estatus_360}
                         </span>
                     </div>
@@ -1183,10 +1183,11 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 
             st.write("---")
             
-            tab_matriz_360, tab_corte_det, tab_remisiones_det, tab_acciones = st.tabs([
+            tab_matriz_360, tab_corte_det, tab_remisiones_det, tab_reporte_eml, tab_acciones = st.tabs([
                 "🎯 Matriz Integral 360° (Fabricación vs Remisión)",
                 "🔵 Corte y Doblez (OFs de Planta)",
                 "🚚 Remisiones y Tarimas (Envíos)",
+                "📧 Reporte de Correo (.EML)",
                 "⚙️ Mantenimiento de la Orden"
             ])
             
@@ -1288,7 +1289,234 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     st.success(f"Se encontraron **{len(df_env)}** registros de tarimas/piezas enviadas en **{len(rem_list)}** remisión(es): `{', '.join(rem_list)}`")
                     st.dataframe(df_env, use_container_width=True, hide_index=True)
                 else:
-                    st.info("ℹ️ Aún no se han generado remisiones para esta PO en la aplicación de Remisiones de Materiales.")
+                    st.info("ℹ️ No hay registros de remisiones o tarimas despachadas para esta PO aún.")
+                    
+            # 4. Pestaña: Reporte de Correo (.EML)
+            with tab_reporte_eml:
+                st.subheader("📧 Generador de Reporte Ejecutivo de Correo (.eml)")
+                st.markdown("Genere un correo oficial listo para abrirse en **Outlook / Thunderbird** o reenviarse directamente a compras y clientes con el estatus consolidado.")
+                
+                col_eml_1, col_eml_2 = st.columns([1, 1])
+                with col_eml_1:
+                    dest_email = st.text_input("Para (Destinatario):", value=f"{cab_info.get('comprador', 'compras')}@sigrama.com.mx", key="eml_dest_input")
+                    cc_email = st.text_input("CC (Copia):", value="operaciones@sigrama.com.mx, calidad@sigrama.com.mx", key="eml_cc_input")
+                with col_eml_2:
+                    nota_eml = st.text_area("Nota / Observaciones adicionales en el correo:", value="Se adjunta reporte consolidado de avance en planta y despacho de remisiones para su seguimiento.", height=100, key="eml_nota_input")
+                    
+                # Función constructora del reporte EML
+                def build_po_eml(cab, cd_trk, rem_trk, df_m360, to_addr, cc_addr, note_txt):
+                    import email.message
+                    import email.utils
+                    
+                    po_val = str(cab.get('po', '')).strip()
+                    id_i = str(cab.get('id_interno', 'INT-S/N')).strip()
+                    prj = str(cab.get('proyecto', 'PROYECTO SIGRAMA')).strip()
+                    cmp_name = str(cab.get('comprador', 'Compras')).strip()
+                    sol_name = str(cab.get('solicitante', 'Solicitante')).strip()
+                    f_lleg = str(cab.get('fecha_llegada', 'N/A')).strip()
+                    f_sol = str(cab.get('fecha_solicitada', 'N/A')).strip()
+                    
+                    t_req = float(rem_trk.get('total_requerido', 0.0) or 0.0)
+                    t_fab = float(cd_trk.get('total_fabricado', cd_trk.get('total_terminado_planta', 0.0)) or 0.0)
+                    t_rem = float(rem_trk.get('total_remisionado', 0.0) or 0.0)
+                    t_pnd = max(0.0, t_req - t_rem)
+                    p_fab = float(cd_trk.get('porcentaje_fabricacion', (t_fab/t_req*100.0) if t_req > 0 else 0.0))
+                    p_rem = float(rem_trk.get('porcentaje_global', (t_rem/t_req*100.0) if t_req > 0 else 0.0))
+                    
+                    if t_rem >= t_req and t_req > 0:
+                        e_txt = "REMISIÓN TOTAL (100%)"
+                        e_col = "#10B981"
+                    elif t_rem > 0:
+                        e_txt = f"REMISIÓN PARCIAL ({p_rem:.1f}%)"
+                        e_col = "#3B82F6"
+                    elif t_fab >= t_req and t_req > 0:
+                        e_txt = f"LISTO PARA REMISIÓN ({p_fab:.1f}% FAB)"
+                        e_col = "#8B5CF6"
+                    elif t_fab > 0:
+                        e_txt = f"EN PROCESO DE FABRICACIÓN ({p_fab:.1f}% FAB)"
+                        e_col = "#F59E0B"
+                    else:
+                        e_txt = "REGISTRADA (EN ESPERA)"
+                        e_col = "#64748B"
+                        
+                    ofs_s = ", ".join(cd_trk.get('ofs_asociadas', [])) if cd_trk.get('ofs_asociadas') else "Sin OFs registradas"
+                    rems_s = ", ".join(rem_trk.get('remisiones_asociadas', [])) if rem_trk.get('remisiones_asociadas') else "Sin remisión generada"
+                    
+                    t_rows = ""
+                    if not df_m360.empty:
+                        for _, rw in df_m360.iterrows():
+                            t_rows += f"""
+                            <tr style="border-bottom:1px solid #E5E7EB; text-align:center;">
+                                <td style="padding:10px 8px; font-weight:bold;">{rw.get('item_no', '')}</td>
+                                <td style="padding:10px 8px; font-weight:600; color:#1F2937;">{rw.get('sku_cliente', '')}</td>
+                                <td style="padding:10px 8px; font-weight:700; color:#EC2024;">{rw.get('clave_sku', '')}</td>
+                                <td style="padding:10px 8px; text-align:left; color:#4B5563;">{rw.get('descripcion_producto', '')}</td>
+                                <td style="padding:10px 8px; font-weight:bold;">{float(rw.get('cantidad_requerida', 0)):,.0f}</td>
+                                <td style="padding:10px 8px; color:#2563EB;">{float(rw.get('cortado', 0)):,.0f}</td>
+                                <td style="padding:10px 8px; color:#2563EB;">{float(rw.get('doblado', 0)):,.0f}</td>
+                                <td style="padding:10px 8px; font-weight:bold; color:#16A34A;">{float(rw.get('cantidad_remisionada', 0)):,.0f}</td>
+                                <td style="padding:10px 8px; font-weight:bold; color:{'#DC2626' if float(rw.get('cantidad_pendiente', 0)) > 0 else '#16A34A'};">{float(rw.get('cantidad_pendiente', 0)):,.0f}</td>
+                                <td style="padding:10px 8px;"><span style="background-color:#F3F4F6; padding:3px 8px; border-radius:4px; font-size:12px; font-weight:600;">{rw.get('estatus_partida_360', '')}</span></td>
+                            </tr>
+                            """
+                            
+                    html_content = f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head><meta charset="utf-8"></head>
+                    <body style="font-family: Arial, Helvetica, sans-serif; background-color: #F3F4F6; margin: 0; padding: 20px;">
+                        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 850px; margin: 0 auto; background-color: #FFFFFF; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid #E5E7EB;">
+                            <tr>
+                                <td style="background-color: #111111; padding: 25px; border-bottom: 5px solid #EC2024;">
+                                    <table width="100%">
+                                        <tr>
+                                            <td>
+                                                <div style="display:inline-block; background-color: #EC2024; color: #FFFFFF; font-size: 22px; font-weight: 900; padding: 6px 18px; border-radius: 6px; margin-bottom: 8px;">
+                                                    {id_i}
+                                                </div>
+                                                <h1 style="margin: 4px 0; color: #FFFFFF; font-size: 30px; font-weight: 900; letter-spacing: -0.5px;">
+                                                    ORDEN DE COMPRA: <span style="color: #EC2024;">{po_val}</span>
+                                                </h1>
+                                                <p style="margin: 6px 0 0 0; color: #D1D5DB; font-size: 15px;">
+                                                    🏗️ <b>Proyecto:</b> {prj} &nbsp;|&nbsp; 👤 <b>Solicitante:</b> {sol_name} &nbsp;|&nbsp; 💼 <b>Comprador:</b> {cmp_name}
+                                                </p>
+                                            </td>
+                                            <td align="right" valign="top">
+                                                <span style="background-color: {e_col}; color: #FFFFFF; font-size: 15px; font-weight: bold; padding: 10px 20px; border-radius: 25px; display: inline-block;">
+                                                    ● {e_txt}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 16px 25px; background-color: #F9FAFB; border-bottom: 1px solid #E5E7EB;">
+                                    <table width="100%" style="font-size: 14px; color: #374151;">
+                                        <tr>
+                                            <td width="33%">📅 <b>Llegada PO:</b> {f_lleg}</td>
+                                            <td width="33%">🎯 <b>Compromiso Entrega:</b> {f_sol}</td>
+                                            <td width="34%">🏭 <b>Planta:</b> SIGRAMA METALES</td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 25px;">
+                                    <table width="100%" cellpadding="0" cellspacing="10">
+                                        <tr>
+                                            <td width="25%" style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 15px; text-align: center;">
+                                                <div style="font-size: 11px; color: #64748B; font-weight: bold; text-transform: uppercase;">1. Requeridas</div>
+                                                <div style="font-size: 26px; font-weight: 900; color: #0F172A; margin: 4px 0;">{t_req:,.0f}</div>
+                                                <div style="font-size: 11px; color: #64748B;">Total en Orden</div>
+                                            </td>
+                                            <td width="25%" style="background-color: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 8px; padding: 15px; text-align: center;">
+                                                <div style="font-size: 11px; color: #1D4ED8; font-weight: bold; text-transform: uppercase;">2. Fab. en Planta</div>
+                                                <div style="font-size: 26px; font-weight: 900; color: #1E40AF; margin: 4px 0;">{t_fab:,.0f}</div>
+                                                <div style="font-size: 11px; color: #2563EB; font-weight: bold;">{p_fab:.1f}% Fabricado</div>
+                                            </td>
+                                            <td width="25%" style="background-color: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; padding: 15px; text-align: center;">
+                                                <div style="font-size: 11px; color: #15803D; font-weight: bold; text-transform: uppercase;">3. Remisionadas</div>
+                                                <div style="font-size: 26px; font-weight: 900; color: #166534; margin: 4px 0;">{t_rem:,.0f}</div>
+                                                <div style="font-size: 11px; color: #16A34A; font-weight: bold;">{p_rem:.1f}% Despachado</div>
+                                            </td>
+                                            <td width="25%" style="background-color: #FFF7ED; border: 1px solid #FED7AA; border-radius: 8px; padding: 15px; text-align: center;">
+                                                <div style="font-size: 11px; color: #C2410C; font-weight: bold; text-transform: uppercase;">4. Pendientes</div>
+                                                <div style="font-size: 26px; font-weight: 900; color: #9A3412; margin: 4px 0;">{t_pnd:,.0f}</div>
+                                                <div style="font-size: 11px; color: #EA580C;">Saldo Restante</div>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 0 25px 25px 25px;">
+                                    <h3 style="margin: 0 0 12px 0; color: #111827; font-size: 18px; border-bottom: 2px solid #EC2024; padding-bottom: 6px;">
+                                        📋 Desglose de Partidas y Trazabilidad 360°
+                                    </h3>
+                                    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; font-size: 13px;">
+                                        <thead>
+                                            <tr style="background-color: #1F2937; color: #FFFFFF; text-align: center;">
+                                                <th style="padding: 10px 8px;">#</th>
+                                                <th style="padding: 10px 8px;">SKU Cliente</th>
+                                                <th style="padding: 10px 8px;">SKU Planta</th>
+                                                <th style="padding: 10px 8px; text-align:left;">Descripción</th>
+                                                <th style="padding: 10px 8px;">Req.</th>
+                                                <th style="padding: 10px 8px;">Cortado</th>
+                                                <th style="padding: 10px 8px;">Doblado</th>
+                                                <th style="padding: 10px 8px;">Enviado</th>
+                                                <th style="padding: 10px 8px;">Pendiente</th>
+                                                <th style="padding: 10px 8px;">Estatus</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {t_rows}
+                                        </tbody>
+                                    </table>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 0 25px 25px 25px;">
+                                    <table width="100%" cellpadding="0" cellspacing="10">
+                                        <tr>
+                                            <td width="50%" style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 15px; vertical-align: top;">
+                                                <div style="font-weight: bold; color: #1E40AF; margin-bottom: 6px; font-size: 14px;">🔵 Órdenes de Fabricación (Corte y Doblez):</div>
+                                                <div style="font-size: 13px; color: #334155; line-height: 1.5;">{ofs_s}</div>
+                                            </td>
+                                            <td width="50%" style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 15px; vertical-align: top;">
+                                                <div style="font-weight: bold; color: #166534; margin-bottom: 6px; font-size: 14px;">🚚 Remisiones y Despachos (Almacén):</div>
+                                                <div style="font-size: 13px; color: #334155; line-height: 1.5;">{rems_s}</div>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                            {'<tr><td style="padding: 0 25px 20px 25px;"><div style="background-color:#FEF3C7; border-left:4px solid #F59E0B; padding:12px; font-size:13px; color:#92400E;"><b>Nota de Control:</b> ' + note_txt + '</div></td></tr>' if note_txt else ''}
+                            <tr>
+                                <td style="background-color: #111111; padding: 15px 25px; text-align: center; color: #9CA3AF; font-size: 12px;">
+                                    Industria Sigrama S.A. de C.V. • PO Tracker & Master Hub 4.0 • Reporte Certificado
+                                </td>
+                            </tr>
+                        </table>
+                    </body>
+                    </html>
+                    """
+                    
+                    e_msg = email.message.EmailMessage()
+                    e_msg['Subject'] = f"[REPORTE EJECUTIVO 360° SIGRAMA] {id_i} • PO {po_val} - {prj} ({e_txt})"
+                    e_msg['From'] = "po-tracker@sigrama.com.mx"
+                    e_msg['To'] = to_addr if to_addr else "compras@sigrama.com.mx"
+                    if cc_addr:
+                        e_msg['Cc'] = cc_addr
+                    e_msg['Date'] = email.utils.formatdate(localtime=True)
+                    e_msg.set_content(f"Reporte de Trazabilidad 360° para {id_i} - PO {po_val} ({prj}). Estatus: {e_txt}.")
+                    e_msg.add_alternative(html_content, subtype='html')
+                    
+                    return e_msg.as_bytes(), html_content
+                    
+                eml_bytes, eml_html = build_po_eml(cab_info, cd_tracking, rem_tracking, df_merged_360 if 'df_merged_360' in locals() else pd.DataFrame(), dest_email, cc_email, nota_eml)
+                
+                b_c1, b_c2 = st.columns([1, 1])
+                with b_c1:
+                    st.download_button(
+                        label=f"📥 Descargar Archivo de Correo (.eml) para Outlook",
+                        data=eml_bytes,
+                        file_name=f"Reporte_360_{id_int_txt if id_int_txt else 'INT'}_PO_{sel_po}.eml",
+                        mime="message/rfc822",
+                        type="primary",
+                        use_container_width=True
+                    )
+                with b_c2:
+                    st.download_button(
+                        label=f"🌐 Descargar Reporte en Formato HTML",
+                        data=eml_html.encode('utf-8'),
+                        file_name=f"Reporte_360_{id_int_txt if id_int_txt else 'INT'}_PO_{sel_po}.html",
+                        mime="text/html",
+                        use_container_width=True
+                    )
+                    
+                with st.expander("👁️ Vista Previa del Correo Oficial (HTML)", expanded=True):
+                    st.components.v1.html(eml_html, height=750, scrolling=True)
                     
             # 4. Pestaña: Acciones de Mantenimiento
             with tab_acciones:

@@ -1437,15 +1437,23 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 def build_po_eml(cab, cd_trk, rem_trk, df_m360, to_addr, cc_addr, note_txt):
                     import email.message
                     import email.utils
+                    import re
                     from remision_pdf_generator import generate_remision_pdf
                     
-                    po_val = str(cab.get('po', '')).strip()
-                    id_i = str(cab.get('id_interno', 'INT-S/N')).strip()
-                    prj = str(cab.get('proyecto', 'PROYECTO SIGRAMA')).strip()
-                    cmp_name = str(cab.get('comprador', 'Compras')).strip()
-                    sol_name = str(cab.get('solicitante', 'Solicitante')).strip()
-                    f_lleg = str(cab.get('fecha_llegada', 'N/A')).strip()
-                    f_sol = str(cab.get('fecha_solicitada', 'N/A')).strip()
+                    def _clean_hdr(v, d=""):
+                        if v is None or pd.isna(v):
+                            return d
+                        s = str(v).replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
+                        s = re.sub(r'\s+', ' ', s).strip()
+                        return s if s else d
+                    
+                    po_val = _clean_hdr(cab.get('po', ''), 'PO')
+                    id_i = _clean_hdr(cab.get('id_interno', 'INT-S/N'), 'INT-S/N')
+                    prj = _clean_hdr(cab.get('proyecto', 'PROYECTO SIGRAMA'), 'PROYECTO')
+                    cmp_name = _clean_hdr(cab.get('comprador', 'Compras'), 'Compras')
+                    sol_name = _clean_hdr(cab.get('solicitante', 'Solicitante'), 'Solicitante')
+                    f_lleg = _clean_hdr(cab.get('fecha_llegada', 'N/A'), 'N/A')
+                    f_sol = _clean_hdr(cab.get('fecha_solicitada', 'N/A'), 'N/A')
                     
                     t_req = float(rem_trk.get('total_requerido', 0.0) or 0.0)
                     t_fab = float(cd_trk.get('total_fabricado', cd_trk.get('total_terminado_planta', 0.0)) or 0.0)
@@ -1469,6 +1477,8 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     else:
                         e_txt = "REGISTRADA (EN ESPERA)"
                         e_col = "#64748B"
+                        
+                    e_txt = _clean_hdr(e_txt)
                         
                     ofs_raw = cd_trk.get('ofs_asociadas', [])
                     if ofs_raw:
@@ -1671,22 +1681,29 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     from dossier_pdf_generator import create_dossier_zip
                     zip_data, pdf_rem_data, pdf_etiq_data, pdf_rep_data = create_dossier_zip(cab, cd_trk, rem_trk, df_m360)
                     
+                    to_clean = _clean_hdr(to_addr, "compras@sigrama.com.mx")
+                    cc_clean = _clean_hdr(cc_addr, "")
+                    subj_clean = _clean_hdr(f"[EXPEDIENTE TRAZABILIDAD 360°] {id_i} • PO {po_val} - {prj} ({e_txt})")
+                    
                     e_msg = email.message.EmailMessage()
-                    e_msg['Subject'] = f"[EXPEDIENTE TRAZABILIDAD 360°] {id_i} • PO {po_val} - {prj} ({e_txt})"
+                    e_msg['Subject'] = subj_clean
                     e_msg['From'] = "po-tracker@sigrama.com.mx"
-                    e_msg['To'] = to_addr if to_addr else "compras@sigrama.com.mx"
-                    if cc_addr:
-                        e_msg['Cc'] = cc_addr
+                    e_msg['To'] = to_clean
+                    if cc_clean:
+                        e_msg['Cc'] = cc_clean
                     e_msg['Date'] = email.utils.formatdate(localtime=True)
-                    e_msg.set_content(f"Expediente de Trazabilidad 360° para {id_i} - PO {po_val} ({prj}). Estatus: {e_txt}. Se adjunta expediente completo en ZIP conteniendo Remisión E0125, Etiquetas de Tarimas y Reporte de Trazabilidad.")
+                    e_msg.set_content(f"Expediente de Trazabilidad 360° para {id_i} - PO {po_val} ({prj}). Estatus: {e_txt}. Se adjunta expediente completo en ZIP conteniendo Remisión oficial, Etiquetas de Tarimas y Reporte de Trazabilidad.")
                     e_msg.add_alternative(html_content, subtype='html')
+                    
+                    clean_id_file = re.sub(r'[^a-zA-Z0-9_\-]', '_', id_i)
+                    clean_po_file = re.sub(r'[^a-zA-Z0-9_\-]', '_', po_val)
                     
                     # 1. Adjuntar Expediente ZIP Completo
                     e_msg.add_attachment(
                         zip_data,
                         maintype='application',
                         subtype='zip',
-                        filename=f"Expediente_Trazabilidad_{id_i}_PO_{po_val}.zip"
+                        filename=f"Expediente_Trazabilidad_{clean_id_file}_PO_{clean_po_file}.zip"
                     )
                     
                     # 2. Adjuntar PDFs individuales para visualización directa
@@ -1694,19 +1711,19 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         pdf_rem_data,
                         maintype='application',
                         subtype='pdf',
-                        filename=f"1_Remision_E0125_{id_i}.pdf"
+                        filename=f"1_Remision_{clean_id_file}.pdf"
                     )
                     e_msg.add_attachment(
                         pdf_etiq_data,
                         maintype='application',
                         subtype='pdf',
-                        filename=f"2_Etiquetas_Tarimas_E0125_{id_i}.pdf"
+                        filename=f"2_Etiquetas_Tarimas_{clean_id_file}.pdf"
                     )
                     e_msg.add_attachment(
                         pdf_rep_data,
                         maintype='application',
                         subtype='pdf',
-                        filename=f"3_Reporte_Trazabilidad_PO_{po_val}_{id_i}.pdf"
+                        filename=f"3_Reporte_Trazabilidad_PO_{clean_po_file}_{clean_id_file}.pdf"
                     )
                     
                     return e_msg.as_bytes(), html_content, zip_data, pdf_rem_data, pdf_etiq_data, pdf_rep_data

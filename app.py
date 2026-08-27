@@ -16,6 +16,7 @@ from config import (
     ESTATUS_PARCIAL,
     ESTATUS_COMPLETADA,
     ESTATUS_CANCELADA,
+    SQLITE_DB_PATH,
     get_remisiones_dir
 )
 from db_manager import (
@@ -1233,7 +1234,7 @@ elif menu == "🛠️ Mantenimiento de la App":
     with m_c2:
         st.metric("Total Partidas Activas", len(df_part))
     with m_c3:
-        db_file = DB_PATH
+        db_file = SQLITE_DB_PATH
         db_size_kb = (db_file.stat().st_size / 1024.0) if db_file.exists() else 0.0
         st.metric("Tamaño Base de Datos SQLite", f"{db_size_kb:.1f} KB")
         

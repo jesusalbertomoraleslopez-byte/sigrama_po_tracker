@@ -43,21 +43,40 @@ def load_remisiones_databases():
     
     return df_rem, df_det, df_tar
 
-def get_tracking_for_po(po_folio, df_partidas):
+import re
+
+def normalize_sku(s):
+    if not s or pd.isna(s):
+        return ""
+    return re.sub(r'[^A-Z0-9]', '', str(s).upper())
+
+def sku_matches(target_sku, candidate_piece):
+    t_norm = normalize_sku(target_sku)
+    c_norm = normalize_sku(candidate_piece)
+    if not t_norm or not c_norm:
+        return False
+    return t_norm == c_norm or t_norm in c_norm or c_norm in t_norm
+
+def get_tracking_for_po(po_folio, df_partidas, id_interno=""):
     """Calcula el estatus de remisión/envío para cada partida y global de una PO dada."""
     df_rem, df_det, df_tar = load_remisiones_databases()
     
     po_str = str(po_folio).strip()
     po_norm = normalize_po(po_str)
+    id_int_norm = normalize_po(id_interno) if id_interno else ""
+    id_int_clean = re.sub(r'[^0-9]', '', str(id_interno)) if id_interno else ""
     
     # 1. Filtrar registros de Detalle_Tarimas asociados a esta PO (búsqueda normalizada y flexible)
     df_det_po = pd.DataFrame()
-    if not df_det.empty and 'PO' in df_det.columns:
-        df_det['norm_po'] = df_det['PO'].apply(normalize_po)
-        df_det_po = df_det[
-            (df_det['norm_po'] == po_norm) |
-            (df_det['PO'].astype(str).str.strip().str.upper() == po_str.upper())
-        ].copy()
+    if not df_det.empty:
+        mask_match = pd.Series([False] * len(df_det))
+        if 'PO' in df_det.columns:
+            df_det['norm_po'] = df_det['PO'].apply(normalize_po)
+            mask_match = mask_match | (df_det['norm_po'] == po_norm) | (df_det['norm_po'].str.contains(po_norm, na=False)) | (df_det['PO'].astype(str).str.contains(po_str, na=False))
+        if 'Proyecto' in df_det.columns and id_int_clean and len(id_int_clean) >= 2:
+            df_det['norm_proy'] = df_det['Proyecto'].apply(normalize_po)
+            mask_match = mask_match | (df_det['norm_proy'] == id_int_norm) | (df_det['norm_proy'].str.contains(id_int_clean, na=False)) | (df_det['Proyecto'].astype(str).str.contains(id_int_clean, na=False))
+        df_det_po = df_det[mask_match].copy()
         
     # Mapeo de Tarimas a Folios de Remisión
     tarima_to_remision = {}
@@ -116,13 +135,8 @@ def get_tracking_for_po(po_folio, df_partidas):
             rem_folios_partida = set()
             
             if not df_det_po.empty:
-                # Coincidencia por SKU Planta, SKU Cliente o por número de pieza en descripción
-                match_det = df_det_po[
-                    (df_det_po['SKU'].astype(str).str.strip().str.upper() == sku) |
-                    ((sku_cli != '') & (df_det_po['SKU'].astype(str).str.strip().str.upper() == sku_cli)) |
-                    (df_det_po['SKU'].astype(str).str.strip().str.upper().isin([s for s in desc_prod.split() if len(s) > 3])) |
-                    (len(df_partidas) == 1)  # Si la PO solo tiene una partida, asignar las tarimas de esa PO
-                ]
+                # Coincidencia flexible por SKU Planta o SKU Cliente
+                match_det = df_det_po[df_det_po['SKU'].apply(lambda p: sku_matches(sku, p) or (sku_cli and sku_matches(sku_cli, p)))]
                 
                 for _, d_row in match_det.iterrows():
                     t_id = str(d_row.get('ID_Tarima', '')).strip()

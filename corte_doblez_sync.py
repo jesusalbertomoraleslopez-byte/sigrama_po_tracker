@@ -1,18 +1,20 @@
 import pandas as pd
 import os
+import re
 from pathlib import Path
-from config import normalize_po
+from config import normalize_po, get_corte_doblez_dir
 
-POSSIBLE_CORTE_DOBLEZ_DIRS = [
-    Path(r'C:/Users/albertol/.gemini/antigravity/scratch/app_corte_doblez'),
-    Path(__file__).resolve().parent.parent / 'app_corte_doblez'
-]
+def normalize_sku(s):
+    if not s or pd.isna(s):
+        return ""
+    return re.sub(r'[^A-Z0-9]', '', str(s).upper())
 
-def get_corte_doblez_dir():
-    for d in POSSIBLE_CORTE_DOBLEZ_DIRS:
-        if d.exists() and (d / 'sigrama_database.xlsx').exists():
-            return d
-    return POSSIBLE_CORTE_DOBLEZ_DIRS[0]
+def sku_matches(target_sku, candidate_piece):
+    t_norm = normalize_sku(target_sku)
+    c_norm = normalize_sku(candidate_piece)
+    if not t_norm or not c_norm:
+        return False
+    return t_norm == c_norm or t_norm in c_norm or c_norm in t_norm
 
 def load_corte_doblez_databases():
     """Carga las bases de datos relevantes de la app de Corte y Doblez."""
@@ -33,12 +35,13 @@ def load_corte_doblez_databases():
         print(f'Error loading Corte y Doblez DB: {e}')
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-def get_corte_doblez_tracking_for_po(po_folio, df_partidas):
+def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno=""):
     """Calcula el avance de manufactura en planta (Corte, Doblez, Liberado) para una PO."""
     df_ord, df_pie, df_ava, df_tar = load_corte_doblez_databases()
     
     po_str = str(po_folio).strip()
     po_norm = normalize_po(po_str)
+    id_int_clean = re.sub(r'[^0-9]', '', str(id_interno)) if id_interno else ""
     
     # 1. Encontrar OFs relacionadas con esta PO
     matched_ofs = set()
@@ -46,9 +49,13 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas):
         for _, o_row in df_ord.iterrows():
             of_num = str(o_row.get('of_number', '')).strip()
             po_field = str(o_row.get('po', '')).strip()
+            proy_field = str(o_row.get('proyecto', '')).strip()
             
-            # Checar coincidencia en campo PO o en el nombre de la OF
-            if (po_field and normalize_po(po_field) == po_norm) or (po_norm and po_norm in normalize_po(of_num)):
+            # Coincidencia por PO, por nombre de OF o por ID Interno
+            if (po_field and normalize_po(po_field) == po_norm) or \
+               (po_norm and po_norm in normalize_po(of_num)) or \
+               (po_str and po_str in of_num) or \
+               (id_int_clean and len(id_int_clean) >= 2 and id_int_clean in normalize_po(of_num)):
                 matched_ofs.add(of_num)
                 
     # 2. Filtrar piezas y avances de esas OFs
@@ -72,41 +79,32 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas):
             c_prog = 0.0
             c_corte = 0.0
             c_doblez = 0.0
+            c_rebabeo = 0.0
             c_liberado = 0.0
             
-            # Buscar en piezas programadas
+            # Buscar en piezas programadas con matching flexible de SKU
             if not df_pie_po.empty:
-                m_pie = df_pie_po[
-                    (df_pie_po['no_pieza'].astype(str).str.strip().str.upper() == sku) |
-                    ((sku_cli != '') & (df_pie_po['no_pieza'].astype(str).str.strip().str.upper() == sku_cli))
-                ]
+                m_pie = df_pie_po[df_pie_po['no_pieza'].apply(lambda p: sku_matches(sku, p) or (sku_cli and sku_matches(sku_cli, p)))]
                 c_prog = float(m_pie['cantidad'].sum()) if not m_pie.empty else 0.0
                 
             # Buscar en avances por área
             if not df_ava_po.empty:
-                m_ava = df_ava_po[
-                    (df_ava_po['no_pieza'].astype(str).str.strip().str.upper() == sku) |
-                    ((sku_cli != '') & (df_ava_po['no_pieza'].astype(str).str.strip().str.upper() == sku_cli))
-                ]
+                m_ava = df_ava_po[df_ava_po['no_pieza'].apply(lambda p: sku_matches(sku, p) or (sku_cli and sku_matches(sku_cli, p)))]
                 if not m_ava.empty:
-                    c_corte = float(m_ava[m_ava['area'].str.lower() == 'corte']['cantidad'].sum())
-                    c_doblez = float(m_ava[m_ava['area'].str.lower() == 'doblez']['cantidad'].sum())
-                    c_liberado = float(m_ava[m_ava['area'].str.lower().isin(['liberado', 'empaque'])]['cantidad'].sum())
+                    c_corte = float(m_ava[m_ava['area'].astype(str).str.lower() == 'corte']['cantidad'].sum())
+                    c_doblez = float(m_ava[m_ava['area'].astype(str).str.lower() == 'doblez']['cantidad'].sum())
+                    c_rebabeo = float(m_ava[m_ava['area'].astype(str).str.lower() == 'rebabeo']['cantidad'].sum())
+                    c_liberado = float(m_ava[m_ava['area'].astype(str).str.lower().isin(['liberado', 'empaque'])]['cantidad'].sum())
                     
-            # Si no hubo avances detallados pero se armaron tarimas de planta
             if c_liberado == 0.0 and not df_tar_po.empty:
-                m_tar = df_tar_po[
-                    (df_tar_po['no_pieza'].astype(str).str.strip().str.upper() == sku) |
-                    ((sku_cli != '') & (df_tar_po['no_pieza'].astype(str).str.strip().str.upper() == sku_cli))
-                ]
+                m_tar = df_tar_po[df_tar_po['no_pieza'].apply(lambda p: sku_matches(sku, p) or (sku_cli and sku_matches(sku_cli, p)))]
                 c_liberado = float(m_tar['cantidad'].sum()) if not m_tar.empty else 0.0
                 
-            # Si se terminó o remisionó en almacén, como mínimo está fabricado
-            c_terminado_real = max(c_liberado, c_doblez, c_corte)
+            c_terminado_real = max(c_liberado, c_doblez, c_rebabeo, c_corte)
             
-            total_cortado += c_corte
-            total_doblado += c_doblez
-            total_terminado += c_terminado_real
+            total_cortado += min(cant_req, c_corte)
+            total_doblado += min(cant_req, c_doblez)
+            total_terminado += min(cant_req, c_terminado_real)
             
             pct_cd = (c_terminado_real / cant_req * 100.0) if cant_req > 0 else 0.0
             

@@ -1102,9 +1102,11 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     st.toast("✅ Consultando datos en tiempo real de Corte/Doblez y Remisiones...")
                     st.rerun()
 
-            # Consultar ambas aplicaciones
-            rem_tracking = get_tracking_for_po(sel_po, df_partidas_po)
-            cd_tracking = get_corte_doblez_tracking_for_po(sel_po, df_partidas_po)
+            id_int_txt = str(cab_info.get('id_interno', '')).strip()
+            
+            # Consultar ambas aplicaciones con Folio PO e ID Interno
+            rem_tracking = get_tracking_for_po(sel_po, df_partidas_po, id_interno=id_int_txt)
+            cd_tracking = get_corte_doblez_tracking_for_po(sel_po, df_partidas_po, id_interno=id_int_txt)
             
             tot_req = float(rem_tracking.get('total_requerido', 0.0) or 0.0)
             tot_fab = float(cd_tracking.get('total_fabricado', cd_tracking.get('total_terminado_planta', 0.0)) or 0.0)

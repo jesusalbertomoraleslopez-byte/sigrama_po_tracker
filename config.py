@@ -12,10 +12,21 @@ EXCEL_CABECERA_PATH = DATA_DIR / 'BD_POs_Cabecera.xlsx'
 EXCEL_REQ_PATH = DATA_DIR / 'BD_Requerimientos_POs.xlsx'
 EXCEL_PARTIDAS_DETALLE_PATH = DATA_DIR / 'BD_POs_Partidas_Detalladas.xlsx'
 
+SYNC_DB_DIR = DATA_DIR / 'sync_databases'
+SYNC_DB_DIR.mkdir(exist_ok=True, parents=True)
+
 # Directorio de la App de Remisiones (para integración directa)
 POSSIBLE_REMISIONES_DIRS = [
-    BASE_DIR.parent / 'remisiones-de-materiales',
     Path(r'C:/Users/albertol/.gemini/antigravity/scratch/remisiones-de-materiales'),
+    BASE_DIR.parent / 'remisiones-de-materiales',
+    SYNC_DB_DIR,
+    DATA_DIR
+]
+
+POSSIBLE_CORTE_DOBLEZ_DIRS = [
+    Path(r'C:/Users/albertol/.gemini/antigravity/scratch/app_corte_doblez'),
+    BASE_DIR.parent / 'app_corte_doblez',
+    SYNC_DB_DIR,
     DATA_DIR
 ]
 
@@ -23,7 +34,13 @@ def get_remisiones_dir():
     for d in POSSIBLE_REMISIONES_DIRS:
         if d.exists() and (d / 'BD_Datos_Generales_Remision.xlsx').exists():
             return d
-    return DATA_DIR
+    return SYNC_DB_DIR
+
+def get_corte_doblez_dir():
+    for d in POSSIBLE_CORTE_DOBLEZ_DIRS:
+        if d.exists() and (d / 'sigrama_database.xlsx').exists():
+            return d
+    return SYNC_DB_DIR
 
 # Estilos corporativos SIGRAMA
 PRIMARY_COLOR = '#EC2024'  # Rojo Corporativo

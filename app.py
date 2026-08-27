@@ -175,6 +175,7 @@ with st.sidebar:
             "📊 Dashboard Ejecutivo",
             "🎯 Matriz de Control 360° (Producción + Remisión)",
             "📋 Matriz de Órdenes (POs)",
+            "✏️ Ajuste y Control Maestro de POs",
             "🔍 Ficha de Trazabilidad 360°",
             "📬 Bandeja de Correos & OCR",
             "📥 Registrar / Cargar PO",
@@ -431,7 +432,7 @@ elif menu == "🎯 Matriz de Control 360° (Producción + Remisión)":
 # ==============================================================================
 elif menu == "📋 Matriz de Órdenes (POs)":
     st.title("📋 Matriz Maestra de Órdenes de Compra")
-    st.markdown("Consulta, búsqueda global y filtrado de todas las POs registradas con su estatus de remisión.")
+    st.markdown("Consulta, búsqueda global y ordenamiento de todas las POs registradas con sus identificadores internos y estatus de remisión.")
     
     df_pos = get_all_pos()
     df_part = get_all_partidas()
@@ -441,16 +442,24 @@ elif menu == "📋 Matriz de Órdenes (POs)":
     else:
         df_summary = get_global_pos_tracking_summary(df_pos, df_part)
         
-        # Filtros Superiores
-        f1, f2, f3 = st.columns([2, 1, 1])
+        # Filtros y Ordenamiento Superior
+        f1, f2, f3, f4 = st.columns([2, 1, 1, 1.5])
         with f1:
-            q_search = st.text_input("🔍 Búsqueda rápida (Folio PO, Proyecto, SKU, Comprador, Solicitante):", "")
+            q_search = st.text_input("🔍 Búsqueda rápida (ID Interno, Folio, Proyecto, Comprador):", "")
         with f2:
             estatus_opts = ["Todos"] + list(df_summary['estatus_remision'].unique())
             sel_estatus = st.selectbox("Filtrar por Estatus:", estatus_opts)
         with f3:
             proy_opts = ["Todos"] + [p for p in df_summary['proyecto'].dropna().unique() if str(p).strip()]
             sel_proy = st.selectbox("Filtrar por Proyecto:", proy_opts)
+        with f4:
+            sort_opt = st.selectbox("Ordenar Matriz por:", [
+                "🔢 ID Interno (INT-0001, INT-0002...)",
+                "📅 Fecha de Llegada (Más reciente)",
+                "📄 Folio PO",
+                "🎯 % Avance Cumplimiento",
+                "💰 Importe Total ($)"
+            ])
             
         df_filtered = df_summary.copy()
         
@@ -458,6 +467,7 @@ elif menu == "📋 Matriz de Órdenes (POs)":
             q = q_search.strip().lower()
             df_filtered = df_filtered[
                 df_filtered['po'].astype(str).str.lower().str.contains(q) |
+                df_filtered.get('id_interno', pd.Series(['']*len(df_filtered))).astype(str).str.lower().str.contains(q) |
                 df_filtered['proyecto'].astype(str).str.lower().str.contains(q) |
                 df_filtered['solicitante'].astype(str).str.lower().str.contains(q) |
                 df_filtered['comprador'].astype(str).str.lower().str.contains(q) |
@@ -470,28 +480,52 @@ elif menu == "📋 Matriz de Órdenes (POs)":
         if sel_proy != "Todos":
             df_filtered = df_filtered[df_filtered['proyecto'] == sel_proy]
             
-        st.write(f"Mostrando **{len(df_filtered)}** de **{len(df_summary)}** Órdenes de Compra:")
+        # Aplicar ordenamiento
+        if "ID Interno" in sort_opt:
+            df_filtered['id_sort_key'] = df_filtered['id_interno'].apply(lambda x: str(x) if str(x).strip() else 'ZZZ')
+            df_filtered = df_filtered.sort_values(by=['id_sort_key', 'po'], ascending=[True, True]).drop(columns=['id_sort_key'])
+        elif "Fecha de Llegada" in sort_opt:
+            df_filtered = df_filtered.sort_values(by=['fecha_llegada', 'fecha_pedido', 'po'], ascending=[False, False, False])
+        elif "Folio PO" in sort_opt:
+            df_filtered = df_filtered.sort_values(by=['po'], ascending=[True])
+        elif "% Avance" in sort_opt:
+            df_filtered = df_filtered.sort_values(by=['pct_cumplimiento'], ascending=[False])
+        elif "Importe Total" in sort_opt:
+            df_filtered = df_filtered.sort_values(by=['total'], ascending=[False])
+            
+        st.write(f"Mostrando **{len(df_filtered)}** de **{len(df_summary)}** Órdenes de Compra ordenadas:")
         
-        display_cols = [
-            'po', 'fecha_pedido', 'proyecto', 'requisicion', 'solicitante', 'comprador',
-            'piezas_requeridas', 'piezas_remisionadas', 'piezas_pendientes',
-            'pct_cumplimiento', 'estatus_remision', 'remisiones_asociadas', 'total'
-        ]
+        # Columnas a desplegar
+        cols_present = [c for c in [
+            'id_interno', 'po', 'fecha_llegada', 'fecha_solicitada', 'proyecto',
+            'articulos_count', 'piezas_requeridas', 'piezas_remisionadas', 'piezas_pendientes',
+            'pct_cumplimiento', 'archivo_correo', 'archivo_pdf', 'comprador',
+            'estatus_remision', 'total'
+        ] if c in df_filtered.columns]
         
+        # Formatear indicadores de archivos
+        df_display = df_filtered[cols_present].copy()
+        if 'archivo_correo' in df_display.columns:
+            df_display['archivo_correo'] = df_display['archivo_correo'].apply(lambda x: '✅ .MSG' if str(x).strip() else '⚪ No')
+        if 'archivo_pdf' in df_display.columns:
+            df_display['archivo_pdf'] = df_display['archivo_pdf'].apply(lambda x: '✅ .PDF' if str(x).strip() else '⚪ No')
+            
         st.dataframe(
-            df_filtered[display_cols].rename(columns={
+            df_display.rename(columns={
+                'id_interno': 'ID Interno',
                 'po': 'PO / Folio',
-                'fecha_pedido': 'Fecha Pedido',
+                'fecha_llegada': 'Llegada PO',
+                'fecha_solicitada': 'Fecha Solicitada',
                 'proyecto': 'Proyecto',
-                'requisicion': 'Requisición',
-                'solicitante': 'Solicitante',
-                'comprador': 'Comprador',
+                'articulos_count': 'Artículos #',
                 'piezas_requeridas': 'Cant. Req.',
                 'piezas_remisionadas': 'Enviadas',
                 'piezas_pendientes': 'Pendientes',
                 'pct_cumplimiento': '% Avance',
+                'archivo_correo': 'Correo .MSG',
+                'archivo_pdf': 'Doc .PDF',
+                'comprador': 'Comprador',
                 'estatus_remision': 'Estatus Entrega',
-                'remisiones_asociadas': 'Remisiones Asociadas',
                 'total': 'Importe Total'
             }),
             use_container_width=True,
@@ -513,7 +547,194 @@ elif menu == "📋 Matriz de Órdenes (POs)":
 
 
 # ==============================================================================
-# SECCIÓN 3: FICHA DE TRAZABILIDAD 360°
+# SECCIÓN 3: AJUSTE Y CONTROL MAESTRO DE POs (FORMULARIO CON NAVEGACIÓN)
+# ==============================================================================
+elif menu == "✏️ Ajuste y Control Maestro de POs":
+    st.title("✏️ Ajuste y Control Maestro de Órdenes de Compra")
+    st.markdown("Navega entre las Órdenes de Compra para ajustar sus **fechas de llegada**, **identificadores internos (INT-XXXX)**, **archivos digitales** y **condiciones de compra**.")
+    
+    df_pos = get_all_pos()
+    df_part = get_all_partidas()
+    
+    if df_pos.empty:
+        st.info("💡 No hay POs registradas para ajustar.")
+    else:
+        # Lista ordenada de POs
+        pos_list = df_pos['po'].astype(str).tolist()
+        total_pos = len(pos_list)
+        
+        # Inicializar índice en session_state
+        if 'current_po_edit_idx' not in st.session_state or st.session_state['current_po_edit_idx'] >= total_pos:
+            st.session_state['current_po_edit_idx'] = 0
+            
+        cur_idx = st.session_state['current_po_edit_idx']
+        
+        # Barra de Navegación Rápida
+        c_nav1, c_nav2, c_nav3 = st.columns([1, 4, 1])
+        with c_nav1:
+            if st.button("⬅️ Anterior", use_container_width=True, disabled=(cur_idx == 0)):
+                st.session_state['current_po_edit_idx'] = max(0, cur_idx - 1)
+                st.rerun()
+        with c_nav2:
+            # Construir etiquetas descriptivas para el selectbox
+            label_options = []
+            for i, p_val in enumerate(pos_list):
+                row_p = df_pos[df_pos['po'].astype(str) == p_val].iloc[0]
+                int_id = str(row_p.get('id_interno', '')).strip()
+                proy_txt = str(row_p.get('proyecto', '')).strip()
+                prefix = f"[{int_id}] " if int_id else ""
+                label_options.append(f"{i+1}/{total_pos}: {prefix}PO {p_val} • {proy_txt}")
+                
+            selected_label_idx = st.selectbox(
+                "Seleccionar PO para Ajuste:",
+                range(total_pos),
+                format_func=lambda i: label_options[i],
+                index=cur_idx,
+                key="sb_select_po_edit"
+            )
+            if selected_label_idx != cur_idx:
+                st.session_state['current_po_edit_idx'] = selected_label_idx
+                st.rerun()
+                
+        with c_nav3:
+            if st.button("Siguiente ➡️", use_container_width=True, disabled=(cur_idx == total_pos - 1)):
+                st.session_state['current_po_edit_idx'] = min(total_pos - 1, cur_idx + 1)
+                st.rerun()
+                
+        st.progress((cur_idx + 1) / total_pos, text=f"Orden {cur_idx + 1} de {total_pos} • ({((cur_idx + 1)/total_pos)*100:.1f}% del catálogo)")
+        
+        # Datos de la PO seleccionada
+        selected_po = pos_list[cur_idx]
+        cab_row = df_pos[df_pos['po'].astype(str) == selected_po].iloc[0]
+        partidas_po = df_part[df_part['po'].astype(str) == selected_po] if not df_part.empty else pd.DataFrame()
+        
+        # Tarjeta de Resumen / Métricas de Solo Lectura
+        st.write("")
+        with st.container(border=True):
+            st.markdown(f"### 📋 Ficha de Control: PO `{selected_po}`")
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                cant_articulos = len(partidas_po)
+                st.metric("3. Cantidad de Artículos (#)", f"{cant_articulos} Partidas", help="Número de partidas/renglones en esta PO")
+            with m2:
+                cant_piezas_tot = float(partidas_po['cantidad_requerida'].sum()) if not partidas_po.empty else 0.0
+                st.metric("3. Cantidad Total de Piezas", f"{cant_piezas_tot:,.0f} pzas", help="Suma de todas las piezas requeridas")
+            with m3:
+                importe_tot = float(cab_row.get('total', 0) or 0)
+                st.metric("Importe Total ($)", f"${importe_tot:,.2f} MXN")
+            with m4:
+                estatus_val = str(cab_row.get('estatus_general', 'Registrada'))
+                st.metric("Estatus Actual", estatus_val)
+                
+        # Formulario de Ajuste de Información
+        st.markdown("#### ✏️ Datos y Campos de Importancia a Ajustar:")
+        
+        with st.form(key=f"form_edit_po_{selected_po}"):
+            f_col1, f_col2 = st.columns(2)
+            
+            with f_col1:
+                # 2. Nombre Interno
+                val_id_int = str(cab_row.get('id_interno', '')).strip()
+                new_id_interno = st.text_input(
+                    "2. Nombre Interno (ej. INT-0001, INT-0059):",
+                    value=val_id_int if val_id_int else f"INT-{(cur_idx+1):04d}",
+                    help="Identificador secuencial interno de Sigrama para ordenamiento."
+                )
+                
+                # 1. Fecha de llegada de la PO
+                val_f_llegada = str(cab_row.get('fecha_llegada', '')).strip()
+                try:
+                    default_f_llegada = datetime.datetime.strptime(val_f_llegada, "%Y-%m-%d").date() if val_f_llegada else datetime.date.today()
+                except Exception:
+                    default_f_llegada = datetime.date.today()
+                new_fecha_llegada = st.date_input("1. Fecha de Llegada de la PO (Recepción de Correo):", value=default_f_llegada)
+                
+                # 6. Fecha Solicitada / Compromiso
+                val_f_solic = str(cab_row.get('fecha_solicitada', '')).strip()
+                try:
+                    default_f_solic = datetime.datetime.strptime(val_f_solic, "%Y-%m-%d").date() if val_f_solic else (default_f_llegada + datetime.timedelta(days=14))
+                except Exception:
+                    default_f_solic = default_f_llegada + datetime.timedelta(days=14)
+                new_fecha_solicitada = st.date_input("6. Fecha Solicitada (Compromiso Entrega):", value=default_f_solic)
+                
+                # 7. Comprador
+                val_comp = str(cab_row.get('comprador', '')).strip()
+                new_comprador = st.text_input("7. Comprador / Contacto de Compras:", value=val_comp)
+                
+            with f_col2:
+                # 4. Existe Archivo de Correo
+                val_mail = str(cab_row.get('archivo_correo', '')).strip()
+                new_archivo_correo = st.text_input(
+                    "4. Archivo de Correo (.MSG):",
+                    value=val_mail if val_mail else f"INT {(cur_idx+1):04d} - OC {selected_po} SIGRAMA METALES.msg",
+                    help="Nombre del correo .msg o evidencia de recepción."
+                )
+                
+                # 5. Documento de PO
+                val_pdf = str(cab_row.get('archivo_pdf', '')).strip()
+                new_archivo_pdf = st.text_input(
+                    "5. Documento de PO (.PDF):",
+                    value=val_pdf if val_pdf else f"{selected_po} SIGRAMA METALES JMC.PDF",
+                    help="Nombre del archivo PDF oficial de la Orden de Compra."
+                )
+                
+                # Proyecto y Solicitante
+                new_proyecto = st.text_input("Proyecto / Uso:", value=str(cab_row.get('proyecto', '')))
+                new_solicitante = st.text_input("Solicitante / Requisición:", value=str(cab_row.get('solicitante', '')))
+                
+            new_observaciones = st.text_area("Observaciones y Notas de Control:", value=str(cab_row.get('observaciones', '')), height=70)
+            
+            btn_save, btn_save_next = st.columns([1, 1])
+            with btn_save:
+                submit_save = st.form_submit_button("💾 Guardar Cambios de esta PO", type="primary", use_container_width=True)
+            with btn_save_next:
+                submit_save_next = st.form_submit_button("💾 Guardar y Pasar al Siguiente ➡️", use_container_width=True)
+                
+            if submit_save or submit_save_next:
+                fields_to_update = {
+                    'id_interno': str(new_id_interno).strip().upper(),
+                    'fecha_llegada': str(new_fecha_llegada),
+                    'fecha_solicitada': str(new_fecha_solicitada),
+                    'archivo_correo': str(new_archivo_correo).strip(),
+                    'archivo_pdf': str(new_archivo_pdf).strip(),
+                    'comprador': str(new_comprador).strip(),
+                    'proyecto': str(new_proyecto).strip(),
+                    'solicitante': str(new_solicitante).strip(),
+                    'observaciones': str(new_observaciones).strip()
+                }
+                
+                ok_u, msg_u = update_po_fields(selected_po, fields_to_update)
+                if ok_u:
+                    st.success(f"✅ {msg_u}")
+                    if submit_save_next and cur_idx < total_pos - 1:
+                        st.session_state['current_po_edit_idx'] = cur_idx + 1
+                    st.rerun()
+                else:
+                    st.error(f"❌ {msg_u}")
+                    
+        # Desglose de partidas de la PO
+        if not partidas_po.empty:
+            with st.expander(f"📦 Ver Partidas y SKUs de la PO {selected_po} ({len(partidas_po)} renglones)", expanded=False):
+                col_p = [c for c in ['item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto', 'cantidad_requerida', 'unidad', 'precio_unitario', 'precio_total', 'fecha_entrega'] if c in partidas_po.columns]
+                st.dataframe(
+                    partidas_po[col_p].rename(columns={
+                        'item_no': 'Item #',
+                        'sku_cliente': 'SKU Cliente (Clave)',
+                        'clave_sku': 'SKU Nuestro (Planta)',
+                        'descripcion_producto': 'Descripción',
+                        'cantidad_requerida': 'Cantidad',
+                        'unidad': 'Unidad',
+                        'precio_unitario': 'P. Unitario',
+                        'precio_total': 'P. Total',
+                        'fecha_entrega': 'Fecha Entrega'
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+
+# ==============================================================================
+# SECCIÓN 4: FICHA DE TRAZABILIDAD 360°
 # ==============================================================================
 elif menu == "🔍 Ficha de Trazabilidad 360°":
     st.title("🔍 Ficha de Trazabilidad 360° por Orden de Compra")

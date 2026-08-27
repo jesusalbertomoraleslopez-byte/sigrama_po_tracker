@@ -24,6 +24,11 @@ def init_db():
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS po_cabecera (
         po TEXT PRIMARY KEY,
+        id_interno TEXT DEFAULT '',
+        fecha_llegada TEXT DEFAULT '',
+        fecha_solicitada TEXT DEFAULT '',
+        archivo_correo TEXT DEFAULT '',
+        archivo_pdf TEXT DEFAULT '',
         fecha_pedido TEXT,
         proyecto TEXT,
         solicitante TEXT,
@@ -53,6 +58,13 @@ def init_db():
         color_texto TEXT
     )
     ''')
+    
+    # Migración automática si campos no existen en po_cabecera
+    cursor.execute("PRAGMA table_info(po_cabecera)")
+    cab_cols = [row[1] for row in cursor.fetchall()]
+    for col_name in ['id_interno', 'fecha_llegada', 'fecha_solicitada', 'archivo_correo', 'archivo_pdf']:
+        if col_name not in cab_cols:
+            cursor.execute(f"ALTER TABLE po_cabecera ADD COLUMN {col_name} TEXT DEFAULT ''")
     
     # 2. Tabla de Partidas de PO
     cursor.execute('''
@@ -182,14 +194,20 @@ def save_po(cabecera, partidas, usuario='Usuario'):
     try:
         cursor.execute('''
             INSERT INTO po_cabecera (
-                po, fecha_pedido, proyecto, solicitante, requisicion, destino,
+                po, id_interno, fecha_llegada, fecha_solicitada, archivo_correo, archivo_pdf,
+                fecha_pedido, proyecto, solicitante, requisicion, destino,
                 proveedor, proveedor_atencion, cliente_facturar_a, cliente_rfc, cliente_direccion,
                 forma_pago, lab, tiempo_entrega, comprador,
                 subtotal, descuento, iva, ret_iva, ret_isr, total, moneda,
                 observaciones, estatus_general, fecha_registro,
                 texto_etiqueta, color_fondo, color_texto
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(po) DO UPDATE SET
+                id_interno=COALESCE(NULLIF(excluded.id_interno, ''), po_cabecera.id_interno),
+                fecha_llegada=COALESCE(NULLIF(excluded.fecha_llegada, ''), po_cabecera.fecha_llegada),
+                fecha_solicitada=COALESCE(NULLIF(excluded.fecha_solicitada, ''), po_cabecera.fecha_solicitada),
+                archivo_correo=COALESCE(NULLIF(excluded.archivo_correo, ''), po_cabecera.archivo_correo),
+                archivo_pdf=COALESCE(NULLIF(excluded.archivo_pdf, ''), po_cabecera.archivo_pdf),
                 fecha_pedido=excluded.fecha_pedido,
                 proyecto=excluded.proyecto,
                 solicitante=excluded.solicitante,
@@ -218,6 +236,11 @@ def save_po(cabecera, partidas, usuario='Usuario'):
                 color_texto=excluded.color_texto
         ''', (
             po_folio,
+            str(cabecera.get('id_interno', '')).strip(),
+            str(cabecera.get('fecha_llegada', '')).strip(),
+            str(cabecera.get('fecha_solicitada', '')).strip(),
+            str(cabecera.get('archivo_correo', '')).strip(),
+            str(cabecera.get('archivo_pdf', '')).strip(),
             cabecera.get('fecha_pedido', ''),
             cabecera.get('proyecto', ''),
             cabecera.get('solicitante', ''),
@@ -293,6 +316,40 @@ def save_po(cabecera, partidas, usuario='Usuario'):
         conn.close()
         return False, f'Error al guardar PO: {e}'
 
+def update_po_fields(po_folio, fields_dict, usuario='Usuario'):
+    """Actualiza campos específicos de la cabecera de una PO de forma atómica."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    if not fields_dict:
+        conn.close()
+        return True, "Sin cambios"
+        
+    set_clauses = []
+    params = []
+    for k, v in fields_dict.items():
+        set_clauses.append(f"{k} = ?")
+        params.append(v)
+    params.append(str(po_folio))
+    
+    try:
+        cursor.execute(f"UPDATE po_cabecera SET {', '.join(set_clauses)} WHERE po = ?", params)
+        cursor.execute('''
+            INSERT INTO po_historial (po, fecha_hora, usuario, accion, detalle)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (
+            str(po_folio), now_str, usuario, 'Ajuste de Información',
+            f"Se ajustaron campos de control: {', '.join(fields_dict.keys())}"
+        ))
+        conn.commit()
+        conn.close()
+        export_sync_to_excel()
+        return True, f"Datos de la PO {po_folio} actualizados correctamente."
+    except Exception as e:
+        conn.close()
+        return False, f"Error al actualizar campos: {e}"
+
 def delete_po(po_folio, usuario='Usuario'):
     conn = get_connection()
     cursor = conn.cursor()
@@ -314,7 +371,15 @@ def delete_po(po_folio, usuario='Usuario'):
 
 def get_all_pos():
     conn = get_connection()
-    df = pd.read_sql_query('SELECT * FROM po_cabecera ORDER BY po DESC', conn)
+    # Ordenar preferentemente por ID Interno (INT-0001...), luego fecha_llegada, luego folio
+    df = pd.read_sql_query('''
+        SELECT * FROM po_cabecera 
+        ORDER BY 
+            CASE WHEN id_interno IS NOT NULL AND id_interno != '' THEN 0 ELSE 1 END ASC,
+            id_interno ASC,
+            fecha_llegada DESC,
+            po DESC
+    ''', conn)
     conn.close()
     return df
 

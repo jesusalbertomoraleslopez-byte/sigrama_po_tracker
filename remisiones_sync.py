@@ -212,6 +212,7 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
         tracking = get_tracking_for_po(po_folio, partidas_po)
         
         row_summary = dict(po_row)
+        row_summary['articulos_count'] = len(partidas_po) if not partidas_po.empty else 0
         row_summary['piezas_requeridas'] = tracking['total_requerido']
         row_summary['piezas_remisionadas'] = tracking['total_remisionado']
         row_summary['piezas_pendientes'] = tracking['total_pendiente']

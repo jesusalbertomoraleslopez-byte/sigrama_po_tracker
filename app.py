@@ -1225,6 +1225,8 @@ Parque Industrial Rio XIX, Torreón, Coahuila.
                         st.markdown(f"• **Solicitante:** `{item['cab'].get('solicitante')}`")
                         st.markdown(f"• **Total:** `${item['cab'].get('total', 0):,.2f} MXN`")
                     with c_b3:
+                        st.markdown(f"• **Partidas:** `{len(item['part'])}`")
+                        
                     df_p_view = pd.DataFrame(item['part'])
                     col_order = [c for c in ['item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto', 'cantidad_requerida', 'unidad', 'precio_unitario', 'precio_total', 'fecha_entrega', 'parcialidad', 'observaciones_partida'] if c in df_p_view.columns]
                     st.dataframe(

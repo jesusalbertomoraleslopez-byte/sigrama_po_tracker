@@ -14,26 +14,35 @@ def extract_attachments_from_msg(msg_bytes_or_path):
         else:
             msg = extract_msg.Message(msg_bytes_or_path)
             
-        subject = msg.subject or ""
-        sender = msg.sender or ""
-        date = str(msg.date) if msg.date else ""
-        body = msg.body or ""
-        
+        subject = getattr(msg, 'subject', '') or ""
+        sender = getattr(msg, 'sender', '') or ""
+        date = str(getattr(msg, 'date', '')) if getattr(msg, 'date', None) else ""
+        body = getattr(msg, 'body', '') or getattr(msg, 'htmlBody', '') or ""
+        if isinstance(body, bytes):
+            body = body.decode('utf-8', errors='ignore')
+            
         attachments = []
-        for att in msg.attachments:
-            att_name = att.longFilename or att.shortFilename or "archivo_adjunto.pdf"
-            att_data = att.data
-            attachments.append({
-                'filename': att_name,
-                'data': att_data,
-                'size_kb': round(len(att_data) / 1024, 1) if att_data else 0.0
-            })
+        for att in getattr(msg, 'attachments', []):
+            try:
+                att_name = getattr(att, 'longFilename', None) or getattr(att, 'shortFilename', None) or getattr(att, 'name', None) or "adjunto.pdf"
+                att_data = getattr(att, 'data', None)
+                if att_data is None and hasattr(att, 'getPayload'):
+                    att_data = att.getPayload()
+                    
+                if att_data:
+                    attachments.append({
+                        'filename': str(att_name),
+                        'data': att_data,
+                        'size_kb': round(len(att_data) / 1024, 1)
+                    })
+            except Exception as e_att:
+                print(f"Error procesando adjunto individual en .msg: {e_att}")
             
         return {
-            'subject': subject,
-            'sender': sender,
-            'date': date,
-            'body': body,
+            'subject': str(subject),
+            'sender': str(sender),
+            'date': str(date),
+            'body': str(body),
             'attachments': attachments
         }
     except Exception as e:
@@ -209,6 +218,35 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
                     'observaciones_partida': ''
                 })
             i += 1
+            
+    # Fallback si el clustering espacial estricto no encontró partidas:
+    if not all_partidas:
+        patron_fb = re.compile(r'(\d+(?:\.\d+)?)\s+(PIEZA|PZA|KG|METRO|JGO|LOTE|SER|PZS|PZ)\s+([A-Z0-9\-_]{3,20})\s+([A-Z0-9\-_/]{3,25})', re.IGNORECASE)
+        for page_idx, page in enumerate(doc):
+            t_lines = [l.strip() for l in page.get_text().split('\n') if l.strip()]
+            for l_i, l_str in enumerate(t_lines):
+                m_fb = patron_fb.search(l_str)
+                if m_fb:
+                    cant_fb = float(m_fb.group(1).replace(',', ''))
+                    unid_fb = m_fb.group(2).upper()
+                    sku_c_fb = m_fb.group(3).strip().upper()
+                    sku_n_fb = m_fb.group(4).strip().upper()
+                    desc_fb = t_lines[l_i+1] if (l_i+1 < len(t_lines) and not patron_fb.search(t_lines[l_i+1])) else f"Material {sku_n_fb}"
+                    if any(w in desc_fb.upper() for w in ['SUBTOTAL', 'TOTAL', 'PIEZA', 'PZA', 'OBSERVACIONES']):
+                        desc_fb = f"Material {sku_n_fb}"
+                    all_partidas.append({
+                        'item_no': len(all_partidas) + 1,
+                        'sku_cliente': sku_c_fb,
+                        'clave_sku': sku_n_fb,
+                        'descripcion_producto': desc_fb,
+                        'cantidad_requerida': cant_fb,
+                        'unidad': unid_fb,
+                        'precio_unitario': 0.0,
+                        'precio_total': 0.0,
+                        'fecha_entrega': datetime.date.today().strftime('%Y-%m-%d'),
+                        'parcialidad': 'P1',
+                        'observaciones_partida': ''
+                    })
             
     # 2. Extracción de Cabecera y Totales
     for page_idx, page in enumerate(doc):

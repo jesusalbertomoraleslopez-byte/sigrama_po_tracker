@@ -445,16 +445,61 @@ elif menu == "📬 Bandeja de Entrada OCR":
                             ctx_msg['remitente'] = sender_raw if sender_raw else 'Compras'
                             ctx_msg['asunto'] = msg_info.get('subject', '')
                             ctx_msg['msg_filename'] = f_name
+                            ctx_msg['body'] = msg_info.get('body', '')
                             
-                            for att in msg_info.get('attachments', []):
-                                att_n = att['filename']
-                                if att_n.lower().endswith('.pdf') and not any(w in att_n.lower() for w in ['plano', 'drawing', 'cotizacion']):
+                            found_pdf_in_msg = False
+                            atts = msg_info.get('attachments', [])
+                            for att in atts:
+                                att_n = str(att.get('filename', ''))
+                                att_d = att.get('data', b'')
+                                is_pdf_file = att_n.lower().endswith('.pdf') or (isinstance(att_d, (bytes, bytearray)) and att_d.startswith(b'%PDF'))
+                                
+                                if is_pdf_file and not any(w in att_n.lower() for w in ['plano', 'drawing', 'cotizacion']):
                                     try:
                                         ctx_msg['pdf_filename'] = att_n
-                                        cab_m, part_m = parse_po_pdf(att['data'], email_context=ctx_msg)
-                                        extracted_batch.append({'cab': cab_m, 'part': part_m, 'file_name': f"{f_name} ➔ {att_n}"})
+                                        cab_m, part_m = parse_po_pdf(att_d, email_context=ctx_msg)
+                                        if cab_m:
+                                            extracted_batch.append({'cab': cab_m, 'part': part_m, 'file_name': f"{f_name} ➔ {att_n}"})
+                                            found_pdf_in_msg = True
                                     except Exception as e_att:
-                                        st.error(f"Error en {att_n}: {e_att}")
+                                        st.error(f"Error procesando {att_n}: {e_att}")
+                                        
+                            # Si no se encontró archivo PDF en el .msg, extraer directamente del texto del correo:
+                            if not found_pdf_in_msg:
+                                po_detect = ctx_msg.get('po_detectada') or ''
+                                if not po_detect:
+                                    m_po_name = re.search(r'\b(26\d{2}[-\s]?\d{4}|26\d{6})\b', f"{f_name} {ctx_msg.get('asunto', '')}")
+                                    po_detect = m_po_name.group(1).replace('-', '').replace(' ', '') if m_po_name else "2608-TEMP"
+                                    
+                                cab_m = {
+                                    'po': po_detect,
+                                    'id_interno': id_int_auto or 'INT-TEMP',
+                                    'fecha_llegada': f_llegada_auto,
+                                    'fecha_solicitada': (datetime.date.today() + datetime.timedelta(days=14)).strftime('%Y-%m-%d'),
+                                    'archivo_correo': f_name,
+                                    'archivo_pdf': 'Cuerpo de Correo (.msg)',
+                                    'fecha_pedido': f_llegada_auto,
+                                    'proyecto': ctx_msg.get('asunto', 'PROYECTO CLIENTE') or 'PROYECTO CLIENTE',
+                                    'solicitante': 'CLIENTE',
+                                    'comprador': sender_raw if sender_raw else 'Compras',
+                                    'total': 0.0
+                                }
+                                part_m = []
+                                for idx_p, p_urg in enumerate(ctx_msg.get('partes_urgentes', []), start=1):
+                                    part_m.append({
+                                        'item_no': idx_p,
+                                        'sku_cliente': p_urg['sku'],
+                                        'clave_sku': p_urg['sku'],
+                                        'descripcion_producto': f"Material {p_urg['sku']}",
+                                        'cantidad_requerida': p_urg['total_requerido'],
+                                        'unidad': 'PIEZA',
+                                        'precio_unitario': 0.0,
+                                        'precio_total': 0.0,
+                                        'fecha_entrega': f_llegada_auto,
+                                        'parcialidad': 'P1',
+                                        'observaciones_partida': ''
+                                    })
+                                extracted_batch.append({'cab': cab_m, 'part': part_m, 'file_name': f_name})
                         else:
                             if any(w in f_name.lower() for w in ['plano', 'drawing', 'rev', 'cotizacion']):
                                 continue
@@ -471,13 +516,24 @@ elif menu == "📬 Bandeja de Entrada OCR":
                             except Exception as e:
                                 st.error(f"Error procesando {f_name}: {e}")
                                 
+                    # GUARDADO AUTOMÁTICO EN LA BASE DE DATOS
+                    guardadas_auto = 0
+                    for item in extracted_batch:
+                        ok_g, _ = save_po(item['cab'], item['part'])
+                        if ok_g:
+                            guardadas_auto += 1
+                            
                     st.session_state['ocr_batch_results'] = extracted_batch
-                    st.success(f"✅ Se extrajeron exitosamente **{len(extracted_batch)}** Órdenes de Compra con SKU Cliente y SKU Nuestro.")
-                    
+                    if extracted_batch:
+                        st.success(f"🎉 Se procesaron y registraron exitosamente **{len(extracted_batch)}** Órdenes de Compra en el sistema.")
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ No se pudieron extraer datos de la orden. Verifique que el archivo .msg contenga el PDF de la PO o que el archivo no esté protegido.")
+                        
         if 'ocr_batch_results' in st.session_state and st.session_state['ocr_batch_results']:
             b_list = st.session_state['ocr_batch_results']
             st.write("---")
-            st.markdown(f"### 📋 Lote de {len(b_list)} Órdenes Extraídas Listas para Registrar")
+            st.markdown(f"### 📋 Lote de {len(b_list)} Órdenes Registradas")
             
             for idx, item in enumerate(b_list):
                 with st.expander(f"📄 PO: {item['cab'].get('po', 'N/A')} • {item['cab'].get('proyecto', '')} ({item['file_name']})", expanded=True):
@@ -508,16 +564,6 @@ elif menu == "📬 Bandeja de Entrada OCR":
                         use_container_width=True,
                         hide_index=True
                     )
-                    
-            if st.button("🚀 Confirmar y Guardar Todo el Lote en Sistema", type="primary", use_container_width=True, key="btn_confirm_save_ocr"):
-                total_ok = 0
-                for item in b_list:
-                    ok_u, _ = save_po(item['cab'], item['part'])
-                    if ok_u:
-                        total_ok += 1
-                st.success(f"🎉 Se guardaron y sincronizaron **{total_ok} de {len(b_list)}** órdenes de compra.")
-                st.session_state.pop('ocr_batch_results', None)
-                st.rerun()
 
     # 2. Pestaña: Carga Masiva Excel
     with tab_ocr_excel:

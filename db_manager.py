@@ -60,6 +60,7 @@ def init_db():
         id_partida INTEGER PRIMARY KEY AUTOINCREMENT,
         po TEXT,
         item_no INTEGER,
+        sku_cliente TEXT,
         clave_sku TEXT,
         descripcion_producto TEXT,
         cantidad_requerida REAL,
@@ -72,6 +73,12 @@ def init_db():
         FOREIGN KEY(po) REFERENCES po_cabecera(po) ON DELETE CASCADE
     )
     ''')
+    
+    # Migración automática si sku_cliente no existe
+    cursor.execute("PRAGMA table_info(po_partidas)")
+    columns = [row[1] for row in cursor.fetchall()]
+    if 'sku_cliente' not in columns:
+        cursor.execute("ALTER TABLE po_partidas ADD COLUMN sku_cliente TEXT DEFAULT ''")
     
     # 3. Historial de Actividad
     cursor.execute('''
@@ -249,13 +256,14 @@ def save_po(cabecera, partidas, usuario='Usuario'):
             
             cursor.execute('''
                 INSERT INTO po_partidas (
-                    po, item_no, clave_sku, descripcion_producto,
+                    po, item_no, sku_cliente, clave_sku, descripcion_producto,
                     cantidad_requerida, unidad, precio_unitario, precio_total,
                     fecha_entrega, parcialidad, observaciones_partida
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 po_folio,
                 int(item.get('item_no', idx)),
+                str(item.get('sku_cliente', '')).strip().upper(),
                 str(item.get('clave_sku', '')).strip().upper(),
                 str(item.get('descripcion_producto', '')).strip(),
                 cant,

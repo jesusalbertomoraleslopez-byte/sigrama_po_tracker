@@ -107,6 +107,7 @@ def get_tracking_for_po(po_folio, df_partidas):
     if not df_partidas.empty:
         for _, part in df_partidas.iterrows():
             sku = str(part.get('clave_sku', '')).strip().upper()
+            sku_cli = str(part.get('sku_cliente', '')).strip().upper()
             desc_prod = str(part.get('descripcion_producto', '')).strip().upper()
             cant_req = float(part.get('cantidad_requerida', 0) or 0)
             total_requerido += cant_req
@@ -115,9 +116,10 @@ def get_tracking_for_po(po_folio, df_partidas):
             rem_folios_partida = set()
             
             if not df_det_po.empty:
-                # Coincidencia por SKU o por número de pieza en descripción
+                # Coincidencia por SKU Planta, SKU Cliente o por número de pieza en descripción
                 match_det = df_det_po[
                     (df_det_po['SKU'].astype(str).str.strip().str.upper() == sku) |
+                    ((sku_cli != '') & (df_det_po['SKU'].astype(str).str.strip().str.upper() == sku_cli)) |
                     (df_det_po['SKU'].astype(str).str.strip().str.upper().isin([s for s in desc_prod.split() if len(s) > 3])) |
                     (len(df_partidas) == 1)  # Si la PO solo tiene una partida, asignar las tarimas de esa PO
                 ]

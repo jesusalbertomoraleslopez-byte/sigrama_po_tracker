@@ -65,6 +65,7 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas):
     if not df_partidas.empty:
         for _, part in df_partidas.iterrows():
             sku = str(part.get('clave_sku', '')).strip().upper()
+            sku_cli = str(part.get('sku_cliente', '')).strip().upper()
             cant_req = float(part.get('cantidad_requerida', 0) or 0)
             total_req_cd += cant_req
             
@@ -75,12 +76,18 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas):
             
             # Buscar en piezas programadas
             if not df_pie_po.empty:
-                m_pie = df_pie_po[df_pie_po['no_pieza'].astype(str).str.strip().str.upper() == sku]
+                m_pie = df_pie_po[
+                    (df_pie_po['no_pieza'].astype(str).str.strip().str.upper() == sku) |
+                    ((sku_cli != '') & (df_pie_po['no_pieza'].astype(str).str.strip().str.upper() == sku_cli))
+                ]
                 c_prog = float(m_pie['cantidad'].sum()) if not m_pie.empty else 0.0
                 
             # Buscar en avances por área
             if not df_ava_po.empty:
-                m_ava = df_ava_po[df_ava_po['no_pieza'].astype(str).str.strip().str.upper() == sku]
+                m_ava = df_ava_po[
+                    (df_ava_po['no_pieza'].astype(str).str.strip().str.upper() == sku) |
+                    ((sku_cli != '') & (df_ava_po['no_pieza'].astype(str).str.strip().str.upper() == sku_cli))
+                ]
                 if not m_ava.empty:
                     c_corte = float(m_ava[m_ava['area'].str.lower() == 'corte']['cantidad'].sum())
                     c_doblez = float(m_ava[m_ava['area'].str.lower() == 'doblez']['cantidad'].sum())
@@ -88,7 +95,10 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas):
                     
             # Si no hubo avances detallados pero se armaron tarimas de planta
             if c_liberado == 0.0 and not df_tar_po.empty:
-                m_tar = df_tar_po[df_tar_po['no_pieza'].astype(str).str.strip().str.upper() == sku]
+                m_tar = df_tar_po[
+                    (df_tar_po['no_pieza'].astype(str).str.strip().str.upper() == sku) |
+                    ((sku_cli != '') & (df_tar_po['no_pieza'].astype(str).str.strip().str.upper() == sku_cli))
+                ]
                 c_liberado = float(m_tar['cantidad'].sum()) if not m_tar.empty else 0.0
                 
             # Si se terminó o remisionó en almacén, como mínimo está fabricado

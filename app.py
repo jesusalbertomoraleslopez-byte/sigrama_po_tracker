@@ -622,15 +622,18 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 
                 if not df_part_res.empty:
                     cols_p_show = [
-                        'item_no', 'clave_sku', 'descripcion_producto',
-                        'cantidad_requerida', 'cantidad_remisionada', 'cantidad_pendiente',
-                        'porcentaje_cumplimiento', 'estatus_partida', 'remisiones_folios',
-                        'precio_unitario', 'precio_total', 'fecha_entrega', 'parcialidad'
+                        c for c in [
+                            'item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto',
+                            'cantidad_requerida', 'cantidad_remisionada', 'cantidad_pendiente',
+                            'porcentaje_cumplimiento', 'estatus_partida', 'remisiones_folios',
+                            'precio_unitario', 'precio_total', 'fecha_entrega', 'parcialidad'
+                        ] if c in df_part_res.columns
                     ]
                     st.dataframe(
                         df_part_res[cols_p_show].rename(columns={
                             'item_no': 'Partida #',
-                            'clave_sku': 'SKU / Clave',
+                            'sku_cliente': 'SKU Cliente (Clave)',
+                            'clave_sku': 'SKU Planta (Nuestro)',
                             'descripcion_producto': 'Descripción del Producto',
                             'cantidad_requerida': 'Cant. Req.',
                             'cantidad_remisionada': 'Cant. Enviada',
@@ -1222,8 +1225,25 @@ Parque Industrial Rio XIX, Torreón, Coahuila.
                         st.markdown(f"• **Solicitante:** `{item['cab'].get('solicitante')}`")
                         st.markdown(f"• **Total:** `${item['cab'].get('total', 0):,.2f} MXN`")
                     with c_b3:
-                        st.markdown(f"• **Partidas:** `{len(item['part'])}`")
-                    st.dataframe(pd.DataFrame(item['part']), use_container_width=True, hide_index=True)
+                    df_p_view = pd.DataFrame(item['part'])
+                    col_order = [c for c in ['item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto', 'cantidad_requerida', 'unidad', 'precio_unitario', 'precio_total', 'fecha_entrega', 'parcialidad', 'observaciones_partida'] if c in df_p_view.columns]
+                    st.dataframe(
+                        df_p_view[col_order].rename(columns={
+                            'item_no': 'Item #',
+                            'sku_cliente': 'SKU Cliente (Clave)',
+                            'clave_sku': 'SKU Nuestro (Planta)',
+                            'descripcion_producto': 'Descripción del Producto',
+                            'cantidad_requerida': 'Cantidad',
+                            'unidad': 'Unidad',
+                            'precio_unitario': 'P. Unitario',
+                            'precio_total': 'P. Total',
+                            'fecha_entrega': 'Fecha Entrega',
+                            'parcialidad': 'Parcialidad',
+                            'observaciones_partida': 'Observaciones'
+                        }),
+                        use_container_width=True,
+                        hide_index=True
+                    )
                     
             if st.button("🚀 Confirmar y Guardar Todo el Lote en Sistema", type="primary", use_container_width=True, key="btn_save_uploaded_batch"):
                 total_ok = 0

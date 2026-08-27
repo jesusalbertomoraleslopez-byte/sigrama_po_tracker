@@ -5,6 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import io
 import os
+import re
 from pathlib import Path
 
 from config import (

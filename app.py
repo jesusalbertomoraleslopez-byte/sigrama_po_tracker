@@ -420,12 +420,35 @@ elif menu == "📬 Bandeja de Entrada OCR":
                             from pdf_parser import extract_attachments_from_msg
                             msg_info = extract_attachments_from_msg(f_bytes)
                             ctx_msg = parse_email_text(msg_info.get('body', ''))
-                            ctx_msg['remitente'] = msg_info.get('sender', '')
+                            
+                            # 1. Extraer ID Interno INT-000X desde el nombre del archivo .msg o asunto
+                            m_int = re.search(r'\bINT[\s\-_]?(\d{1,4})\b', f"{f_name} {msg_info.get('subject', '')}", re.IGNORECASE)
+                            id_int_auto = f"INT-{int(m_int.group(1)):04d}" if m_int else ""
+                            
+                            # 2. Extraer Fecha de llegada desde metadatos del correo
+                            date_raw = str(msg_info.get('date', ''))
+                            m_dt = re.search(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})', date_raw)
+                            if m_dt:
+                                f_llegada_auto = f"{m_dt.group(1)}-{int(m_dt.group(2)):02d}-{int(m_dt.group(3)):02d}"
+                            else:
+                                f_llegada_auto = datetime.date.today().strftime('%Y-%m-%d')
+                                
+                            # 3. Remitente / Comprador limpio
+                            sender_raw = str(msg_info.get('sender', '')).strip()
+                            if '<' in sender_raw:
+                                sender_raw = sender_raw.split('<')[0].strip()
+                                
+                            ctx_msg['id_interno'] = id_int_auto
+                            ctx_msg['fecha_llegada'] = f_llegada_auto
+                            ctx_msg['remitente'] = sender_raw if sender_raw else 'Compras'
+                            ctx_msg['asunto'] = msg_info.get('subject', '')
+                            ctx_msg['msg_filename'] = f_name
                             
                             for att in msg_info.get('attachments', []):
                                 att_n = att['filename']
                                 if att_n.lower().endswith('.pdf') and not any(w in att_n.lower() for w in ['plano', 'drawing', 'cotizacion']):
                                     try:
+                                        ctx_msg['pdf_filename'] = att_n
                                         cab_m, part_m = parse_po_pdf(att['data'], email_context=ctx_msg)
                                         extracted_batch.append({'cab': cab_m, 'part': part_m, 'file_name': f"{f_name} ➔ {att_n}"})
                                     except Exception as e_att:
@@ -434,7 +457,14 @@ elif menu == "📬 Bandeja de Entrada OCR":
                             if any(w in f_name.lower() for w in ['plano', 'drawing', 'rev', 'cotizacion']):
                                 continue
                             try:
-                                cab_f, part_f = parse_po_pdf(f_bytes)
+                                m_int_pdf = re.search(r'\bINT[\s\-_]?(\d{1,4})\b', f_name, re.IGNORECASE)
+                                id_int_pdf = f"INT-{int(m_int_pdf.group(1)):04d}" if m_int_pdf else ""
+                                ctx_pdf = {
+                                    'id_interno': id_int_pdf,
+                                    'pdf_filename': f_name,
+                                    'fecha_llegada': datetime.date.today().strftime('%Y-%m-%d')
+                                }
+                                cab_f, part_f = parse_po_pdf(f_bytes, email_context=ctx_pdf)
                                 extracted_batch.append({'cab': cab_f, 'part': part_f, 'file_name': f_name})
                             except Exception as e:
                                 st.error(f"Error procesando {f_name}: {e}")
@@ -784,54 +814,63 @@ elif menu == "✏️ Ajuste de PO":
                 estatus_val = str(cab_row.get('estatus_general', 'Registrada'))
                 st.metric("Estatus Actual", estatus_val)
                 
+        def _clean_str(v, d=""):
+            if v is None or pd.isna(v):
+                return d
+            s = str(v).strip()
+            return d if s.lower() in ('nan', 'none', 'null') else s
+
         # 1° Bloque: Ajuste de Datos Generales
         st.markdown("#### 1️⃣ Datos Generales de la PO:")
         with st.container(border=True):
             f_col1, f_col2 = st.columns(2)
             with f_col1:
-                val_id_int = str(cab_row.get('id_interno', '')).strip()
+                val_id_int = _clean_str(cab_row.get('id_interno'))
                 new_id_interno = st.text_input(
                     "2. Nombre Interno (ej. INT-0001, INT-0059):",
                     value=val_id_int if val_id_int else f"INT-{(cur_idx+1):04d}",
                     key=f"edit_id_int_{selected_po}"
                 )
                 
-                val_f_llegada = str(cab_row.get('fecha_llegada', '')).strip()
+                val_f_llegada = _clean_str(cab_row.get('fecha_llegada'))
                 try:
                     default_f_llegada = datetime.datetime.strptime(val_f_llegada, "%Y-%m-%d").date() if val_f_llegada else datetime.date.today()
                 except Exception:
                     default_f_llegada = datetime.date.today()
                 new_fecha_llegada = st.date_input("1. Fecha de Llegada de la PO (Recepción de Correo):", value=default_f_llegada, key=f"edit_flleg_{selected_po}")
                 
-                val_f_solic = str(cab_row.get('fecha_solicitada', '')).strip()
+                val_f_solic = _clean_str(cab_row.get('fecha_solicitada'))
                 try:
                     default_f_solic = datetime.datetime.strptime(val_f_solic, "%Y-%m-%d").date() if val_f_solic else (default_f_llegada + datetime.timedelta(days=14))
                 except Exception:
                     default_f_solic = default_f_llegada + datetime.timedelta(days=14)
                 new_fecha_solicitada = st.date_input("6. Fecha Solicitada (Compromiso Entrega):", value=default_f_solic, key=f"edit_fsolic_{selected_po}")
                 
-                val_comp = str(cab_row.get('comprador', '')).strip()
+                val_comp = _clean_str(cab_row.get('comprador'))
                 new_comprador = st.text_input("7. Comprador / Contacto de Compras:", value=val_comp, key=f"edit_comp_{selected_po}")
                 
             with f_col2:
-                val_mail = str(cab_row.get('archivo_correo', '')).strip()
+                val_mail = _clean_str(cab_row.get('archivo_correo'))
                 new_archivo_correo = st.text_input(
                     "4. Archivo de Correo (.MSG):",
                     value=val_mail if val_mail else f"INT {(cur_idx+1):04d} - OC {selected_po} SIGRAMA METALES.msg",
                     key=f"edit_mail_{selected_po}"
                 )
                 
-                val_pdf = str(cab_row.get('archivo_pdf', '')).strip()
+                val_pdf = _clean_str(cab_row.get('archivo_pdf'))
                 new_archivo_pdf = st.text_input(
                     "5. Documento de PO (.PDF):",
                     value=val_pdf if val_pdf else f"{selected_po} SIGRAMA METALES JMC.PDF",
                     key=f"edit_pdf_{selected_po}"
                 )
                 
-                new_proyecto = st.text_input("Proyecto / Uso:", value=str(cab_row.get('proyecto', '')), key=f"edit_proy_{selected_po}")
-                new_solicitante = st.text_input("Solicitante / Requisición:", value=str(cab_row.get('solicitante', '')), key=f"edit_sol_{selected_po}")
+                val_proy = _clean_str(cab_row.get('proyecto'))
+                val_solic = _clean_str(cab_row.get('solicitante'))
+                new_proyecto = st.text_input("Proyecto / Uso:", value=val_proy, key=f"edit_proy_{selected_po}")
+                new_solicitante = st.text_input("Solicitante / Requisición:", value=val_solic, key=f"edit_sol_{selected_po}")
                 
-            new_observaciones = st.text_area("Observaciones y Notas de Control:", value=str(cab_row.get('observaciones', '')), height=60, key=f"edit_obs_{selected_po}")
+            val_obs = _clean_str(cab_row.get('observaciones'))
+            new_observaciones = st.text_area("Observaciones y Notas de Control:", value=val_obs, height=60, key=f"edit_obs_{selected_po}")
             
         # 2° Bloque: Ajuste de la Tabla de Artículos
         st.markdown("#### 2️⃣ Tabla de Artículos / Partidas (Editable):")

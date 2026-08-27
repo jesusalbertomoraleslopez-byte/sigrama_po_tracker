@@ -309,12 +309,59 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
                 iva = subtotal * 0.16 if iva == 0.0 else iva
                 total = subtotal + iva
                 
+            # Detección de ID Interno (INT-0001, INT-0059...)
+            id_int_auto = ""
+            if email_context and email_context.get('id_interno'):
+                id_int_auto = email_context['id_interno']
+            else:
+                m_int_full = re.search(r'\bINT[\s\-_]?(\d{1,4})\b', f"{full_text} {email_context.get('asunto', '') if email_context else ''}", re.IGNORECASE)
+                if m_int_full:
+                    id_int_auto = f"INT-{int(m_int_full.group(1)):04d}"
+                    
+            f_llegada_auto = ""
+            if email_context and email_context.get('fecha_llegada'):
+                f_llegada_auto = email_context['fecha_llegada']
+            else:
+                f_llegada_auto = fecha_pedido
+                
+            f_solic_auto = ""
+            if all_partidas and all_partidas[0].get('fecha_entrega'):
+                f_solic_auto = all_partidas[0]['fecha_entrega']
+            else:
+                try:
+                    f_solic_auto = (datetime.datetime.strptime(fecha_pedido, "%Y-%m-%d") + datetime.timedelta(days=14)).strftime("%Y-%m-%d")
+                except Exception:
+                    f_solic_auto = fecha_pedido
+
+            # Remitente / Comprador desde correo si el PDF no lo tiene
+            sender_correo = ""
+            if email_context:
+                sender_correo = email_context.get('remitente') or email_context.get('sender') or ""
+                # Limpiar dirección de correo si viene como "Nombre <correo@dominio>"
+                if '<' in sender_correo:
+                    sender_correo = sender_correo.split('<')[0].strip()
+
+            comp_final = comprador if (comprador and comprador.lower() not in ('nan', 'none', '')) else (sender_correo if sender_correo else 'Josue Mesta')
+            solic_final = solicitante if (solicitante and solicitante.lower() not in ('nan', 'none', '')) else (sender_correo if sender_correo else '')
+            proy_final = uso_proy if (uso_proy and uso_proy.lower() not in ('nan', 'none', '')) else (email_context.get('proyecto_detectado', '') if email_context else (observaciones.split()[0] if observaciones else 'PROYECTO SIGRAMA'))
+            
+            # Observaciones integrando urgencias de correo
+            obs_final = observaciones if (observaciones and observaciones.lower() not in ('nan', 'none')) else ""
+            if email_context and email_context.get('urgencias'):
+                urg_txt = ' | '.join(email_context['urgencias'])
+                obs_final = f"{obs_final} • [Urgencias Correo: {urg_txt}]".strip(' • ')
+
             cabecera = {
                 'po': po_folio,
+                'id_interno': id_int_auto,
+                'fecha_llegada': f_llegada_auto,
+                'fecha_solicitada': f_solic_auto,
+                'archivo_correo': email_context.get('msg_filename', '') if email_context else '',
+                'archivo_pdf': email_context.get('pdf_filename', '') if email_context else '',
                 'fecha_pedido': fecha_pedido,
-                'proyecto': uso_proy if uso_proy else (observaciones.split()[0] if observaciones else 'PROYECTO SIGRAMA'),
-                'solicitante': solicitante if solicitante else (email_context.get('remitente', '') if email_context else ''),
-                'requisicion': requisicion,
+                'proyecto': proy_final,
+                'solicitante': solic_final,
+                'requisicion': requisicion if requisicion.lower() not in ('nan', 'none') else '',
                 'destino': 'ALMACEN SIGRAMA',
                 'proveedor': 'SIGRAMA PLANTA METALES',
                 'proveedor_atencion': 'JESUS MORALES',
@@ -324,7 +371,7 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
                 'forma_pago': 'CONTADO / CRÉDITO',
                 'lab': 'ALMACEN SIGRAMA',
                 'tiempo_entrega': tiempo_entrega,
-                'comprador': comprador if comprador else (email_context.get('remitente', '') if email_context else 'Josue Mesta'),
+                'comprador': comp_final,
                 'subtotal': subtotal if subtotal > 0 else sum(p['precio_total'] for p in all_partidas),
                 'descuento': 0.0,
                 'iva': iva if iva > 0 else (subtotal * 0.16),
@@ -332,8 +379,8 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
                 'ret_isr': 0.0,
                 'total': total if total > 0 else (subtotal * 1.16),
                 'moneda': 'MXN',
-                'observaciones': observaciones,
-                'texto_etiqueta': uso_proy if uso_proy else 'SIGRAMA',
+                'observaciones': obs_final,
+                'texto_etiqueta': proy_final,
                 'color_fondo': '#EC2024',
                 'color_texto': '#FFFFFF'
             }

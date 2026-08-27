@@ -609,6 +609,104 @@ elif menu == "📬 Bandeja de Entrada OCR":
             if st.button("⚡ Simular Extracción de Caso 1"):
                 st.success("Extracción simulada con éxito.")
 
+    # --------------------------------------------------------------------------
+    # TABLA DE CARGAS DE PO'S POR FECHAS DESCENDENTES
+    # --------------------------------------------------------------------------
+    st.write("---")
+    st.subheader("📜 Historial de Órdenes Cargadas en el Sistema (Fechas Descendentes)")
+    st.caption("Consulta y audita todas las órdenes de compra ingestadas en el sistema, ordenadas cronológicamente desde la más reciente hasta la más antigua.")
+    
+    df_pos_hist = get_all_pos()
+    df_part_hist = get_all_partidas()
+    
+    if not df_pos_hist.empty:
+        df_summary_hist = get_global_pos_tracking_summary(df_pos_hist, df_part_hist)
+        
+        # Filtros rápidos y selector de ordenamiento
+        c_h1, c_h2, c_h3 = st.columns([2, 1.2, 0.8])
+        with c_h1:
+            q_h = st.text_input("🔍 Buscar en historial de cargas (Folio, ID Interno, Proyecto, Comprador):", "", key="search_intake_history")
+        with c_h2:
+            sort_h = st.selectbox("Ordenar Historial por:", [
+                "📅 Fecha de Carga / Registro (Más reciente primero)",
+                "📅 Fecha de Llegada de PO (Descendente)",
+                "🔢 ID Interno (INT-0001 a INT-0058...)",
+                "📄 Folio PO (Descendente)",
+                "💰 Importe Total ($)"
+            ], key="sort_intake_history")
+        with c_h3:
+            st.metric("Total POs Cargadas", f"{len(df_summary_hist)}")
+            
+        df_hist_filtered = df_summary_hist.copy()
+        if q_h.strip():
+            term = q_h.strip().lower()
+            df_hist_filtered = df_hist_filtered[
+                df_hist_filtered['po'].astype(str).str.lower().str.contains(term) |
+                df_hist_filtered.get('id_interno', pd.Series(['']*len(df_hist_filtered))).astype(str).str.lower().str.contains(term) |
+                df_hist_filtered['proyecto'].astype(str).str.lower().str.contains(term) |
+                df_hist_filtered['comprador'].astype(str).str.lower().str.contains(term) |
+                df_hist_filtered['solicitante'].astype(str).str.lower().str.contains(term)
+            ]
+            
+        if "Fecha de Carga" in sort_h:
+            df_hist_filtered = df_hist_filtered.sort_values(by=['fecha_registro', 'po'], ascending=[False, False])
+        elif "Fecha de Llegada" in sort_h:
+            df_hist_filtered = df_hist_filtered.sort_values(by=['fecha_llegada', 'fecha_pedido', 'po'], ascending=[False, False, False])
+        elif "ID Interno" in sort_h:
+            df_hist_filtered['id_sort_key'] = df_hist_filtered['id_interno'].apply(lambda x: str(x) if str(x).strip() else 'ZZZ')
+            df_hist_filtered = df_hist_filtered.sort_values(by=['id_sort_key', 'po'], ascending=[True, True]).drop(columns=['id_sort_key'])
+        elif "Folio PO" in sort_h:
+            df_hist_filtered = df_hist_filtered.sort_values(by=['po'], ascending=[False])
+        elif "Importe Total" in sort_h:
+            df_hist_filtered = df_hist_filtered.sort_values(by=['total'], ascending=[False])
+            
+        cols_h_show = [c for c in [
+            'fecha_registro', 'fecha_llegada', 'id_interno', 'po', 'proyecto',
+            'articulos_count', 'piezas_requeridas', 'total',
+            'archivo_correo', 'archivo_pdf', 'comprador', 'solicitante', 'estatus_remision'
+        ] if c in df_hist_filtered.columns]
+        
+        df_h_disp = df_hist_filtered[cols_h_show].copy()
+        if 'archivo_correo' in df_h_disp.columns:
+            df_h_disp['archivo_correo'] = df_h_disp['archivo_correo'].apply(lambda x: '✅ .MSG' if str(x).strip() else '⚪ No')
+        if 'archivo_pdf' in df_h_disp.columns:
+            df_h_disp['archivo_pdf'] = df_h_disp['archivo_pdf'].apply(lambda x: '✅ .PDF' if str(x).strip() else '⚪ No')
+            
+        st.dataframe(
+            df_h_disp.rename(columns={
+                'fecha_registro': 'Fecha de Carga',
+                'fecha_llegada': 'Llegada PO',
+                'id_interno': 'ID Interno',
+                'po': 'PO / Folio',
+                'proyecto': 'Proyecto',
+                'articulos_count': 'Partidas #',
+                'piezas_requeridas': 'Piezas Totales',
+                'total': 'Importe Total ($)',
+                'archivo_correo': 'Correo .MSG',
+                'archivo_pdf': 'Doc .PDF',
+                'comprador': 'Comprador',
+                'solicitante': 'Solicitante',
+                'estatus_remision': 'Estatus'
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # Descarga Excel del historial de cargas
+        buf_h = io.BytesIO()
+        with pd.ExcelWriter(buf_h, engine='openpyxl') as writer:
+            df_hist_filtered.to_excel(writer, sheet_name="Historial_Cargas_POs", index=False)
+            
+        st.download_button(
+            "📥 Exportar Historial de Cargas a Excel",
+            data=buf_h.getvalue(),
+            file_name=f"Historial_Cargas_POs_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_intake_history"
+        )
+    else:
+        st.info("💡 Aún no se han registrado órdenes en el sistema.")
+
 
 # ==============================================================================
 # SECCIÓN 3: AJUSTE DE PO (AJUSTE MAESTRO 1° GENERALES + 2° ARTÍCULOS)

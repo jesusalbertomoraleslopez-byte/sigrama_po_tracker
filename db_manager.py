@@ -375,16 +375,20 @@ def delete_po(po_folio, usuario='Usuario'):
 
 def get_all_pos():
     conn = get_connection()
-    # Ordenar preferentemente por ID Interno (INT-0001...), luego fecha_llegada, luego folio
     df = pd.read_sql_query('''
-        SELECT * FROM po_cabecera 
+        SELECT c.*, 
+               COALESCE((SELECT SUM(COALESCE(NULLIF(p.precio_total, 0), p.cantidad_requerida * p.precio_unitario)) 
+                         FROM po_partidas p WHERE p.po = c.po), 0) as calc_total
+        FROM po_cabecera c
         ORDER BY 
-            CASE WHEN id_interno IS NOT NULL AND id_interno != '' THEN 0 ELSE 1 END ASC,
-            id_interno ASC,
-            fecha_llegada DESC,
-            po DESC
+            CASE WHEN c.id_interno IS NOT NULL AND c.id_interno != '' THEN 0 ELSE 1 END ASC,
+            c.id_interno ASC,
+            c.fecha_llegada DESC,
+            c.po DESC
     ''', conn)
     conn.close()
+    if not df.empty and 'total' in df.columns:
+        df['total'] = df.apply(lambda r: float(r['calc_total']) if (float(r.get('total', 0) or 0) == 0.0 and float(r.get('calc_total', 0) or 0) > 0) else float(r.get('total', 0) or 0), axis=1)
     return df
 
 def get_po_by_folio(po_folio):
@@ -392,6 +396,20 @@ def get_po_by_folio(po_folio):
     df_cab = pd.read_sql_query('SELECT * FROM po_cabecera WHERE po = ?', conn, params=[str(po_folio)])
     df_part = pd.read_sql_query('SELECT * FROM po_partidas WHERE po = ? ORDER BY item_no ASC', conn, params=[str(po_folio)])
     conn.close()
+    
+    if not df_part.empty:
+        df_part['precio_total'] = df_part.apply(
+            lambda r: float(r['precio_total']) if float(r.get('precio_total', 0) or 0) > 0 else round(float(r.get('cantidad_requerida', 0) or 0) * float(r.get('precio_unitario', 0) or 0), 2),
+            axis=1
+        )
+        
+    if not df_cab.empty:
+        cur_tot = float(df_cab.iloc[0].get('total', 0) or 0)
+        if cur_tot == 0.0 and not df_part.empty:
+            calc_sum = float(df_part['precio_total'].sum())
+            if calc_sum > 0:
+                df_cab.loc[0, 'total'] = calc_sum
+                
     return df_cab, df_part
 
 def get_all_partidas():

@@ -221,7 +221,16 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
             
     # Fallback si el clustering espacial estricto no encontró partidas:
     if not all_partidas:
-        patron_fb = re.compile(r'(\d+(?:\.\d+)?)\s+(PIEZA|PZA|KG|METRO|JGO|LOTE|SER|PZS|PZ)\s+([A-Z0-9\-_]{3,20})\s+([A-Z0-9\-_/]{3,25})', re.IGNORECASE)
+        patron_fb = re.compile(
+            r'(\d+(?:\.\d+)?)\s+'
+            r'(PIEZA|PZA|KG|METRO|JGO|LOTE|SER|PZS|PZ)\s+'
+            r'([A-Z0-9\-_]{3,20})\s+'
+            r'([A-Z0-9\-_/]{3,25})'
+            r'(?:\s+([\d,]+(?:\.\d{2})?))?'
+            r'(?:\s+([\d,]+(?:\.\d{2})?))?'
+            r'(?:\s+(\d{1,2}/\d{1,2}/\d{4}))?',
+            re.IGNORECASE
+        )
         for page_idx, page in enumerate(doc):
             t_lines = [l.strip() for l in page.get_text().split('\n') if l.strip()]
             for l_i, l_str in enumerate(t_lines):
@@ -231,6 +240,16 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
                     unid_fb = m_fb.group(2).upper()
                     sku_c_fb = m_fb.group(3).strip().upper()
                     sku_n_fb = m_fb.group(4).strip().upper()
+                    
+                    pu_fb = float(m_fb.group(5).replace(',', '')) if m_fb.group(5) else 0.0
+                    pt_fb = float(m_fb.group(6).replace(',', '')) if m_fb.group(6) else 0.0
+                    f_ent_fb = m_fb.group(7).strip() if m_fb.group(7) else datetime.date.today().strftime('%Y-%m-%d')
+                    
+                    if pt_fb == 0.0 and pu_fb > 0:
+                        pt_fb = round(cant_fb * pu_fb, 2)
+                    elif pu_fb == 0.0 and pt_fb > 0 and cant_fb > 0:
+                        pu_fb = round(pt_fb / cant_fb, 2)
+                        
                     desc_fb = t_lines[l_i+1] if (l_i+1 < len(t_lines) and not patron_fb.search(t_lines[l_i+1])) else f"Material {sku_n_fb}"
                     if any(w in desc_fb.upper() for w in ['SUBTOTAL', 'TOTAL', 'PIEZA', 'PZA', 'OBSERVACIONES']):
                         desc_fb = f"Material {sku_n_fb}"
@@ -241,9 +260,9 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
                         'descripcion_producto': desc_fb,
                         'cantidad_requerida': cant_fb,
                         'unidad': unid_fb,
-                        'precio_unitario': 0.0,
-                        'precio_total': 0.0,
-                        'fecha_entrega': datetime.date.today().strftime('%Y-%m-%d'),
+                        'precio_unitario': pu_fb,
+                        'precio_total': pt_fb,
+                        'fecha_entrega': f_ent_fb,
                         'parcialidad': 'P1',
                         'observaciones_partida': ''
                     })
@@ -351,9 +370,28 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
                     elif 440 <= y0 <= 470 and b[0] > 400:
                         total = val
                         
-            if total == 0.0 and subtotal > 0:
-                iva = subtotal * 0.16 if iva == 0.0 else iva
-                total = subtotal + iva
+            # Asegurar cálculo de importes en partidas
+            for p in all_partidas:
+                c_req = float(p.get('cantidad_requerida', 0) or 0)
+                p_uni = float(p.get('precio_unitario', 0) or 0)
+                p_tot = float(p.get('precio_total', 0) or 0)
+                if p_tot == 0.0 and p_uni > 0 and c_req > 0:
+                    p['precio_total'] = round(c_req * p_uni, 2)
+                elif p_uni == 0.0 and p_tot > 0 and c_req > 0:
+                    p['precio_unitario'] = round(p_tot / c_req, 2)
+                    
+            subtotal_partidas = sum(float(p.get('precio_total', 0) or 0) for p in all_partidas)
+            if subtotal_partidas == 0.0:
+                subtotal_partidas = sum(float(p.get('cantidad_requerida', 0) or 0) * float(p.get('precio_unitario', 0) or 0) for p in all_partidas)
+                
+            if total == 0.0:
+                if subtotal_partidas > 0:
+                    total = round(subtotal_partidas, 2)
+                    subtotal = round(total / 1.16, 2) if subtotal == 0.0 else subtotal
+                    iva = round(total - subtotal, 2) if iva == 0.0 else iva
+                elif subtotal > 0:
+                    iva = subtotal * 0.16 if iva == 0.0 else iva
+                    total = round(subtotal + iva, 2)
                 
             # Detección de ID Interno (INT-0001, INT-0059...)
             id_int_auto = ""

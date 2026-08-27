@@ -857,7 +857,15 @@ elif menu == "✏️ Ajuste de PO":
                 st.metric("3. Cantidad Total de Piezas", f"{cant_piezas_tot:,.0f} pzas", help="Suma de todas las piezas requeridas")
             with m3:
                 importe_tot = float(cab_row.get('total', 0) or 0)
-                st.metric("Importe Total ($)", f"${importe_tot:,.2f} MXN")
+                if importe_tot == 0.0 and not partidas_po.empty:
+                    sum_calc = sum(
+                        float(r.get('precio_total', 0) or 0) if float(r.get('precio_total', 0) or 0) > 0 
+                        else (float(r.get('cantidad_requerida', 0) or 0) * float(r.get('precio_unitario', 0) or 0)) 
+                        for _, r in partidas_po.iterrows()
+                    )
+                    if sum_calc > 0:
+                        importe_tot = sum_calc
+                st.metric("Importe Total ($)", f"${importe_tot:,.2f} MXN", help="Suma del importe de todas las partidas (Cantidad x Precio)")
             with m4:
                 estatus_val = str(cab_row.get('estatus_general', 'Registrada'))
                 st.metric("Estatus Actual", estatus_val)
@@ -970,12 +978,21 @@ elif menu == "✏️ Ajuste de PO":
             updated_cab['solicitante'] = str(new_solicitante).strip()
             updated_cab['observaciones'] = str(new_observaciones).strip()
             
-            # Recalcular totales según tabla editada
+            # Recalcular totales según tabla editada (Precio x Cantidad)
             partidas_list = edited_df_partidas.to_dict('records') if not edited_df_partidas.empty else []
+            for p_item in partidas_list:
+                c_q = float(p_item.get('cantidad_requerida', 0) or 0)
+                p_u = float(p_item.get('precio_unitario', 0) or 0)
+                p_t = float(p_item.get('precio_total', 0) or 0)
+                if p_t == 0.0 and p_u > 0:
+                    p_item['precio_total'] = round(c_q * p_u, 2)
+                elif p_u > 0:
+                    p_item['precio_total'] = round(c_q * p_u, 2)
+                    
             sub_calc = sum(float(r.get('precio_total', 0) or (float(r.get('cantidad_requerida', 0) or 0) * float(r.get('precio_unitario', 0) or 0))) for r in partidas_list)
-            updated_cab['subtotal'] = sub_calc
-            updated_cab['iva'] = sub_calc * 0.16
-            updated_cab['total'] = sub_calc * 1.16
+            updated_cab['total'] = round(sub_calc, 2)
+            updated_cab['subtotal'] = round(sub_calc / 1.16, 2) if updated_cab.get('subtotal', 0) == 0 else updated_cab['subtotal']
+            updated_cab['iva'] = round(updated_cab['total'] - updated_cab['subtotal'], 2)
             
             ok_save, msg_save = save_po(updated_cab, partidas_list)
             if ok_save:

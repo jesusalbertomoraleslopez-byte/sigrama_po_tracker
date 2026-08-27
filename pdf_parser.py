@@ -316,12 +316,20 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
                 tiempo_entrega = m_tent.group(1).strip()
                 
             comprador = ""
+            amount_words = ['PESOS', 'M.N.', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA', 'MIL', 'CIEN', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS', '/100']
             for b in blocks:
                 if 30 <= b[0] <= 160 and 475 <= b[1] <= 525:
                     lines = [l.strip() for l in b[4].split('\n') if l.strip()]
                     for l in lines:
-                        if l not in ('COMPRADOR', 'FIRMA', 'DESCUENTO', 'OBSERVACIONES'):
+                        l_upper = l.upper()
+                        is_amt = sum(1 for w in amount_words if w in l_upper) >= 2
+                        if not is_amt and l not in ('COMPRADOR', 'FIRMA', 'DESCUENTO', 'OBSERVACIONES', 'PROVEEDOR', 'TOTAL'):
                             comprador = l
+                            
+            if not comprador and email_context and email_context.get('remitente'):
+                comprador = email_context.get('remitente')
+            elif not comprador:
+                comprador = "Compras"
                             
             observaciones = ""
             for b in blocks:

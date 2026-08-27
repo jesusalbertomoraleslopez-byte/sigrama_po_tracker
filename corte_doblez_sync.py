@@ -96,6 +96,23 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno=""):
                 'nidos_cortados': len(grp)
             })
             
+    # Consulta cruzada con Remisiones para inferencia causal inteligente
+    from remisiones_sync import get_tracking_for_po as get_rem_tracking
+    rem_trk_info = get_rem_tracking(po_str, df_partidas, id_interno=id_interno)
+    df_partidas_rem = rem_trk_info.get('df_partidas', pd.DataFrame())
+    remisiones_asoc = rem_trk_info.get('remisiones_asociadas', [])
+    
+    rem_map = {}
+    if not df_partidas_rem.empty:
+        for _, r_row in df_partidas_rem.iterrows():
+            sku_k = str(r_row.get('clave_sku', '')).strip().upper()
+            sku_c_k = str(r_row.get('sku_cliente', '')).strip().upper()
+            c_rem_val = float(r_row.get('cantidad_remisionada', 0.0) or 0.0)
+            if sku_k:
+                rem_map[sku_k] = max(rem_map.get(sku_k, 0.0), c_rem_val)
+            if sku_c_k:
+                rem_map[sku_c_k] = max(rem_map.get(sku_c_k, 0.0), c_rem_val)
+                
     partidas_cd = []
     total_req_cd = 0.0
     total_cortado = 0.0
@@ -133,7 +150,14 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno=""):
                 m_tar = df_tar_po[df_tar_po['no_pieza'].apply(lambda p: sku_matches(sku, p) or (sku_cli and sku_matches(sku_cli, p)))]
                 c_liberado = float(m_tar['cantidad'].sum()) if not m_tar.empty else 0.0
                 
-            c_terminado_real = max(c_liberado, c_doblez, c_rebabeo, c_corte)
+            # REGLA DE INTELIGENCIA OPERATIVA: Si ya está remisionada, estuvo fabricada al 100%
+            c_rem_part = max(rem_map.get(sku, 0.0), rem_map.get(sku_cli, 0.0), float(part.get('cantidad_remisionada', 0) or 0))
+            if c_rem_part > 0:
+                c_corte = max(c_corte, c_rem_part)
+                c_doblez = max(c_doblez, c_rem_part)
+                c_terminado_real = max(c_liberado, c_doblez, c_rebabeo, c_corte, c_rem_part)
+            else:
+                c_terminado_real = max(c_liberado, c_doblez, c_rebabeo, c_corte)
             
             total_cortado += min(cant_req, c_corte)
             total_doblado += min(cant_req, c_doblez)
@@ -141,21 +165,30 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno=""):
             
             pct_cd = (c_terminado_real / cant_req * 100.0) if cant_req > 0 else 0.0
             
+            if not matched_ofs and remisiones_asoc:
+                ofs_tag = f"Fabricado (Remisión {', '.join(remisiones_asoc)})"
+            else:
+                ofs_tag = ', '.join(sorted(matched_ofs)) if matched_ofs else 'Por programar OF'
+                
             p_res = dict(part)
-            p_res['piezas_programadas'] = c_prog
+            p_res['piezas_programadas'] = c_prog if c_prog > 0 else c_terminado_real
             p_res['piezas_cortadas'] = c_corte
             p_res['piezas_dobladas'] = c_doblez
             p_res['piezas_terminadas_planta'] = c_terminado_real
             p_res['pct_avance_fabricacion'] = round(min(100.0, pct_cd), 1)
-            p_res['ofs_asociadas'] = ', '.join(sorted(matched_ofs)) if matched_ofs else 'Por programar OF'
+            p_res['ofs_asociadas'] = ofs_tag
             partidas_cd.append(p_res)
             
     pct_global_cd = (total_terminado / total_req_cd * 100.0) if total_req_cd > 0 else 0.0
     
+    ofs_final_list = sorted(list(matched_ofs))
+    if not ofs_final_list and remisiones_asoc:
+        ofs_final_list = [f"Fabricación Validada en Planta (Remisión {', '.join(remisiones_asoc)})"]
+        
     return {
         'po': po_str,
-        'matched_ofs': sorted(list(matched_ofs)),
-        'ofs_asociadas': sorted(list(matched_ofs)),
+        'matched_ofs': ofs_final_list,
+        'ofs_asociadas': ofs_final_list,
         'total_programado': total_cortado,
         'total_cortado': total_cortado,
         'total_doblado': total_doblado,
@@ -164,7 +197,7 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno=""):
         'pct_global_fabricacion': round(min(100.0, pct_global_cd), 1),
         'porcentaje_fabricacion': round(min(100.0, pct_global_cd), 1),
         'df_partidas_cd': pd.DataFrame(partidas_cd),
-        'df_ofs': pd.DataFrame({'OF': sorted(list(matched_ofs))}) if matched_ofs else pd.DataFrame(),
+        'df_ofs': pd.DataFrame({'OF': ofs_final_list}) if ofs_final_list else pd.DataFrame(),
         'df_laminas': pd.DataFrame(laminas_summary),
         'total_laminas': total_laminas,
         'df_nidos': df_nid_po

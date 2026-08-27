@@ -1613,45 +1613,57 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     </html>
                     """
                     
-                    # Generar PDF de la remisión para adjuntarlo al correo
-                    rem_fol_clean = rems_raw[0] if rems_raw else "E0125"
-                    datos_rem_att = {
-                        'Folio_Remision': rem_fol_clean,
-                        'PO': po_val,
-                        'Proyecto_Interno': id_i,
-                        'Fecha_Hora_Salida': '25/08/2026',
-                        'Nombre_Emisor': 'SIGRAMA METALES',
-                        'Nombre_Receptor': 'PLANTA RIO XIX',
-                        'Tarimas_Asociadas': 'TPM-0511, TPM-0512, TPM-0513'
-                    }
-                    rem_pdf_data = generate_remision_pdf(datos_rem_att, df_m360)
+                    # Generar Expediente ZIP con los 3 documentos oficiales
+                    from dossier_pdf_generator import create_dossier_zip
+                    zip_data, pdf_rem_data, pdf_etiq_data, pdf_rep_data = create_dossier_zip(cab, cd_trk, rem_trk, df_m360)
                     
                     e_msg = email.message.EmailMessage()
-                    e_msg['Subject'] = f"[REPORTE EJECUTIVO 360° SIGRAMA] {id_i} • PO {po_val} - {prj} ({e_txt})"
+                    e_msg['Subject'] = f"[EXPEDIENTE TRAZABILIDAD 360°] {id_i} • PO {po_val} - {prj} ({e_txt})"
                     e_msg['From'] = "po-tracker@sigrama.com.mx"
                     e_msg['To'] = to_addr if to_addr else "compras@sigrama.com.mx"
                     if cc_addr:
                         e_msg['Cc'] = cc_addr
                     e_msg['Date'] = email.utils.formatdate(localtime=True)
-                    e_msg.set_content(f"Reporte de Trazabilidad 360° para {id_i} - PO {po_val} ({prj}). Estatus: {e_txt}. Se adjunta documento oficial de remisión en PDF.")
+                    e_msg.set_content(f"Expediente de Trazabilidad 360° para {id_i} - PO {po_val} ({prj}). Estatus: {e_txt}. Se adjunta expediente completo en ZIP conteniendo Remisión E0125, Etiquetas de Tarimas y Reporte de Trazabilidad.")
                     e_msg.add_alternative(html_content, subtype='html')
                     
-                    # Adjuntar PDF oficial de remisión
+                    # 1. Adjuntar Expediente ZIP Completo
                     e_msg.add_attachment(
-                        rem_pdf_data,
+                        zip_data,
                         maintype='application',
-                        subtype='pdf',
-                        filename=f"Remision_{rem_fol_clean}_{id_i}.pdf"
+                        subtype='zip',
+                        filename=f"Expediente_Trazabilidad_{id_i}_PO_{po_val}.zip"
                     )
                     
-                    return e_msg.as_bytes(), html_content, rem_pdf_data
+                    # 2. Adjuntar PDFs individuales para visualización directa
+                    e_msg.add_attachment(
+                        pdf_rem_data,
+                        maintype='application',
+                        subtype='pdf',
+                        filename=f"1_Remision_E0125_{id_i}.pdf"
+                    )
+                    e_msg.add_attachment(
+                        pdf_etiq_data,
+                        maintype='application',
+                        subtype='pdf',
+                        filename=f"2_Etiquetas_Tarimas_E0125_{id_i}.pdf"
+                    )
+                    e_msg.add_attachment(
+                        pdf_rep_data,
+                        maintype='application',
+                        subtype='pdf',
+                        filename=f"3_Reporte_Trazabilidad_PO_{po_val}_{id_i}.pdf"
+                    )
                     
-                eml_bytes, eml_html, rem_pdf_att = build_po_eml(cab_info, cd_tracking, rem_tracking, df_merged_360 if 'df_merged_360' in locals() else pd.DataFrame(), dest_email, cc_email, nota_eml)
+                    return e_msg.as_bytes(), html_content, zip_data, pdf_rem_data, pdf_etiq_data, pdf_rep_data
+                    
+                eml_bytes, eml_html, zip_att, rem_pdf_att, etiq_pdf_att, rep_pdf_att = build_po_eml(cab_info, cd_tracking, rem_tracking, df_merged_360 if 'df_merged_360' in locals() else pd.DataFrame(), dest_email, cc_email, nota_eml)
                 
-                b_c1, b_c2, b_c3 = st.columns([1, 1, 1])
+                st.markdown("#### 📦 Descarga de Expedientes y Archivos Certificados")
+                b_c1, b_c2 = st.columns([1, 1])
                 with b_c1:
                     st.download_button(
-                        label=f"📥 Descargar Archivo (.eml) con PDF Adjunto",
+                        label=f"📥 Descargar Correo (.eml) con Expediente ZIP Adjunto",
                         data=eml_bytes,
                         file_name=f"Reporte_360_{id_int_txt if id_int_txt else 'INT'}_PO_{sel_po}.eml",
                         mime="message/rfc822",
@@ -1660,18 +1672,36 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     )
                 with b_c2:
                     st.download_button(
-                        label=f"📄 Descargar PDF Oficial Remisión",
+                        label=f"📦 Descargar Expediente Documental Completo (.ZIP)",
+                        data=zip_att,
+                        file_name=f"Expediente_Documental_{id_int_txt if id_int_txt else 'INT'}_PO_{sel_po}.zip",
+                        mime="application/zip",
+                        use_container_width=True
+                    )
+                    
+                d_c1, d_c2, d_c3 = st.columns([1, 1, 1])
+                with d_c1:
+                    st.download_button(
+                        label=f"📄 Descargar Remisión E0125 (PDF)",
                         data=rem_pdf_att,
-                        file_name=f"Remision_Oficial_{id_int_txt if id_int_txt else 'INT'}_PO_{sel_po}.pdf",
+                        file_name=f"Remision_E0125_{id_int_txt if id_int_txt else 'INT'}.pdf",
                         mime="application/pdf",
                         use_container_width=True
                     )
-                with b_c3:
+                with d_c2:
                     st.download_button(
-                        label=f"🌐 Descargar HTML Reporte",
-                        data=eml_html.encode('utf-8'),
-                        file_name=f"Reporte_360_{id_int_txt if id_int_txt else 'INT'}_PO_{sel_po}.html",
-                        mime="text/html",
+                        label=f"🏷️ Descargar Etiquetas Tarimas (PDF)",
+                        data=etiq_pdf_att,
+                        file_name=f"Etiquetas_Tarimas_E0125_{id_int_txt if id_int_txt else 'INT'}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                with d_c3:
+                    st.download_button(
+                        label=f"📊 Descargar Reporte PO Trazabilidad (PDF)",
+                        data=rep_pdf_att,
+                        file_name=f"Reporte_PO_{sel_po}_{id_int_txt if id_int_txt else 'INT'}.pdf",
+                        mime="application/pdf",
                         use_container_width=True
                     )
                     

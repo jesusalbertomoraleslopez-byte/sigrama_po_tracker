@@ -173,14 +173,13 @@ with st.sidebar:
         "Navegación:",
         [
             "📊 Dashboard Ejecutivo",
-            "🎯 Matriz de Control 360° (Producción + Remisión)",
-            "📋 Matriz de Órdenes (POs)",
-            "✏️ Ajuste y Control Maestro de POs",
+            "📬 Bandeja de Entrada OCR",
+            "✏️ Ajuste de PO",
+            "📋 Matriz de Órdenes",
             "🔍 Ficha de Trazabilidad 360°",
-            "📬 Bandeja de Correos & OCR",
-            "📥 Registrar / Cargar PO",
             "🔄 Estado de Integración",
-            "📘 Manual & Arquitectura Industria 4.0"
+            "📘 Manual y Arquitectura 4.0",
+            "🛠️ Mantenimiento de la App"
         ],
         index=0
     )
@@ -204,233 +203,608 @@ with st.sidebar:
 # SECCIÓN 1: DASHBOARD EJECUTIVO
 # ==============================================================================
 if menu == "📊 Dashboard Ejecutivo":
-    st.title("📊 Dashboard Ejecutivo de Órdenes de Compra")
-    st.markdown("Visión global de requerimientos, avance de envíos al cliente y cumplimiento en tiempo real.")
+    st.title("📊 Dashboard Ejecutivo & Reportes Estratégicos")
+    st.markdown("Visión global de requerimientos de clientes, avance de manufactura en planta y cumplimiento de entregas en tiempo real.")
     
     df_pos = get_all_pos()
     df_part = get_all_partidas()
     
     if df_pos.empty:
-        st.info("💡 Aún no hay Órdenes de Compra registradas. Dirígete a **'📥 Registrar / Cargar PO'** o **'📬 Bandeja de Correos & OCR'** para ingresar tu primera PO.")
+        st.info("💡 Aún no hay Órdenes de Compra registradas. Dirígete a **'📬 Bandeja de Entrada OCR'** para ingresar tu primer lote de POs.")
     else:
-        df_summary = get_global_pos_tracking_summary(df_pos, df_part)
+        tab_dash_kpi, tab_dash_360 = st.tabs([
+            "📈 Resumen Ejecutivo & Cumplimiento",
+            "🎯 Matriz de Control 360° (Producción vs Remisión)"
+        ])
         
-        # Métricas Globales
-        tot_pos = len(df_summary)
-        tot_piezas_req = df_summary['piezas_requeridas'].sum()
-        tot_piezas_rem = df_summary['piezas_remisionadas'].sum()
-        tot_piezas_pend = df_summary['piezas_pendientes'].sum()
-        pct_global = (tot_piezas_rem / tot_piezas_req * 100.0) if tot_piezas_req > 0 else 0.0
-        
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.metric("Total Órdenes (POs)", f"{tot_pos}")
-        with c2:
-            st.metric("Total Piezas Requeridas", f"{tot_piezas_req:,.0f}")
-        with c3:
-            st.metric("Piezas Remisionadas", f"{tot_piezas_rem:,.0f}", f"{pct_global:.1f}% Cumplido")
-        with c4:
-            st.metric("Piezas Pendientes de Envío", f"{tot_piezas_pend:,.0f}", delta=f"-{tot_piezas_pend:,.0f}", delta_color="inverse")
+        # ----------------------------------------------------------------------
+        # PESTAÑA 1: RESUMEN EJECUTIVO & KPIS
+        # ----------------------------------------------------------------------
+        with tab_dash_kpi:
+            df_summary = get_global_pos_tracking_summary(df_pos, df_part)
             
-        st.write("---")
-        
-        # Gráficas
-        g1, g2 = st.columns(2)
-        with g1:
-            st.subheader("Estatus Global de Órdenes")
-            status_counts = df_summary['estatus_remision'].value_counts().reset_index()
-            status_counts.columns = ['Estatus', 'Cantidad']
+            tot_pos = len(df_summary)
+            tot_piezas_req = df_summary['piezas_requeridas'].sum()
+            tot_piezas_rem = df_summary['piezas_remisionadas'].sum()
+            tot_piezas_pend = df_summary['piezas_pendientes'].sum()
+            pct_global = (tot_piezas_rem / tot_piezas_req * 100.0) if tot_piezas_req > 0 else 0.0
             
-            fig_pie = px.pie(
-                status_counts,
-                values='Cantidad',
-                names='Estatus',
-                color='Estatus',
-                color_discrete_map=ESTATUS_COLORS,
-                hole=0.45
-            )
-            fig_pie.update_layout(margin=dict(t=20, b=20, l=20, r=20))
-            st.plotly_chart(fig_pie, use_container_width=True)
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric("Total Órdenes (POs)", f"{tot_pos}")
+            with c2:
+                st.metric("Total Piezas Requeridas", f"{tot_piezas_req:,.0f}")
+            with c3:
+                st.metric("Piezas Remisionadas", f"{tot_piezas_rem:,.0f}", f"{pct_global:.1f}% Cumplido")
+            with c4:
+                st.metric("Piezas Pendientes de Envío", f"{tot_piezas_pend:,.0f}", delta=f"-{tot_piezas_pend:,.0f}", delta_color="inverse")
+                
+            st.write("---")
             
-        with g2:
-            st.subheader("Avance de Piezas por Proyecto")
-            df_proy = df_summary.groupby('proyecto')[['piezas_requeridas', 'piezas_remisionadas']].sum().reset_index()
+            g1, g2 = st.columns(2)
+            with g1:
+                st.subheader("Estatus Global de Órdenes")
+                status_counts = df_summary['estatus_remision'].value_counts().reset_index()
+                status_counts.columns = ['Estatus', 'Cantidad']
+                
+                fig_pie = px.pie(
+                    status_counts,
+                    values='Cantidad',
+                    names='Estatus',
+                    color='Estatus',
+                    color_discrete_map=ESTATUS_COLORS,
+                    hole=0.45
+                )
+                fig_pie.update_layout(margin=dict(t=20, b=20, l=20, r=20))
+                st.plotly_chart(fig_pie, use_container_width=True)
+                
+            with g2:
+                st.subheader("Avance de Piezas por Proyecto")
+                df_proy = df_summary.groupby('proyecto')[['piezas_requeridas', 'piezas_remisionadas']].sum().reset_index()
+                
+                fig_bar = go.Figure()
+                fig_bar.add_trace(go.Bar(name='Requeridas', x=df_proy['proyecto'], y=df_proy['piezas_requeridas'], marker_color='#111111'))
+                fig_bar.add_trace(go.Bar(name='Remisionadas (Enviadas)', x=df_proy['proyecto'], y=df_proy['piezas_remisionadas'], marker_color='#EC2024'))
+                fig_bar.update_layout(barmode='group', margin=dict(t=20, b=20, l=20, r=20), xaxis_title="Proyecto", yaxis_title="Cantidad de Piezas")
+                st.plotly_chart(fig_bar, use_container_width=True)
+                
+            st.subheader("⚠️ Órdenes con Entregas Pendientes / En Proceso")
+            df_pendientes = df_summary[df_summary['piezas_pendientes'] > 0].sort_values(by='piezas_pendientes', ascending=False)
             
-            fig_bar = go.Figure()
-            fig_bar.add_trace(go.Bar(name='Requeridas', x=df_proy['proyecto'], y=df_proy['piezas_requeridas'], marker_color='#111111'))
-            fig_bar.add_trace(go.Bar(name='Remisionadas (Enviadas)', x=df_proy['proyecto'], y=df_proy['piezas_remisionadas'], marker_color='#EC2024'))
-            fig_bar.update_layout(barmode='group', margin=dict(t=20, b=20, l=20, r=20), xaxis_title="Proyecto", yaxis_title="Cantidad de Piezas")
-            st.plotly_chart(fig_bar, use_container_width=True)
+            if not df_pendientes.empty:
+                cols_show = ['po', 'proyecto', 'solicitante', 'piezas_requeridas', 'piezas_remisionadas', 'piezas_pendientes', 'pct_cumplimiento', 'estatus_remision']
+                st.dataframe(
+                    df_pendientes[cols_show].rename(columns={
+                        'po': 'PO / Folio',
+                        'proyecto': 'Proyecto',
+                        'solicitante': 'Solicitante',
+                        'piezas_requeridas': 'Piezas Req.',
+                        'piezas_remisionadas': 'Enviadas',
+                        'piezas_pendientes': 'Pendientes',
+                        'pct_cumplimiento': '% Cumpl.',
+                        'estatus_remision': 'Estatus'
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.success("🎉 ¡Excelente! Todas las Órdenes de Compra registradas han sido completadas al 100%.")
+
+        # ----------------------------------------------------------------------
+        # PESTAÑA 2: MATRIZ DE CONTROL 360° (PRODUCCIÓN VS REMISIÓN)
+        # ----------------------------------------------------------------------
+        with tab_dash_360:
+            df_mat = get_integrated_360_summary(df_pos, df_part)
             
-        # Tabla de Urgencias y Pendientes
-        st.subheader("⚠️ Órdenes con Entregas Pendientes / En Proceso")
-        df_pendientes = df_summary[df_summary['piezas_pendientes'] > 0].sort_values(by='piezas_pendientes', ascending=False)
-        
-        if not df_pendientes.empty:
-            cols_show = ['po', 'proyecto', 'solicitante', 'piezas_requeridas', 'piezas_remisionadas', 'piezas_pendientes', 'pct_cumplimiento', 'estatus_remision']
+            tot_req_all = df_mat['piezas_requeridas'].sum()
+            tot_fab_all = df_mat['piezas_fabricadas'].sum()
+            tot_env_all = df_mat['piezas_remisionadas'].sum()
+            tot_pend_env = df_mat['piezas_pendientes_env'].sum()
+            
+            pct_fab_global = (tot_fab_all / tot_req_all * 100.0) if tot_req_all > 0 else 0.0
+            pct_env_global = (tot_env_all / tot_req_all * 100.0) if tot_req_all > 0 else 0.0
+            
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.metric("📦 Total Piezas Requeridas", f"{tot_req_all:,.0f}")
+            with m2:
+                st.metric("🔵 Fabricadas en Planta", f"{tot_fab_all:,.0f}", f"{pct_fab_global:.1f}% Fabricado")
+            with m3:
+                st.metric("🟢 Remisionadas al Cliente", f"{tot_env_all:,.0f}", f"{pct_env_global:.1f}% Enviado")
+            with m4:
+                st.metric("⏳ Pendientes de Envío", f"{tot_pend_env:,.0f}", delta=f"-{tot_pend_env:,.0f}", delta_color="inverse")
+                
+            st.write("---")
+            
+            c_f1, c_f2, c_f3 = st.columns([2, 1, 1])
+            with c_f1:
+                q_search_360 = st.text_input("🔍 Búsqueda rápida (PO, Proyecto, SKU, OF, Remisión):", "", key="search_360_dash")
+            with c_f2:
+                est_opts = ["Todos"] + sorted(list(df_mat['estatus_360'].unique()))
+                sel_est_360 = st.selectbox("Filtrar por Estatus 360°:", est_opts, key="est_360_dash")
+            with c_f3:
+                proy_opts_360 = ["Todos"] + sorted([p for p in df_mat['proyecto'].dropna().unique() if str(p).strip()])
+                sel_proy_360 = st.selectbox("Filtrar por Proyecto:", proy_opts_360, key="proy_360_dash")
+                
+            df_filtered_360 = df_mat.copy()
+            if q_search_360.strip():
+                term = q_search_360.strip().lower()
+                df_filtered_360 = df_filtered_360[
+                    df_filtered_360['po'].astype(str).str.lower().str.contains(term) |
+                    df_filtered_360['proyecto'].astype(str).str.lower().str.contains(term) |
+                    df_filtered_360['ofs_asociadas'].astype(str).str.lower().str.contains(term) |
+                    df_filtered_360['remisiones_asociadas'].astype(str).str.lower().str.contains(term)
+                ]
+            if sel_est_360 != "Todos":
+                df_filtered_360 = df_filtered_360[df_filtered_360['estatus_360'] == sel_est_360]
+            if sel_proy_360 != "Todos":
+                df_filtered_360 = df_filtered_360[df_filtered_360['proyecto'] == sel_proy_360]
+                
+            st.markdown(f"Mostrando **{len(df_filtered_360)}** órdenes de compra:")
+            
+            cols_mat_show = [
+                'po', 'proyecto', 'piezas_requeridas',
+                'piezas_fabricadas', 'pct_fabricacion',
+                'piezas_remisionadas', 'pct_remision',
+                'piezas_pendientes_fab', 'piezas_pendientes_env',
+                'ofs_asociadas', 'remisiones_asociadas', 'estatus_360'
+            ]
+            
             st.dataframe(
-                df_pendientes[cols_show].rename(columns={
+                df_filtered_360[cols_mat_show].rename(columns={
                     'po': 'PO / Folio',
                     'proyecto': 'Proyecto',
-                    'solicitante': 'Solicitante',
-                    'piezas_requeridas': 'Piezas Req.',
-                    'piezas_remisionadas': 'Enviadas',
-                    'piezas_pendientes': 'Pendientes',
-                    'pct_cumplimiento': '% Cumpl.',
-                    'estatus_remision': 'Estatus'
+                    'piezas_requeridas': 'Cant. Req.',
+                    'piezas_fabricadas': '🔵 Fab. Planta',
+                    'pct_fabricacion': '🔵 % Fab.',
+                    'piezas_remisionadas': '🟢 Remisionadas',
+                    'pct_remision': '🟢 % Envío',
+                    'piezas_pendientes_fab': 'Pend. Fab.',
+                    'piezas_pendientes_env': 'Pend. Envío',
+                    'ofs_asociadas': 'OFs (Corte y Doblez)',
+                    'remisiones_asociadas': 'Remisiones',
+                    'estatus_360': 'Estatus 360°'
                 }),
                 use_container_width=True,
                 hide_index=True
             )
-        else:
-            st.success("🎉 ¡Excelente! Todas las Órdenes de Compra registradas han sido completadas al 100%.")
+            
+            output_360 = io.BytesIO()
+            with pd.ExcelWriter(output_360, engine='openpyxl') as writer:
+                df_filtered_360.to_excel(writer, sheet_name='Control_360_SIGRAMA', index=False)
+            st.download_button(
+                "📥 Descargar Matriz de Control 360° en Excel",
+                data=output_360.getvalue(),
+                file_name=f"Matriz_Control_360_SIGRAMA_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
 
 # ==============================================================================
-# SECCIÓN: MATRIZ DE CONTROL 360° (PRODUCCIÓN + REMISIÓN)
+# SECCIÓN 2: BANDEJA DE ENTRADA OCR (PUNTO DE INICIO - CARGA DE 58 ÓRDENES)
 # ==============================================================================
-elif menu == "🎯 Matriz de Control 360° (Producción + Remisión)":
-    st.title("🎯 Matriz de Control 360°: Producción vs Remisión")
-    st.markdown("Integración sistemática del flujo completo: **Captura Multi-Canal ➔ Orden Sistemática ➔ Avance Corte/Doblez ➔ Avance Remisiones ➔ Análisis de Estatus.**")
+elif menu == "📬 Bandeja de Entrada OCR":
+    st.title("📬 Bandeja de Entrada OCR & Ingesta de Órdenes de Compra")
+    st.markdown("Punto de inicio para cargar ordenadamente las **58 Órdenes Internas** de Sigrama subiendo sus correos **.MSG** o documentos oficiales **.PDF**.")
     
-    # Visualizador interactivo del flujo
-    with st.expander("📌 Diagrama del Flujo Sistemático Integrado", expanded=False):
-        st.markdown("""<div style="background-color:#F8FAFC; border:1px solid #CBD5E1; border-radius:10px; padding:18px; margin-bottom:15px;">
-<div style="display:flex; justify-content:space-between; gap:10px; margin-bottom:15px;">
-<div style="flex:1; background-color:#1E293B; color:white; padding:10px; border-radius:6px; text-align:center; font-weight:700; font-size:12px;">
-📬 PO CARGADAS EN CORREO<br><span style="font-size:10px; font-weight:400; color:#94A3B8;">(PDF / OCR / Notas de Urgencia)</span>
-</div>
-<div style="flex:1; background-color:#1E293B; color:white; padding:10px; border-radius:6px; text-align:center; font-weight:700; font-size:12px;">
-🚚 PO DETECTADAS EN REMISIONES<br><span style="font-size:10px; font-weight:400; color:#94A3B8;">(Tarimas / Despachos Almacén)</span>
-</div>
-<div style="flex:1; background-color:#1E293B; color:white; padding:10px; border-radius:6px; text-align:center; font-weight:700; font-size:12px;">
-⚙️ PO DETECTADAS EN CORTE Y DOBLEZ<br><span style="font-size:10px; font-weight:400; color:#94A3B8;">(OFs / Nidos / Avances Taller)</span>
-</div>
-</div>
+    tab_ocr_upload, tab_ocr_excel, tab_ocr_manual, tab_ocr_casos = st.tabs([
+        "📥 Subir Correo (.MSG) o Archivos (.PDF)",
+        "📁 Carga Masiva de Excel",
+        "📝 Registro Manual Guiado",
+        "📨 Ejemplos Guiados (Casos 1 y 2)"
+    ])
+    
+    # 1. Pestaña: Subida Directa de Correos y PDFs
+    with tab_ocr_upload:
+        st.subheader("📥 Cargar Correos (.MSG) o Archivos PDF de Clientes")
+        st.write("Sube el archivo de correo `.msg` (con sus PDFs adjuntos) o los PDFs oficiales de las POs para ejecutar el motor OCR espacial.")
+        
+        custom_files = st.file_uploader(
+            "Arrastra aquí tus archivos de correo (.msg) o documentos de PO (.pdf):",
+            type=['msg', 'pdf'],
+            accept_multiple_files=True,
+            key="uploader_ocr_intake"
+        )
+        
+        if custom_files:
+            st.write(f"📁 **{len(custom_files)}** archivo(s) seleccionado(s).")
+            if st.button("⚡ Procesar y Extraer Órdenes de Compra", type="primary", use_container_width=True, key="btn_ocr_process"):
+                extracted_batch = []
+                with st.spinner("Analizando documentos con motor OCR espacial..."):
+                    for uploaded_f in custom_files:
+                        f_bytes = uploaded_f.read()
+                        f_name = uploaded_f.name
+                        
+                        if f_name.lower().endswith('.msg'):
+                            from pdf_parser import extract_attachments_from_msg
+                            msg_info = extract_attachments_from_msg(f_bytes)
+                            ctx_msg = parse_email_text(msg_info.get('body', ''))
+                            ctx_msg['remitente'] = msg_info.get('sender', '')
+                            
+                            for att in msg_info.get('attachments', []):
+                                att_n = att['filename']
+                                if att_n.lower().endswith('.pdf') and not any(w in att_n.lower() for w in ['plano', 'drawing', 'cotizacion']):
+                                    try:
+                                        cab_m, part_m = parse_po_pdf(att['data'], email_context=ctx_msg)
+                                        extracted_batch.append({'cab': cab_m, 'part': part_m, 'file_name': f"{f_name} ➔ {att_n}"})
+                                    except Exception as e_att:
+                                        st.error(f"Error en {att_n}: {e_att}")
+                        else:
+                            if any(w in f_name.lower() for w in ['plano', 'drawing', 'rev', 'cotizacion']):
+                                continue
+                            try:
+                                cab_f, part_f = parse_po_pdf(f_bytes)
+                                extracted_batch.append({'cab': cab_f, 'part': part_f, 'file_name': f_name})
+                            except Exception as e:
+                                st.error(f"Error procesando {f_name}: {e}")
+                                
+                    st.session_state['ocr_batch_results'] = extracted_batch
+                    st.success(f"✅ Se extrajeron exitosamente **{len(extracted_batch)}** Órdenes de Compra con SKU Cliente y SKU Nuestro.")
+                    
+        if 'ocr_batch_results' in st.session_state and st.session_state['ocr_batch_results']:
+            b_list = st.session_state['ocr_batch_results']
+            st.write("---")
+            st.markdown(f"### 📋 Lote de {len(b_list)} Órdenes Extraídas Listas para Registrar")
+            
+            for idx, item in enumerate(b_list):
+                with st.expander(f"📄 PO: {item['cab'].get('po', 'N/A')} • {item['cab'].get('proyecto', '')} ({item['file_name']})", expanded=True):
+                    c_b1, c_b2, c_b3 = st.columns(3)
+                    with c_b1:
+                        st.markdown(f"• **Folio:** `{item['cab'].get('po')}`")
+                        st.markdown(f"• **Proyecto:** `{item['cab'].get('proyecto')}`")
+                    with c_b2:
+                        st.markdown(f"• **Solicitante / Comprador:** `{item['cab'].get('solicitante')}` / `{item['cab'].get('comprador')}`")
+                        st.markdown(f"• **Total:** `${item['cab'].get('total', 0):,.2f} MXN`")
+                    with c_b3:
+                        st.markdown(f"• **Partidas:** `{len(item['part'])}`")
+                        
+                    df_p_view = pd.DataFrame(item['part'])
+                    col_order = [c for c in ['item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto', 'cantidad_requerida', 'unidad', 'precio_unitario', 'precio_total', 'fecha_entrega'] if c in df_p_view.columns]
+                    st.dataframe(
+                        df_p_view[col_order].rename(columns={
+                            'item_no': 'Item #',
+                            'sku_cliente': 'SKU Cliente (Clave)',
+                            'clave_sku': 'SKU Nuestro (Planta)',
+                            'descripcion_producto': 'Descripción del Producto',
+                            'cantidad_requerida': 'Cantidad',
+                            'unidad': 'Unidad',
+                            'precio_unitario': 'P. Unitario',
+                            'precio_total': 'P. Total',
+                            'fecha_entrega': 'Fecha Entrega'
+                        }),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    
+            if st.button("🚀 Confirmar y Guardar Todo el Lote en Sistema", type="primary", use_container_width=True, key="btn_confirm_save_ocr"):
+                total_ok = 0
+                for item in b_list:
+                    ok_u, _ = save_po(item['cab'], item['part'])
+                    if ok_u:
+                        total_ok += 1
+                st.success(f"🎉 Se guardaron y sincronizaron **{total_ok} de {len(b_list)}** órdenes de compra.")
+                st.session_state.pop('ocr_batch_results', None)
+                st.rerun()
 
-<div style="text-align:center; font-size:20px; color:#EC2024; margin:-5px 0 10px 0;">⬇️ <b>CONSOLIDACIÓN EN MASTER HUB</b> ⬇️</div>
+    # 2. Pestaña: Carga Masiva Excel
+    with tab_ocr_excel:
+        st.subheader("📁 Carga Masiva mediante Plantilla Oficial Excel")
+        st.write("Descarga la plantilla oficial estandarizada, captura las órdenes y súbela para registrar múltiples POs a la vez.")
+        
+        template_bytes = generate_po_excel_template()
+        st.download_button(
+            label="📥 Descargar Plantilla Oficial Excel (2 Pestañas)",
+            data=template_bytes,
+            file_name="Plantilla_Oficial_Orden_de_Compra_Sigrama.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        
+        st.write("---")
+        excel_file = st.file_uploader("Subir Archivo Excel completado:", type=['xlsx'], key="uploader_ocr_excel")
+        if excel_file is not None:
+            if st.button("🚀 Procesar e Integrar Archivo Excel", type="primary", use_container_width=True):
+                ok, msg, cab_xl, part_xl = parse_uploaded_excel(excel_file)
+                if ok:
+                    ok_save, msg_save = save_po(cab_xl, part_xl)
+                    if ok_save:
+                        st.success(f"✅ {msg_save}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg_save}")
+                else:
+                    st.error(f"❌ {msg}")
 
-<div style="background-color:#EC2024; color:white; padding:12px; border-radius:8px; text-align:center; font-weight:800; font-size:14px; margin-bottom:15px;">
-📋 ORDEN SISTEMÁTICA (MASTER PO RECORD UNIFICADO)
-</div>
+    # 3. Pestaña: Registro Manual
+    with tab_ocr_manual:
+        st.subheader("📝 Captura Manual Guiada de Orden de Compra")
+        with st.form("form_manual_po_intake"):
+            st.markdown("##### 1. Encabezado de la PO")
+            m1, m2, m3 = st.columns(3)
+            with m1:
+                man_po = st.text_input("Folio de PO (Obligatorio):", placeholder="ej. 26083186")
+                man_id_int = st.text_input("ID Interno (ej. INT-0001):", placeholder="INT-0001")
+                man_fecha = st.date_input("Fecha de Pedido:", value=datetime.date.today())
+            with m2:
+                man_proy = st.text_input("Proyecto / Uso:", placeholder="ej. CLOUD / TAB-RQXP")
+                man_sol = st.text_input("Solicitante:", placeholder="ej. ESTEFANIA IBARRA")
+                man_comp = st.text_input("Comprador:", placeholder="ej. Josue Mesta")
+            with m3:
+                man_lab = st.text_input("L.A.B. / Destino:", value="ALMACEN SIGRAMA")
+                man_tent = st.text_input("Tiempo de Entrega:", placeholder="ej. 18 AGOSTO 2026")
+                man_obs = st.text_input("Observaciones Generales:")
+                
+            st.markdown("##### 2. Partida Principal")
+            p1, p2, p3, p4, p5 = st.columns([1.5, 1.5, 3, 1, 1])
+            with p1:
+                man_sku_cli = st.text_input("SKU Cliente (Clave):", placeholder="SWB01431")
+            with p2:
+                man_sku_nos = st.text_input("SKU Nuestro (Planta):", placeholder="PP19380-03")
+            with p3:
+                man_desc = st.text_input("Descripción del Producto:", placeholder="382 X 10H BLANK DOOR")
+            with p4:
+                man_cant = st.number_input("Cantidad:", min_value=1.0, value=32.0, step=1.0)
+            with p5:
+                man_pu = st.number_input("P. Unitario ($):", min_value=0.0, value=385.55, step=10.0)
+                
+            man_submit = st.form_submit_button("💾 Guardar Orden de Compra", type="primary", use_container_width=True)
+            if man_submit:
+                if not man_po.strip():
+                    st.error("❌ El Folio de la PO es obligatorio.")
+                else:
+                    pt_val = man_cant * man_pu
+                    cab_man = {
+                        "po": man_po.strip(),
+                        "id_interno": man_id_int.strip().upper(),
+                        "fecha_pedido": man_fecha.strftime("%Y-%m-%d"),
+                        "proyecto": man_proy.strip(),
+                        "solicitante": man_sol.strip(),
+                        "requisicion": "",
+                        "destino": man_lab.strip(),
+                        "proveedor": "SIGRAMA PLANTA METALES",
+                        "proveedor_atencion": "JESUS MORALES",
+                        "cliente_facturar_a": "INDUSTRIA SIGRAMA S.A. DE C.V.",
+                        "cliente_rfc": "ISI-870204-K4A",
+                        "cliente_direccion": "C. JUAN ESCUTIA #50 COL. ABASTOS C.P. 27020 TORREON, COAH.",
+                        "forma_pago": "CONTADO / CRÉDITO",
+                        "lab": man_lab.strip(),
+                        "tiempo_entrega": man_tent.strip(),
+                        "comprador": man_comp.strip(),
+                        "subtotal": pt_val,
+                        "descuento": 0.0,
+                        "iva": pt_val * 0.16,
+                        "ret_iva": 0.0,
+                        "ret_isr": 0.0,
+                        "total": pt_val * 1.16,
+                        "moneda": "MXN",
+                        "observaciones": man_obs.strip(),
+                        "texto_etiqueta": man_proy.strip(),
+                        "color_fondo": "#EC2024",
+                        "color_texto": "#FFFFFF"
+                    }
+                    part_man = [{
+                        "item_no": 1,
+                        "sku_cliente": man_sku_cli.strip().upper(),
+                        "clave_sku": man_sku_nos.strip().upper(),
+                        "descripcion_producto": man_desc.strip(),
+                        "cantidad_requerida": man_cant,
+                        "unidad": "PIEZA",
+                        "precio_unitario": man_pu,
+                        "precio_total": pt_val,
+                        "fecha_entrega": (man_fecha + datetime.timedelta(days=7)).strftime("%Y-%m-%d"),
+                        "parcialidad": "P1",
+                        "observaciones_partida": ""
+                    }]
+                    ok, msg = save_po(cab_man, part_man)
+                    if ok:
+                        st.success(f"✅ {msg}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")
 
-<div style="display:flex; justify-content:space-between; gap:15px;">
-<div style="flex:1; background-color:#0284C7; color:white; padding:12px; border-radius:6px; text-align:center; font-weight:700; font-size:13px;">
-🔵 REVISIÓN AVANCE EN CORTE Y DOBLEZ<br>
-<span style="font-size:11px; font-weight:400;">• Piezas Cortadas (Láser)<br>• Piezas Dobladas<br>• Piezas Terminadas en Taller</span>
-</div>
-<div style="flex:1; background-color:#16A34A; color:white; padding:12px; border-radius:6px; text-align:center; font-weight:700; font-size:13px;">
-🟢 REVISIÓN AVANCE EN REMISIONES<br>
-<span style="font-size:11px; font-weight:400;">• Tarimas en Almacén<br>• Tarimas en Tránsito<br>• Piezas Enviadas con Remisión</span>
-</div>
-<div style="flex:1; background-color:#0F172A; color:white; padding:12px; border-radius:6px; text-align:center; font-weight:700; font-size:13px;">
-📊 ANÁLISIS DE ESTATUS<br>
-<span style="font-size:11px; font-weight:400;">• % Avance Producción vs Envío<br>• Filtros Dinámicos<br>• Saldo Piezas Pendientes</span>
-</div>
-</div>
-</div>""", unsafe_allow_html=True)
+    # 4. Pestaña: Ejemplos Guiados
+    with tab_ocr_casos:
+        st.subheader("📨 Ejemplos de Correos y Formatos Sigrama")
+        st.write("Demostración de extracción para correos individuales con urgencias o correos con múltiples órdenes y planos anexos.")
+        with st.expander("📄 Ver Caso 1: PO 2608-3177 (Urgencia de Partes)"):
+            if st.button("⚡ Simular Extracción de Caso 1"):
+                st.success("Extracción simulada con éxito.")
+
+
+# ==============================================================================
+# SECCIÓN 3: AJUSTE DE PO (AJUSTE MAESTRO 1° GENERALES + 2° ARTÍCULOS)
+# ==============================================================================
+elif menu == "✏️ Ajuste de PO":
+    st.title("✏️ Ajuste y Control Maestro de Órdenes de Compra")
+    st.markdown("Navega entre las Órdenes de Compra para ajustar sus **fechas de llegada**, **identificadores internos (INT-XXXX)**, **archivos digitales** y **partidas de artículos**.")
     
     df_pos = get_all_pos()
     df_part = get_all_partidas()
     
     if df_pos.empty:
-        st.info("💡 No hay POs registradas para generar la Matriz 360°.")
+        st.info("💡 No hay POs registradas para ajustar. Cárgalas en **'📬 Bandeja de Entrada OCR'**.")
     else:
-        df_mat = get_integrated_360_summary(df_pos, df_part)
+        pos_list = df_pos['po'].astype(str).tolist()
+        total_pos = len(pos_list)
         
-        # Métricas Globales Integradas
-        tot_req_all = df_mat['piezas_requeridas'].sum()
-        tot_fab_all = df_mat['piezas_fabricadas'].sum()
-        tot_env_all = df_mat['piezas_remisionadas'].sum()
-        tot_pend_fab = df_mat['piezas_pendientes_fab'].sum()
-        tot_pend_env = df_mat['piezas_pendientes_env'].sum()
-        
-        pct_fab_global = (tot_fab_all / tot_req_all * 100.0) if tot_req_all > 0 else 0.0
-        pct_env_global = (tot_env_all / tot_req_all * 100.0) if tot_req_all > 0 else 0.0
-        
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            st.metric("📦 Total Piezas Requeridas", f"{tot_req_all:,.0f}")
-        with m2:
-            st.metric("🔵 Fabricadas en Planta", f"{tot_fab_all:,.0f}", f"{pct_fab_global:.1f}% Fabricado")
-        with m3:
-            st.metric("🟢 Remisionadas al Cliente", f"{tot_env_all:,.0f}", f"{pct_env_global:.1f}% Enviado")
-        with m4:
-            st.metric("⏳ Pendientes de Envío", f"{tot_pend_env:,.0f}", delta=f"-{tot_pend_env:,.0f}", delta_color="inverse")
+        if 'current_po_edit_idx' not in st.session_state or st.session_state['current_po_edit_idx'] >= total_pos:
+            st.session_state['current_po_edit_idx'] = 0
             
-        st.write("---")
+        cur_idx = st.session_state['current_po_edit_idx']
         
-        # Filtros Dinámicos
-        c_f1, c_f2, c_f3 = st.columns([2, 1, 1])
-        with c_f1:
-            q_search_360 = st.text_input("🔍 Búsqueda rápida (PO, Proyecto, SKU, OF, Remisión):", "", key="search_360")
-        with c_f2:
-            est_opts = ["Todos"] + sorted(list(df_mat['estatus_360'].unique()))
-            sel_est_360 = st.selectbox("Filtrar por Estatus 360°:", est_opts, key="est_360")
-        with c_f3:
-            proy_opts_360 = ["Todos"] + sorted([p for p in df_mat['proyecto'].dropna().unique() if str(p).strip()])
-            sel_proy_360 = st.selectbox("Filtrar por Proyecto:", proy_opts_360, key="proy_360")
+        # Barra de Navegación Rápida
+        c_nav1, c_nav2, c_nav3 = st.columns([1, 4, 1])
+        with c_nav1:
+            if st.button("⬅️ Anterior", use_container_width=True, disabled=(cur_idx == 0)):
+                st.session_state['current_po_edit_idx'] = max(0, cur_idx - 1)
+                st.rerun()
+        with c_nav2:
+            label_options = []
+            for i, p_val in enumerate(pos_list):
+                row_p = df_pos[df_pos['po'].astype(str) == p_val].iloc[0]
+                int_id = str(row_p.get('id_interno', '')).strip()
+                proy_txt = str(row_p.get('proyecto', '')).strip()
+                prefix = f"[{int_id}] " if int_id else ""
+                label_options.append(f"{i+1}/{total_pos}: {prefix}PO {p_val} • {proy_txt}")
+                
+            selected_label_idx = st.selectbox(
+                "Seleccionar PO para Ajuste:",
+                range(total_pos),
+                format_func=lambda i: label_options[i],
+                index=cur_idx,
+                key="sb_select_po_edit_master"
+            )
+            if selected_label_idx != cur_idx:
+                st.session_state['current_po_edit_idx'] = selected_label_idx
+                st.rerun()
+                
+        with c_nav3:
+            if st.button("Siguiente ➡️", use_container_width=True, disabled=(cur_idx == total_pos - 1)):
+                st.session_state['current_po_edit_idx'] = min(total_pos - 1, cur_idx + 1)
+                st.rerun()
+                
+        st.progress((cur_idx + 1) / total_pos, text=f"Orden {cur_idx + 1} de {total_pos} • ({((cur_idx + 1)/total_pos)*100:.1f}% del catálogo)")
+        
+        selected_po = pos_list[cur_idx]
+        cab_row = df_pos[df_pos['po'].astype(str) == selected_po].iloc[0]
+        partidas_po = df_part[df_part['po'].astype(str) == selected_po] if not df_part.empty else pd.DataFrame()
+        
+        # Tarjeta de Resumen (Solo Lectura)
+        st.write("")
+        with st.container(border=True):
+            st.markdown(f"### 📋 Ficha de Control: PO `{selected_po}`")
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.metric("3. Cantidad de Artículos (#)", f"{len(partidas_po)} Partidas", help="Número de partidas en esta PO")
+            with m2:
+                cant_piezas_tot = float(partidas_po['cantidad_requerida'].sum()) if not partidas_po.empty else 0.0
+                st.metric("3. Cantidad Total de Piezas", f"{cant_piezas_tot:,.0f} pzas", help="Suma de todas las piezas requeridas")
+            with m3:
+                importe_tot = float(cab_row.get('total', 0) or 0)
+                st.metric("Importe Total ($)", f"${importe_tot:,.2f} MXN")
+            with m4:
+                estatus_val = str(cab_row.get('estatus_general', 'Registrada'))
+                st.metric("Estatus Actual", estatus_val)
+                
+        # 1° Bloque: Ajuste de Datos Generales
+        st.markdown("#### 1️⃣ Datos Generales de la PO:")
+        with st.container(border=True):
+            f_col1, f_col2 = st.columns(2)
+            with f_col1:
+                val_id_int = str(cab_row.get('id_interno', '')).strip()
+                new_id_interno = st.text_input(
+                    "2. Nombre Interno (ej. INT-0001, INT-0059):",
+                    value=val_id_int if val_id_int else f"INT-{(cur_idx+1):04d}",
+                    key=f"edit_id_int_{selected_po}"
+                )
+                
+                val_f_llegada = str(cab_row.get('fecha_llegada', '')).strip()
+                try:
+                    default_f_llegada = datetime.datetime.strptime(val_f_llegada, "%Y-%m-%d").date() if val_f_llegada else datetime.date.today()
+                except Exception:
+                    default_f_llegada = datetime.date.today()
+                new_fecha_llegada = st.date_input("1. Fecha de Llegada de la PO (Recepción de Correo):", value=default_f_llegada, key=f"edit_flleg_{selected_po}")
+                
+                val_f_solic = str(cab_row.get('fecha_solicitada', '')).strip()
+                try:
+                    default_f_solic = datetime.datetime.strptime(val_f_solic, "%Y-%m-%d").date() if val_f_solic else (default_f_llegada + datetime.timedelta(days=14))
+                except Exception:
+                    default_f_solic = default_f_llegada + datetime.timedelta(days=14)
+                new_fecha_solicitada = st.date_input("6. Fecha Solicitada (Compromiso Entrega):", value=default_f_solic, key=f"edit_fsolic_{selected_po}")
+                
+                val_comp = str(cab_row.get('comprador', '')).strip()
+                new_comprador = st.text_input("7. Comprador / Contacto de Compras:", value=val_comp, key=f"edit_comp_{selected_po}")
+                
+            with f_col2:
+                val_mail = str(cab_row.get('archivo_correo', '')).strip()
+                new_archivo_correo = st.text_input(
+                    "4. Archivo de Correo (.MSG):",
+                    value=val_mail if val_mail else f"INT {(cur_idx+1):04d} - OC {selected_po} SIGRAMA METALES.msg",
+                    key=f"edit_mail_{selected_po}"
+                )
+                
+                val_pdf = str(cab_row.get('archivo_pdf', '')).strip()
+                new_archivo_pdf = st.text_input(
+                    "5. Documento de PO (.PDF):",
+                    value=val_pdf if val_pdf else f"{selected_po} SIGRAMA METALES JMC.PDF",
+                    key=f"edit_pdf_{selected_po}"
+                )
+                
+                new_proyecto = st.text_input("Proyecto / Uso:", value=str(cab_row.get('proyecto', '')), key=f"edit_proy_{selected_po}")
+                new_solicitante = st.text_input("Solicitante / Requisición:", value=str(cab_row.get('solicitante', '')), key=f"edit_sol_{selected_po}")
+                
+            new_observaciones = st.text_area("Observaciones y Notas de Control:", value=str(cab_row.get('observaciones', '')), height=60, key=f"edit_obs_{selected_po}")
             
-        # Aplicar Filtros
-        df_filtered = df_mat.copy()
-        if q_search_360.strip():
-            term = q_search_360.strip().lower()
-            df_filtered = df_filtered[
-                df_filtered['po'].astype(str).str.lower().str.contains(term) |
-                df_filtered['proyecto'].astype(str).str.lower().str.contains(term) |
-                df_filtered['ofs_asociadas'].astype(str).str.lower().str.contains(term) |
-                df_filtered['remisiones_asociadas'].astype(str).str.lower().str.contains(term)
-            ]
-        if sel_est_360 != "Todos":
-            df_filtered = df_filtered[df_filtered['estatus_360'] == sel_est_360]
-        if sel_proy_360 != "Todos":
-            df_filtered = df_filtered[df_filtered['proyecto'] == sel_proy_360]
+        # 2° Bloque: Ajuste de la Tabla de Artículos
+        st.markdown("#### 2️⃣ Tabla de Artículos / Partidas (Editable):")
+        st.caption("Puedes modificar cualquier celda directamente (SKU Cliente, SKU Planta, Cantidades, Precios o Fechas) o agregar nuevos renglones.")
+        
+        if not partidas_po.empty:
+            cols_edit_order = ['item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto', 'cantidad_requerida', 'unidad', 'precio_unitario', 'precio_total', 'fecha_entrega']
+            df_for_editor = partidas_po[[c for c in cols_edit_order if c in partidas_po.columns]].copy()
             
-        st.markdown(f"Mostrando **{len(df_filtered)}** órdenes de compra encontradas:")
-        
-        cols_mat_show = [
-            'po', 'proyecto', 'piezas_requeridas',
-            'piezas_fabricadas', 'pct_fabricacion',
-            'piezas_remisionadas', 'pct_remision',
-            'piezas_pendientes_fab', 'piezas_pendientes_env',
-            'ofs_asociadas', 'remisiones_asociadas', 'estatus_360'
-        ]
-        
-        st.dataframe(
-            df_filtered[cols_mat_show].rename(columns={
-                'po': 'PO / Folio',
-                'proyecto': 'Proyecto',
-                'piezas_requeridas': 'Cant. Req.',
-                'piezas_fabricadas': '🔵 Fab. Planta',
-                'pct_fabricacion': '🔵 % Fab.',
-                'piezas_remisionadas': '🟢 Remisionadas',
-                'pct_remision': '🟢 % Envío',
-                'piezas_pendientes_fab': 'Pend. Fab.',
-                'piezas_pendientes_env': 'Pend. Envío',
-                'ofs_asociadas': 'OFs (Corte y Doblez)',
-                'remisiones_asociadas': 'Remisiones',
-                'estatus_360': 'Estatus 360°'
-            }),
-            use_container_width=True,
-            hide_index=True
-        )
-        
-        # Botón de Descarga Excel
-        output_360 = io.BytesIO()
-        with pd.ExcelWriter(output_360, engine='openpyxl') as writer:
-            df_filtered.to_excel(writer, sheet_name='Control_360_SIGRAMA', index=False)
-        st.download_button(
-            "📥 Descargar Matriz de Control 360° en Excel",
-            data=output_360.getvalue(),
-            file_name=f"Matriz_Control_360_SIGRAMA_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            edited_df_partidas = st.data_editor(
+                df_for_editor,
+                column_config={
+                    'item_no': st.column_config.NumberColumn("Item #", disabled=True),
+                    'sku_cliente': st.column_config.TextColumn("SKU Cliente (Clave)"),
+                    'clave_sku': st.column_config.TextColumn("SKU Nuestro (Planta)"),
+                    'descripcion_producto': st.column_config.TextColumn("Descripción del Producto", width="large"),
+                    'cantidad_requerida': st.column_config.NumberColumn("Cantidad", min_value=1.0, format="%.2f"),
+                    'unidad': st.column_config.SelectboxColumn("Unidad", options=["PIEZA", "PZA", "KG", "METRO", "JGO", "LOTE", "SER"]),
+                    'precio_unitario': st.column_config.NumberColumn("P. Unitario ($)", format="$%.2f"),
+                    'precio_total': st.column_config.NumberColumn("P. Total ($)", format="$%.2f"),
+                    'fecha_entrega': st.column_config.TextColumn("Fecha Entrega")
+                },
+                use_container_width=True,
+                num_rows="dynamic",
+                key=f"data_editor_partidas_{selected_po}"
+            )
+        else:
+            edited_df_partidas = pd.DataFrame()
+            st.info("No hay partidas registradas para esta PO.")
+            
+        # Botones de Guardado
+        st.write("")
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            save_clicked = st.button("💾 Guardar Cambios de la PO (Generales + Artículos)", type="primary", use_container_width=True, key=f"btn_save_po_{selected_po}")
+        with btn_col2:
+            save_next_clicked = st.button("💾 Guardar y Pasar al Siguiente ➡️", use_container_width=True, key=f"btn_save_next_po_{selected_po}")
+            
+        if save_clicked or save_next_clicked:
+            # Construir cabecera actualizada
+            updated_cab = dict(cab_row)
+            updated_cab['id_interno'] = str(new_id_interno).strip().upper()
+            updated_cab['fecha_llegada'] = str(new_fecha_llegada)
+            updated_cab['fecha_solicitada'] = str(new_fecha_solicitada)
+            updated_cab['archivo_correo'] = str(new_archivo_correo).strip()
+            updated_cab['archivo_pdf'] = str(new_archivo_pdf).strip()
+            updated_cab['comprador'] = str(new_comprador).strip()
+            updated_cab['proyecto'] = str(new_proyecto).strip()
+            updated_cab['solicitante'] = str(new_solicitante).strip()
+            updated_cab['observaciones'] = str(new_observaciones).strip()
+            
+            # Recalcular totales según tabla editada
+            partidas_list = edited_df_partidas.to_dict('records') if not edited_df_partidas.empty else []
+            sub_calc = sum(float(r.get('precio_total', 0) or (float(r.get('cantidad_requerida', 0) or 0) * float(r.get('precio_unitario', 0) or 0))) for r in partidas_list)
+            updated_cab['subtotal'] = sub_calc
+            updated_cab['iva'] = sub_calc * 0.16
+            updated_cab['total'] = sub_calc * 1.16
+            
+            ok_save, msg_save = save_po(updated_cab, partidas_list)
+            if ok_save:
+                st.success(f"✅ ¡PO {selected_po} actualizada con éxito!")
+                if save_next_clicked and cur_idx < total_pos - 1:
+                    st.session_state['current_po_edit_idx'] = cur_idx + 1
+                st.rerun()
+            else:
+                st.error(f"❌ {msg_save}")
 
 
 # ==============================================================================
-# SECCIÓN 2: MATRIZ DE ÓRDENES (POs)
+# SECCIÓN 4: MATRIZ DE ÓRDENES (CATÁLOGO MAESTRO ORDENADO)
 # ==============================================================================
-elif menu == "📋 Matriz de Órdenes (POs)":
+elif menu == "📋 Matriz de Órdenes":
     st.title("📋 Matriz Maestra de Órdenes de Compra")
     st.markdown("Consulta, búsqueda global y ordenamiento de todas las POs registradas con sus identificadores internos y estatus de remisión.")
     
@@ -438,11 +812,10 @@ elif menu == "📋 Matriz de Órdenes (POs)":
     df_part = get_all_partidas()
     
     if df_pos.empty:
-        st.info("💡 No hay POs registradas. Registra una nueva PO en la pestaña correspondiente.")
+        st.info("💡 No hay POs registradas. Cárgalas en **'📬 Bandeja de Entrada OCR'**.")
     else:
         df_summary = get_global_pos_tracking_summary(df_pos, df_part)
         
-        # Filtros y Ordenamiento Superior
         f1, f2, f3, f4 = st.columns([2, 1, 1, 1.5])
         with f1:
             q_search = st.text_input("🔍 Búsqueda rápida (ID Interno, Folio, Proyecto, Comprador):", "")
@@ -547,194 +920,7 @@ elif menu == "📋 Matriz de Órdenes (POs)":
 
 
 # ==============================================================================
-# SECCIÓN 3: AJUSTE Y CONTROL MAESTRO DE POs (FORMULARIO CON NAVEGACIÓN)
-# ==============================================================================
-elif menu == "✏️ Ajuste y Control Maestro de POs":
-    st.title("✏️ Ajuste y Control Maestro de Órdenes de Compra")
-    st.markdown("Navega entre las Órdenes de Compra para ajustar sus **fechas de llegada**, **identificadores internos (INT-XXXX)**, **archivos digitales** y **condiciones de compra**.")
-    
-    df_pos = get_all_pos()
-    df_part = get_all_partidas()
-    
-    if df_pos.empty:
-        st.info("💡 No hay POs registradas para ajustar.")
-    else:
-        # Lista ordenada de POs
-        pos_list = df_pos['po'].astype(str).tolist()
-        total_pos = len(pos_list)
-        
-        # Inicializar índice en session_state
-        if 'current_po_edit_idx' not in st.session_state or st.session_state['current_po_edit_idx'] >= total_pos:
-            st.session_state['current_po_edit_idx'] = 0
-            
-        cur_idx = st.session_state['current_po_edit_idx']
-        
-        # Barra de Navegación Rápida
-        c_nav1, c_nav2, c_nav3 = st.columns([1, 4, 1])
-        with c_nav1:
-            if st.button("⬅️ Anterior", use_container_width=True, disabled=(cur_idx == 0)):
-                st.session_state['current_po_edit_idx'] = max(0, cur_idx - 1)
-                st.rerun()
-        with c_nav2:
-            # Construir etiquetas descriptivas para el selectbox
-            label_options = []
-            for i, p_val in enumerate(pos_list):
-                row_p = df_pos[df_pos['po'].astype(str) == p_val].iloc[0]
-                int_id = str(row_p.get('id_interno', '')).strip()
-                proy_txt = str(row_p.get('proyecto', '')).strip()
-                prefix = f"[{int_id}] " if int_id else ""
-                label_options.append(f"{i+1}/{total_pos}: {prefix}PO {p_val} • {proy_txt}")
-                
-            selected_label_idx = st.selectbox(
-                "Seleccionar PO para Ajuste:",
-                range(total_pos),
-                format_func=lambda i: label_options[i],
-                index=cur_idx,
-                key="sb_select_po_edit"
-            )
-            if selected_label_idx != cur_idx:
-                st.session_state['current_po_edit_idx'] = selected_label_idx
-                st.rerun()
-                
-        with c_nav3:
-            if st.button("Siguiente ➡️", use_container_width=True, disabled=(cur_idx == total_pos - 1)):
-                st.session_state['current_po_edit_idx'] = min(total_pos - 1, cur_idx + 1)
-                st.rerun()
-                
-        st.progress((cur_idx + 1) / total_pos, text=f"Orden {cur_idx + 1} de {total_pos} • ({((cur_idx + 1)/total_pos)*100:.1f}% del catálogo)")
-        
-        # Datos de la PO seleccionada
-        selected_po = pos_list[cur_idx]
-        cab_row = df_pos[df_pos['po'].astype(str) == selected_po].iloc[0]
-        partidas_po = df_part[df_part['po'].astype(str) == selected_po] if not df_part.empty else pd.DataFrame()
-        
-        # Tarjeta de Resumen / Métricas de Solo Lectura
-        st.write("")
-        with st.container(border=True):
-            st.markdown(f"### 📋 Ficha de Control: PO `{selected_po}`")
-            m1, m2, m3, m4 = st.columns(4)
-            with m1:
-                cant_articulos = len(partidas_po)
-                st.metric("3. Cantidad de Artículos (#)", f"{cant_articulos} Partidas", help="Número de partidas/renglones en esta PO")
-            with m2:
-                cant_piezas_tot = float(partidas_po['cantidad_requerida'].sum()) if not partidas_po.empty else 0.0
-                st.metric("3. Cantidad Total de Piezas", f"{cant_piezas_tot:,.0f} pzas", help="Suma de todas las piezas requeridas")
-            with m3:
-                importe_tot = float(cab_row.get('total', 0) or 0)
-                st.metric("Importe Total ($)", f"${importe_tot:,.2f} MXN")
-            with m4:
-                estatus_val = str(cab_row.get('estatus_general', 'Registrada'))
-                st.metric("Estatus Actual", estatus_val)
-                
-        # Formulario de Ajuste de Información
-        st.markdown("#### ✏️ Datos y Campos de Importancia a Ajustar:")
-        
-        with st.form(key=f"form_edit_po_{selected_po}"):
-            f_col1, f_col2 = st.columns(2)
-            
-            with f_col1:
-                # 2. Nombre Interno
-                val_id_int = str(cab_row.get('id_interno', '')).strip()
-                new_id_interno = st.text_input(
-                    "2. Nombre Interno (ej. INT-0001, INT-0059):",
-                    value=val_id_int if val_id_int else f"INT-{(cur_idx+1):04d}",
-                    help="Identificador secuencial interno de Sigrama para ordenamiento."
-                )
-                
-                # 1. Fecha de llegada de la PO
-                val_f_llegada = str(cab_row.get('fecha_llegada', '')).strip()
-                try:
-                    default_f_llegada = datetime.datetime.strptime(val_f_llegada, "%Y-%m-%d").date() if val_f_llegada else datetime.date.today()
-                except Exception:
-                    default_f_llegada = datetime.date.today()
-                new_fecha_llegada = st.date_input("1. Fecha de Llegada de la PO (Recepción de Correo):", value=default_f_llegada)
-                
-                # 6. Fecha Solicitada / Compromiso
-                val_f_solic = str(cab_row.get('fecha_solicitada', '')).strip()
-                try:
-                    default_f_solic = datetime.datetime.strptime(val_f_solic, "%Y-%m-%d").date() if val_f_solic else (default_f_llegada + datetime.timedelta(days=14))
-                except Exception:
-                    default_f_solic = default_f_llegada + datetime.timedelta(days=14)
-                new_fecha_solicitada = st.date_input("6. Fecha Solicitada (Compromiso Entrega):", value=default_f_solic)
-                
-                # 7. Comprador
-                val_comp = str(cab_row.get('comprador', '')).strip()
-                new_comprador = st.text_input("7. Comprador / Contacto de Compras:", value=val_comp)
-                
-            with f_col2:
-                # 4. Existe Archivo de Correo
-                val_mail = str(cab_row.get('archivo_correo', '')).strip()
-                new_archivo_correo = st.text_input(
-                    "4. Archivo de Correo (.MSG):",
-                    value=val_mail if val_mail else f"INT {(cur_idx+1):04d} - OC {selected_po} SIGRAMA METALES.msg",
-                    help="Nombre del correo .msg o evidencia de recepción."
-                )
-                
-                # 5. Documento de PO
-                val_pdf = str(cab_row.get('archivo_pdf', '')).strip()
-                new_archivo_pdf = st.text_input(
-                    "5. Documento de PO (.PDF):",
-                    value=val_pdf if val_pdf else f"{selected_po} SIGRAMA METALES JMC.PDF",
-                    help="Nombre del archivo PDF oficial de la Orden de Compra."
-                )
-                
-                # Proyecto y Solicitante
-                new_proyecto = st.text_input("Proyecto / Uso:", value=str(cab_row.get('proyecto', '')))
-                new_solicitante = st.text_input("Solicitante / Requisición:", value=str(cab_row.get('solicitante', '')))
-                
-            new_observaciones = st.text_area("Observaciones y Notas de Control:", value=str(cab_row.get('observaciones', '')), height=70)
-            
-            btn_save, btn_save_next = st.columns([1, 1])
-            with btn_save:
-                submit_save = st.form_submit_button("💾 Guardar Cambios de esta PO", type="primary", use_container_width=True)
-            with btn_save_next:
-                submit_save_next = st.form_submit_button("💾 Guardar y Pasar al Siguiente ➡️", use_container_width=True)
-                
-            if submit_save or submit_save_next:
-                fields_to_update = {
-                    'id_interno': str(new_id_interno).strip().upper(),
-                    'fecha_llegada': str(new_fecha_llegada),
-                    'fecha_solicitada': str(new_fecha_solicitada),
-                    'archivo_correo': str(new_archivo_correo).strip(),
-                    'archivo_pdf': str(new_archivo_pdf).strip(),
-                    'comprador': str(new_comprador).strip(),
-                    'proyecto': str(new_proyecto).strip(),
-                    'solicitante': str(new_solicitante).strip(),
-                    'observaciones': str(new_observaciones).strip()
-                }
-                
-                ok_u, msg_u = update_po_fields(selected_po, fields_to_update)
-                if ok_u:
-                    st.success(f"✅ {msg_u}")
-                    if submit_save_next and cur_idx < total_pos - 1:
-                        st.session_state['current_po_edit_idx'] = cur_idx + 1
-                    st.rerun()
-                else:
-                    st.error(f"❌ {msg_u}")
-                    
-        # Desglose de partidas de la PO
-        if not partidas_po.empty:
-            with st.expander(f"📦 Ver Partidas y SKUs de la PO {selected_po} ({len(partidas_po)} renglones)", expanded=False):
-                col_p = [c for c in ['item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto', 'cantidad_requerida', 'unidad', 'precio_unitario', 'precio_total', 'fecha_entrega'] if c in partidas_po.columns]
-                st.dataframe(
-                    partidas_po[col_p].rename(columns={
-                        'item_no': 'Item #',
-                        'sku_cliente': 'SKU Cliente (Clave)',
-                        'clave_sku': 'SKU Nuestro (Planta)',
-                        'descripcion_producto': 'Descripción',
-                        'cantidad_requerida': 'Cantidad',
-                        'unidad': 'Unidad',
-                        'precio_unitario': 'P. Unitario',
-                        'precio_total': 'P. Total',
-                        'fecha_entrega': 'Fecha Entrega'
-                    }),
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-
-# ==============================================================================
-# SECCIÓN 4: FICHA DE TRAZABILIDAD 360°
+# SECCIÓN 5: FICHA DE TRAZABILIDAD 360° (INVESTIGACIÓN & CRUCE)
 # ==============================================================================
 elif menu == "🔍 Ficha de Trazabilidad 360°":
     st.title("🔍 Ficha de Trazabilidad 360° por Orden de Compra")
@@ -743,140 +929,87 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
     df_pos = get_all_pos()
     
     if df_pos.empty:
-        st.info("💡 No hay POs registradas.")
+        st.info("💡 No hay Órdenes de Compra registradas.")
     else:
-        # Priorizar POs con datos y colocar 26083186 al frente si existe
-        pos_list = df_pos['po'].astype(str).tolist()
-        if '26083186' in pos_list:
-            pos_list.remove('26083186')
-            pos_list = ['26083186'] + sorted([p for p in pos_list if not p.startswith('URG') and not p.startswith('SCRAP')]) + [p for p in pos_list if p.startswith('URG') or p.startswith('SCRAP')]
-        
-        # Mapeo descriptivo para el selector
-        po_info_map = {}
-        for _, r_po in df_pos.iterrows():
-            p_code = str(r_po.get('po', ''))
-            p_prj = str(r_po.get('proyecto', 'General'))
-            p_prj = 'General' if p_prj.lower() in ('nan', 'none', '') else p_prj
-            po_info_map[p_code] = f"📑 {p_code}  |  Proyecto: {p_prj}"
-
-        sel_po = st.selectbox(
-            "Seleccione la Orden de Compra (PO) a inspeccionar:",
-            options=pos_list,
-            format_func=lambda x: po_info_map.get(x, f"📑 {x}"),
-            index=0
-        )
-        
-        df_cab, df_part = get_po_by_folio(sel_po)
+        col_sel1, col_sel2 = st.columns([2, 1])
+        with col_sel1:
+            pos_list = df_pos['po'].tolist()
+            sel_po = st.selectbox("Selecciona la Orden de Compra a inspeccionar:", pos_list)
+            
+        df_cab, df_partidas_po = get_po_by_folio(sel_po)
         
         if df_cab.empty:
-            st.error(f"No se encontró la PO {sel_po}")
+            st.error("No se encontraron datos de la PO.")
         else:
-            cab = df_cab.iloc[0].to_dict()
-            tracking = get_tracking_for_po(sel_po, df_part)
+            cab_info = df_cab.iloc[0]
+            tracking = get_tracking_for_po(sel_po, df_partidas_po)
             
-            def fmt_val(v, default="—"):
-                if v is None or pd.isna(v):
-                    return default
-                s = str(v).strip()
-                if not s or s.lower() in ('none', 'nan', 'nat', 'null'):
-                    return default
-                return s
-
-            po_num_str = fmt_val(cab.get('po'), sel_po)
-            f_ped_str = fmt_val(cab.get('fecha_pedido'), 'Sin fecha')
-            prov_str = fmt_val(cab.get('proveedor'), 'SIGRAMA PLANTA METALES')
-            prov_atn_str = fmt_val(cab.get('proveedor_atencion'), 'JESUS MORALES')
-            lab_str = fmt_val(cab.get('lab'), 'ALMACEN SIGRAMA')
-            tiempo_ent_str = fmt_val(cab.get('tiempo_entrega'), '—')
-            proy_str = fmt_val(cab.get('proyecto'), 'General')
-            req_str = fmt_val(cab.get('requisicion'), '—')
-            sol_str = fmt_val(cab.get('solicitante'), '—')
-            comp_str = fmt_val(cab.get('comprador'), '—')
-            cli_str = fmt_val(cab.get('cliente_facturar_a'), 'INDUSTRIA SIGRAMA S.A. DE C.V.')
-            rfc_str = fmt_val(cab.get('cliente_rfc'), 'ISI-870204-K4A')
-            dir_str = fmt_val(cab.get('cliente_direccion'), 'C. JUAN ESCUTIA #50 COL. ABASTOS C.P. 27020 TORREON, COAH.')
-            obs_str = fmt_val(cab.get('observaciones'), '—')
-            st_color = ESTATUS_COLORS.get(tracking['estatus_global'], '#64748B')
-
-            # Tarjeta Oficial Visual SIGRAMA
-            with st.container(border=True):
-                col_h1, col_h2 = st.columns([3, 1])
-                with col_h1:
-                    st.markdown(f"### 📑 ORDEN DE COMPRA: <span style='color:#EC2024;'>{po_num_str}</span>", unsafe_allow_html=True)
-                    st.markdown(f"**Proyecto / Uso:** `{proy_str}` &nbsp;|&nbsp; **Fecha de Pedido:** `{f_ped_str}`")
-                with col_h2:
-                    st.markdown(f"""<div style='text-align:right; padding-top:5px;'>
-<span class='badge' style='background-color:{st_color}; font-size:14px;'>
-{tracking['estatus_global']} ({tracking['porcentaje_global']}%)
-</span>
-</div>""", unsafe_allow_html=True)
-                
-                st.divider()
-                
-                c_info1, c_info2 = st.columns(2)
-                with c_info1:
-                    st.markdown("##### 🏢 Datos del Proveedor y Entrega")
-                    st.markdown(f"• **Proveedor:** {prov_str}")
-                    st.markdown(f"• **Atención:** {prov_atn_str}")
-                    st.markdown(f"• **L.A.B. / Destino:** {lab_str}")
-                    st.markdown(f"• **Tiempo de Entrega:** {tiempo_ent_str}")
-                with c_info2:
-                    st.markdown("##### 👤 Cliente y Solicitante")
-                    st.markdown(f"• **Facturar A:** {cli_str} *(RFC: {rfc_str})*")
-                    st.markdown(f"• **Dirección:** {dir_str}")
-                    st.markdown(f"• **Requisición:** {req_str} &nbsp;|&nbsp; **Comprador:** {comp_str}")
-                    st.markdown(f"• **Solicitante:** {sol_str}")
-                    
-                if obs_str not in ('—', 'Sin observaciones especiales.', ''):
-                    st.info(f"📝 **Observaciones:** {obs_str}")
+            st.markdown(f"""
+            <div style="background-color:#111111; color:white; padding:18px; border-radius:10px; border-left:6px solid #EC2024; margin-bottom:20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h2 style="margin:0; color:#EC2024;">ORDEN DE COMPRA: {sel_po}</h2>
+                        <p style="margin:5px 0 0 0; font-size:14px; color:#A0A0A0;">Proyecto: <b>{cab_info.get('proyecto', 'N/A')}</b> | Solicitante: <b>{cab_info.get('solicitante', 'N/A')}</b> | Comprador: <b>{cab_info.get('comprador', 'N/A')}</b></p>
+                    </div>
+                    <div style="text-align:right;">
+                        <span style="background-color:{ESTATUS_COLORS.get(tracking['estatus_global'], '#333')}; padding:6px 14px; border-radius:20px; font-weight:bold; font-size:14px;">
+                            {tracking['estatus_global']} ({tracking['porcentaje_global']}%)
+                        </span>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
             
-            # Pestañas de detalle
-            tab_partidas, tab_remisiones, tab_acciones = st.tabs([
-                "📦 Desglose de Partidas vs Remisionado",
-                "🚚 Historial de Remisiones y Tarimas Asociadas",
-                "⚙️ Acciones y Mantenimiento"
+            k1, k2, k3, k4 = st.columns(4)
+            with k1:
+                st.metric("📦 Cantidad Requerida", f"{tracking['total_requerido']:,.0f} pzas")
+            with k2:
+                st.metric("🚚 Cantidad Remisionada", f"{tracking['total_remisionado']:,.0f} pzas")
+            with k3:
+                st.metric("⏳ Cantidad Pendiente", f"{tracking['total_pendiente']:,.0f} pzas")
+            with k4:
+                st.metric("💰 Importe Total PO", f"${float(cab_info.get('total', 0) or 0):,.2f} MXN")
+                
+            st.write("---")
+            
+            tab_partidas, tab_remisiones_det, tab_acciones = st.tabs([
+                "📋 Desglose de Partidas vs Envíos",
+                "🚚 Historial de Tarimas y Remisiones",
+                "⚙️ Mantenimiento de la Orden"
             ])
             
             with tab_partidas:
-                st.subheader("📦 Partidas Solicitadas vs Cumplimiento de Envíos")
-                df_part_res = tracking['df_partidas']
-                
-                if not df_part_res.empty:
-                    cols_p_show = [
-                        c for c in [
-                            'item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto',
-                            'cantidad_requerida', 'cantidad_remisionada', 'cantidad_pendiente',
-                            'porcentaje_cumplimiento', 'estatus_partida', 'remisiones_folios',
-                            'precio_unitario', 'precio_total', 'fecha_entrega', 'parcialidad'
-                        ] if c in df_part_res.columns
+                st.subheader("📦 Partidas Requeridas y Avance de Remisión")
+                df_p_view = tracking['df_partidas']
+                if not df_p_view.empty:
+                    cols_part_show = [
+                        'item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto',
+                        'cantidad_requerida', 'cantidad_remisionada', 'cantidad_pendiente',
+                        'porcentaje_cumplimiento', 'precio_unitario', 'precio_total', 'fecha_entrega'
                     ]
                     st.dataframe(
-                        df_part_res[cols_p_show].rename(columns={
-                            'item_no': 'Partida #',
+                        df_p_view[[c for c in cols_part_show if c in df_p_view.columns]].rename(columns={
+                            'item_no': 'Item #',
                             'sku_cliente': 'SKU Cliente (Clave)',
-                            'clave_sku': 'SKU Planta (Nuestro)',
-                            'descripcion_producto': 'Descripción del Producto',
-                            'cantidad_requerida': 'Cant. Req.',
-                            'cantidad_remisionada': 'Cant. Enviada',
-                            'cantidad_pendiente': 'Pendiente',
-                            'porcentaje_cumplimiento': '% Cumpl.',
-                            'estatus_partida': 'Estatus',
-                            'remisiones_folios': 'Remisiones',
+                            'clave_sku': 'SKU Nuestro (Planta)',
+                            'descripcion_producto': 'Descripción',
+                            'cantidad_requerida': 'Req.',
+                            'cantidad_remisionada': 'Enviadas',
+                            'cantidad_pendiente': 'Pendientes',
+                            'porcentaje_cumplimiento': '% Avance',
                             'precio_unitario': 'P. Unitario',
                             'precio_total': 'P. Total',
-                            'fecha_entrega': 'Fecha Entrega',
-                            'parcialidad': 'Parcialidad'
+                            'fecha_entrega': 'Fecha Entrega'
                         }),
                         use_container_width=True,
                         hide_index=True
                     )
                 else:
-                    st.warning("Esta PO no tiene partidas registradas.")
+                    st.info("No hay partidas registradas para esta PO.")
                     
-            with tab_remisiones:
-                st.subheader("🚚 Envíos / Remisiones Registradas")
+            with tab_remisiones_det:
+                st.subheader("🚚 Envíos Registrados en la App de Remisiones")
                 df_env = tracking['df_historial_envios']
-                
                 if not df_env.empty:
                     st.success(f"Se encontraron **{len(df_env)}** registros de tarimas/piezas enviadas en **{len(tracking['remisiones_asociadas'])}** remisión(es): `{', '.join(tracking['remisiones_asociadas'])}`")
                     st.dataframe(df_env, use_container_width=True, hide_index=True)
@@ -887,7 +1020,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 st.subheader("⚙️ Mantenimiento de la Orden")
                 col_del1, col_del2 = st.columns([3, 1])
                 with col_del1:
-                    st.write("Si necesitas eliminar o editar esta PO, utiliza los controles siguientes:")
+                    st.write("Si necesitas eliminar definitivamente esta PO del catálogo:")
                 with col_del2:
                     if st.button("🗑️ Eliminar esta PO", type="secondary", use_container_width=True):
                         st.session_state['confirm_del_po'] = sel_po
@@ -911,763 +1044,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
 
 
 # ==============================================================================
-# SECCIÓN: ANALIZADOR Y OCR DE ARCHIVOS DE PO (.PDF / .MSG)
-# ==============================================================================
-elif menu in ("📬 Bandeja de Correos & OCR", "📄 Analizador de PO (PDF/MSG)"):
-    st.title("📄 Analizador y OCR de Archivos de PO Sigrama (.PDF / .MSG)")
-    st.markdown("Extracción inteligente de alta precisión de **Órdenes de Compra oficiales de Industria Sigrama** desde archivos **PDF** directos o archivos de correo **.MSG**.")
-    
-    tab_mail_ejemplo1, tab_mail_ejemplo2, tab_mail_custom = st.tabs([
-        "📨 Caso 1: PO 2608-3177 (Urgencia de Partes)",
-        "📨 Caso 2: Multi-PO 2603-2608 y 2603-2609 (+ Plano Anexo)",
-        "📥 Subir Nuevo Correo o Múltiples PDFs Externos"
-    ])
-    
-    # --------------------------------------------------------------------------
-    # PESTAÑA 1: CASO 1 - CORREO INDIVIDUAL CON URGENCIAS
-    # --------------------------------------------------------------------------
-    with tab_mail_ejemplo1:
-        with st.container(border=True):
-            # Header estilo Outlook
-            st.markdown("<h3 style='margin:0 0 10px 0; color:#1E293B;'>RV: 2608-3177 SIGRAMA METALES</h3>", unsafe_allow_html=True)
-            
-            c_snd1, c_snd2 = st.columns([4, 1])
-            with c_snd1:
-                st.markdown("""<div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
-<div style="width:46px; height:46px; border-radius:50%; background-color:#CBD5E1; color:#334155; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:18px;">
-AA
-</div>
-<div>
-<div style="font-weight:700; font-size:16px; color:#111111;">
-Alejandra Arellano Machado <span style="background-color:#E2E8F0; color:#475569; font-size:11px; padding:2px 8px; border-radius:10px;">Compras</span>
-</div>
-<div style="font-size:12px; color:#64748B;">
-<b>Para:</b> Jesus Alberto Morales Lopez; Luis Alfredo Quintana Palma<br>
-<b>CC:</b> Edgar Sosa Suarez; Josue Mesta
-</div>
-</div>
-</div>""", unsafe_allow_html=True)
-                
-            with c_snd2:
-                st.markdown("<div style='text-align:right; font-size:12px; color:#64748B;'>9:51 a. m.</div>", unsafe_allow_html=True)
-                c_btn1, c_btn2, c_btn3 = st.columns(3)
-                with c_btn1:
-                    st.button("↩️", help="Responder", key="btn_reply_mail1")
-                with c_btn2:
-                    st.button("🔁", help="Reenviar", key="btn_fwd_mail1")
-                with c_btn3:
-                    st.button("⋯", help="Más opciones", key="btn_more_mail1")
-                    
-            st.divider()
-            
-            # Cajas de Archivos Adjuntos (PDFs)
-            st.markdown("##### 📎 Archivos Adjuntos Detectados:")
-            col_att1, col_att2 = st.columns(2)
-            with col_att1:
-                st.markdown("""<div style="border:1px solid #CBD5E1; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:10px; background:#F8FAFC;">
-<span style="font-size:24px;">📄</span>
-<div>
-<div style="font-weight:700; font-size:13px; color:#0F172A;">2608-3177 SIGRAMA METALES SAAM.PDF</div>
-<div style="font-size:11px; color:#64748B;">180 KB • Orden de Compra Oficial</div>
-</div>
-</div>""", unsafe_allow_html=True)
-            with col_att2:
-                st.markdown("""<div style="border:1px solid #CBD5E1; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:10px; background:#F8FAFC;">
-<span style="font-size:24px;">📄</span>
-<div>
-<div style="font-weight:700; font-size:13px; color:#0F172A;">053 - COTIZACION PIEZAS GALVANIZADO.pdf</div>
-<div style="font-size:11px; color:#64748B;">154 KB • Cotización y Especificaciones</div>
-</div>
-</div>""", unsafe_allow_html=True)
-                
-            st.write("")
-            
-            # Mensaje del Correo
-            st.markdown("""
-<div style="font-size:14px; color:#1E293B; line-height:1.6; margin: 15px 0;">
-Ing Jesus Morales, buenos días.<br><br>
-¿Me apoyan por favor compartiéndome status de esta orden de compra?<br><br>
-<b>Nos están urgiendo las cantidades que marco en verde de los siguientes números de parte:</b>
-</div>
-""", unsafe_allow_html=True)
-            
-            # Tabla de Requerimientos y Urgencias Marcadas en Verde
-            st.markdown("""<table style="width:100%; border-collapse:collapse; text-align:center; font-family:'Questrial',sans-serif; margin-bottom:20px;">
-<tr style="background-color:#F1F5F9; font-weight:700; border:1px solid #CBD5E1; font-size:13px;">
-<th style="padding:8px; border:1px solid #CBD5E1; text-align:left;">No. de Parte (SKU)</th>
-<th style="padding:8px; border:1px solid #CBD5E1;">Total Ordenado</th>
-<th style="padding:8px; border:1px solid #CBD5E1; background-color:#DCFCE7; color:#166534;">🔥 URGENTE (Verde)</th>
-<th style="padding:8px; border:1px solid #CBD5E1;">P1</th>
-<th style="padding:8px; border:1px solid #CBD5E1;">P2</th>
-<th style="padding:8px; border:1px solid #CBD5E1;">P3</th>
-<th style="padding:8px; border:1px solid #CBD5E1;">P4</th>
-<th style="padding:8px; border:1px solid #CBD5E1;">P5</th>
-</tr>
-<tr style="border:1px solid #CBD5E1; font-size:14px;">
-<td style="padding:10px; border:1px solid #CBD5E1; text-align:left; font-weight:700;">P20325-24</td>
-<td style="padding:10px; border:1px solid #CBD5E1;">64</td>
-<td style="padding:10px; border:1px solid #CBD5E1; background-color:#22C55E; color:white; font-weight:800; font-size:16px;">2</td>
-<td style="padding:10px; border:1px solid #CBD5E1;">4</td>
-<td style="padding:10px; border:1px solid #CBD5E1;">4</td>
-<td style="padding:10px; border:1px solid #CBD5E1;">6</td>
-<td style="padding:10px; border:1px solid #CBD5E1;">4</td>
-<td style="padding:10px; border:1px solid #CBD5E1;">6</td>
-</tr>
-<tr style="border:1px solid #CBD5E1; font-size:14px;">
-<td style="padding:10px; border:1px solid #CBD5E1; text-align:left; font-weight:700;">P20325-25</td>
-<td style="padding:10px; border:1px solid #CBD5E1;">64</td>
-<td style="padding:10px; border:1px solid #CBD5E1; background-color:#22C55E; color:white; font-weight:800; font-size:16px;">2</td>
-<td style="padding:10px; border:1px solid #CBD5E1;">4</td>
-<td style="padding:10px; border:1px solid #CBD5E1;">4</td>
-<td style="padding:10px; border:1px solid #CBD5E1;">6</td>
-<td style="padding:10px; border:1px solid #CBD5E1;">4</td>
-<td style="padding:10px; border:1px solid #CBD5E1;">6</td>
-</tr>
-</table>""", unsafe_allow_html=True)
-            
-            st.markdown("<div style='font-size:14px; color:#1E293B;'>Gracias, quedamos al pendiente.<br><br>Saludos.</div>", unsafe_allow_html=True)
-            st.divider()
-            
-            # Firma del Correo Oficial
-            c_sig1, c_sig2 = st.columns([1, 3])
-            with c_sig1:
-                logo_path = Path(__file__).resolve().parent / "logo_sigrama.png"
-                if logo_path.exists():
-                    st.image(str(logo_path), width=130)
-                else:
-                    st.markdown("<b style='color:#EC2024;'>SIGRAMA</b>", unsafe_allow_html=True)
-            with c_sig2:
-                st.markdown("""<div style="font-size:12px; color:#334155; line-height:1.4;">
-<b>Alejandra Arellano Machado</b><br>
-<span style="background-color:#111111; color:white; padding:1px 6px; border-radius:3px; font-weight:700; font-size:11px;">Compras</span><br>
-<a href="mailto:sarellano@sigrama.com.mx" style="color:#EC2024; text-decoration:none;">sarellano@sigrama.com.mx</a><br>
-Tel: (871) 5-35-60-12 • <a href="http://www.sigrama.com.mx" target="_blank" style="color:#EC2024; text-decoration:none;">www.sigrama.com.mx</a><br>
-Parque Industrial Rio XIX, Blvd La Ribereña No. 950 Torreón, Coahuila.
-</div>""", unsafe_allow_html=True)
-
-        st.write("")
-        st.markdown("### ⚡ Procesador OCR & Extracción Inteligente")
-        if st.button("🔍 Ejecutar Análisis OCR sobre '2608-3177 SIGRAMA METALES SAAM.PDF'", type="primary", use_container_width=True, key="btn_ocr_mail1"):
-            with st.spinner("Analizando documento PDF, extrayendo tablas y asociando urgencias del correo..."):
-                cab_extracted = {
-                    'po': '2608-3177',
-                    'fecha_pedido': datetime.date.today().strftime('%Y-%m-%d'),
-                    'proyecto': 'SIGRAMA METALES / SAAM',
-                    'solicitante': 'Alejandra Arellano Machado',
-                    'requisicion': '22340',
-                    'destino': 'Parque Industrial Rio XIX',
-                    'proveedor': 'SIGRAMA PLANTA METALES',
-                    'proveedor_atencion': 'JESUS MORALES',
-                    'cliente_facturar_a': 'INDUSTRIA SIGRAMA S.A. DE C.V.',
-                    'cliente_rfc': 'ISI-870204-K4A',
-                    'cliente_direccion': 'Parque Industrial Rio XIX, Blvd La Ribereña No. 950, Torreón, Coahuila.',
-                    'forma_pago': 'CONTADO / CRÉDITO',
-                    'lab': 'ALMACEN SIGRAMA',
-                    'tiempo_entrega': 'ENTREGA URGENTE PARCIAL',
-                    'comprador': 'Josue Mesta / Alejandra Arellano',
-                    'subtotal': 49280.00,
-                    'descuento': 0.0,
-                    'iva': 7884.80,
-                    'ret_iva': 0.0,
-                    'ret_isr': 0.0,
-                    'total': 57164.80,
-                    'moneda': 'MXN',
-                    'observaciones': 'URGENCIA CLIENTE: Entregar primero 2 piezas de cada número de parte (P20325-24 y P20325-25).',
-                    'texto_etiqueta': 'SAAM',
-                    'color_fondo': '#22C55E',
-                    'color_texto': '#FFFFFF'
-                }
-                
-                part_extracted = [
-                    {
-                        'item_no': 1,
-                        'clave_sku': 'P20325-24',
-                        'descripcion_producto': 'PIEZA MAQUINADA / DOBLEZ P20325-24',
-                        'cantidad_requerida': 64.0,
-                        'unidad': 'PIEZA',
-                        'precio_unitario': 385.00,
-                        'precio_total': 24640.00,
-                        'fecha_entrega': (datetime.date.today() + datetime.timedelta(days=5)).strftime('%Y-%m-%d'),
-                        'parcialidad': 'P1',
-                        'observaciones_partida': '🔥 Urgente: 2 pzas de inmediato. Resto: 4, 4, 6, 4, 6'
-                    },
-                    {
-                        'item_no': 2,
-                        'clave_sku': 'P20325-25',
-                        'descripcion_producto': 'PIEZA MAQUINADA / DOBLEZ P20325-25',
-                        'cantidad_requerida': 64.0,
-                        'unidad': 'PIEZA',
-                        'precio_unitario': 385.00,
-                        'precio_total': 24640.00,
-                        'fecha_entrega': (datetime.date.today() + datetime.timedelta(days=5)).strftime('%Y-%m-%d'),
-                        'parcialidad': 'P1',
-                        'observaciones_partida': '🔥 Urgente: 2 pzas de inmediato. Resto: 4, 4, 6, 4, 6'
-                    }
-                ]
-                
-                st.session_state['ocr_cab_email1'] = cab_extracted
-                st.session_state['ocr_part_email1'] = part_extracted
-                st.success("✅ ¡OCR y Análisis Completados con Éxito! Se detectaron 2 partidas con requerimientos de entrega urgente.")
-                
-        if 'ocr_cab_email1' in st.session_state and 'ocr_part_email1' in st.session_state:
-            cab_e = st.session_state['ocr_cab_email1']
-            part_e = st.session_state['ocr_part_email1']
-            
-            with st.container(border=True):
-                st.markdown(f"#### 📋 Datos Extraídos para PO: `{cab_e['po']}`")
-                st.write("**Partidas y Desglose de Entregas:**")
-                st.dataframe(pd.DataFrame(part_e), use_container_width=True, hide_index=True)
-                
-                if st.button("🚀 Registrar y Guardar PO 2608-3177 en Base de Datos & Sincronizar", type="primary", use_container_width=True, key="btn_save_po1"):
-                    ok_s, msg_s = save_po(cab_e, part_e)
-                    if ok_s:
-                        st.success(f"🎉 {msg_s}")
-                        st.session_state.pop('ocr_cab_email1', None)
-                        st.session_state.pop('ocr_part_email1', None)
-                    else:
-                        st.error(f"❌ {msg_s}")
-
-    # --------------------------------------------------------------------------
-    # PESTAÑA 2: CASO 2 - MULTI-PO EN UN SOLO CORREO (2603-2608 Y 2603-2609)
-    # --------------------------------------------------------------------------
-    with tab_mail_ejemplo2:
-        with st.container(border=True):
-            # Header estilo Outlook
-            st.markdown("<h3 style='margin:0 0 10px 0; color:#1E293B;'>2603-2608, 2603-2609 SIGRAMA METALES</h3>", unsafe_allow_html=True)
-            
-            c2_snd1, c2_snd2 = st.columns([4, 1])
-            with c2_snd1:
-                st.markdown("""<div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
-<div style="width:46px; height:46px; border-radius:50%; background-color:#CBD5E1; color:#334155; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:18px;">
-AA
-</div>
-<div>
-<div style="font-weight:700; font-size:16px; color:#111111;">
-Alejandra Arellano Machado <span style="background-color:#E2E8F0; color:#475569; font-size:11px; padding:2px 8px; border-radius:10px;">Compras</span>
-</div>
-<div style="font-size:12px; color:#64748B;">
-<b>Para:</b> Jesus Alberto Morales Lopez<br>
-<b>CC:</b> Edgar Sosa Suarez; Josue Mesta; Elsa Cardenas Elizondo; Moises Aaron Hernandez Valdez; <b>y 2 usuarios más</b><br>
-<span style="color:#0284C7; font-size:11px;">ℹ️ Mensaje reenviado el 15/07/2026 04:39 p. m.</span>
-</div>
-</div>
-</div>""", unsafe_allow_html=True)
-                
-            with c2_snd2:
-                st.markdown("<div style='text-align:right; font-size:12px; color:#64748B;'>15/07/2026</div>", unsafe_allow_html=True)
-                c2_btn1, c2_btn2, c2_btn3 = st.columns(3)
-                with c2_btn1:
-                    st.button("↩️", help="Responder", key="btn_reply_mail2")
-                with c2_btn2:
-                    st.button("🔁", help="Reenviar", key="btn_fwd_mail2")
-                with c2_btn3:
-                    st.button("⋯", help="Más opciones", key="btn_more_mail2")
-                    
-            st.divider()
-            
-            # Cajas de Archivos Adjuntos Múltiples (2 POs + 1 Plano)
-            st.markdown("##### 📎 3 Archivos Adjuntos Detectados en este Correo:")
-            col_m1, col_m2, col_m3 = st.columns(3)
-            with col_m1:
-                st.markdown("""<div style="border:2px solid #EC2024; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:10px; background:#FEF2F2;">
-<span style="font-size:24px;">📄</span>
-<div>
-<div style="font-weight:700; font-size:12px; color:#991B1B;">2603-2608 SIGRAMA METALES JMC.PDF</div>
-<div style="font-size:11px; color:#64748B;">180 KB • <b>PO #1</b></div>
-</div>
-</div>""", unsafe_allow_html=True)
-            with col_m2:
-                st.markdown("""<div style="border:2px solid #EC2024; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:10px; background:#FEF2F2;">
-<span style="font-size:24px;">📄</span>
-<div>
-<div style="font-weight:700; font-size:12px; color:#991B1B;">2603-2609 SIGRAMA METALES JMC.PDF</div>
-<div style="font-size:11px; color:#64748B;">180 KB • <b>PO #2</b></div>
-</div>
-</div>""", unsafe_allow_html=True)
-            with col_m3:
-                st.markdown("""<div style="border:2px solid #0284C7; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:10px; background:#F0F9FF;">
-<span style="font-size:24px;">📐</span>
-<div>
-<div style="font-weight:700; font-size:12px; color:#0369A1;">11-7761 (rev.03).pdf</div>
-<div style="font-size:11px; color:#64748B;">Plano Técnico / Dibujo</div>
-</div>
-</div>""", unsafe_allow_html=True)
-                
-            st.write("")
-            
-            # Mensaje del Correo
-            st.markdown("""
-<div style="font-size:14px; color:#1E293B; line-height:1.6; margin: 15px 0;">
-Ing Jesus Morales, buenas tardes.<br><br>
-En adjunto comparto nuestras órdenes de compra <b>2603-2608</b>, <b>2603-2609</b>. Por favor considerar el <b>plano anexo (11-7761 rev.03)</b>.<br><br>
-Gracias, quedamos al pendiente.<br><br>
-Saludos.
-</div>
-""", unsafe_allow_html=True)
-            
-            st.divider()
-            
-            # Firma
-            c2_sig1, c2_sig2 = st.columns([1, 3])
-            with c2_sig1:
-                logo_path = Path(__file__).resolve().parent / "logo_sigrama.png"
-                if logo_path.exists():
-                    st.image(str(logo_path), width=130)
-                else:
-                    st.markdown("<b style='color:#EC2024;'>SIGRAMA</b>", unsafe_allow_html=True)
-            with c2_sig2:
-                st.markdown("""<div style="font-size:12px; color:#334155; line-height:1.4;">
-<b>Alejandra Arellano Machado</b><br>
-<span style="background-color:#111111; color:white; padding:1px 6px; border-radius:3px; font-weight:700; font-size:11px;">Compras</span><br>
-<a href="mailto:sarellano@sigrama.com.mx" style="color:#EC2024; text-decoration:none;">sarellano@sigrama.com.mx</a> • Tel: (871) 5-35-60-12<br>
-Parque Industrial Rio XIX, Torreón, Coahuila.
-</div>""", unsafe_allow_html=True)
-
-        st.write("")
-        st.markdown("### ⚡ Extractor Inteligente Multi-PO por Lotes")
-        st.write("El sistema detectó **2 archivos de Órdenes de Compra independientes** y **1 Plano Técnico anexo** en el mismo correo:")
-        
-        if st.button("🔍 Ejecutar Análisis OCR Multi-PO sobre '2603-2608' y '2603-2609'", type="primary", use_container_width=True, key="btn_ocr_multi_po"):
-            with st.spinner("Procesando lote de PDFs, asociando plano técnico 11-7761 y extrayendo requerimientos..."):
-                
-                # PO 1: 2603-2608
-                po1_cab = {
-                    'po': '2603-2608',
-                    'fecha_pedido': '2026-07-15',
-                    'proyecto': 'LC8 20K / SWBDCLOUD',
-                    'solicitante': 'Alejandra Arellano Machado',
-                    'requisicion': '22180',
-                    'destino': 'ALMACEN SIGRAMA',
-                    'proveedor': 'SIGRAMA PLANTA METALES',
-                    'proveedor_atencion': 'JESUS MORALES',
-                    'cliente_facturar_a': 'INDUSTRIA SIGRAMA S.A. DE C.V.',
-                    'cliente_rfc': 'ISI-870204-K4A',
-                    'cliente_direccion': 'Parque Industrial Rio XIX, Torreón, Coahuila.',
-                    'forma_pago': 'CONTADO / CRÉDITO',
-                    'lab': 'ALMACEN SIGRAMA',
-                    'tiempo_entrega': 'PROGRAMADO',
-                    'comprador': 'Alejandra Arellano / Josue Mesta',
-                    'subtotal': 38500.00,
-                    'descuento': 0.0,
-                    'iva': 6160.00,
-                    'ret_iva': 0.0,
-                    'ret_isr': 0.0,
-                    'total': 44660.00,
-                    'moneda': 'MXN',
-                    'observaciones': 'Fabricar conforme a plano adjunto 11-7761 rev.03.',
-                    'texto_etiqueta': 'LC8 20K',
-                    'color_fondo': '#0284C7',
-                    'color_texto': '#FFFFFF'
-                }
-                po1_part = [
-                    {
-                        'item_no': 1,
-                        'clave_sku': '11-7761-03',
-                        'descripcion_producto': 'PIEZA CORTADA/DOBLADA 11-7761 REV.03 (LC8 20K)',
-                        'cantidad_requerida': 17.0,
-                        'unidad': 'PIEZA',
-                        'precio_unitario': 770.00,
-                        'precio_total': 13090.00,
-                        'fecha_entrega': '2026-07-30',
-                        'parcialidad': 'P1',
-                        'observaciones_partida': 'Plano anexo 11-7761 (rev.03).pdf'
-                    },
-                    {
-                        'item_no': 2,
-                        'clave_sku': '11-7761-02',
-                        'descripcion_producto': 'PIEZA CORTADA/DOBLADA 11-7761 REV.03 (SWBDCLOUD)',
-                        'cantidad_requerida': 33.0,
-                        'unidad': 'PIEZA',
-                        'precio_unitario': 770.00,
-                        'precio_total': 25410.00,
-                        'fecha_entrega': '2026-07-30',
-                        'parcialidad': 'P1',
-                        'observaciones_partida': 'Plano anexo 11-7761 (rev.03).pdf'
-                    }
-                ]
-                
-                # PO 2: 2603-2609
-                po2_cab = {
-                    'po': '2603-2609',
-                    'fecha_pedido': '2026-07-15',
-                    'proyecto': 'SWBDCLOUD',
-                    'solicitante': 'Alejandra Arellano Machado',
-                    'requisicion': '22181',
-                    'destino': 'ALMACEN SIGRAMA',
-                    'proveedor': 'SIGRAMA PLANTA METALES',
-                    'proveedor_atencion': 'JESUS MORALES',
-                    'cliente_facturar_a': 'INDUSTRIA SIGRAMA S.A. DE C.V.',
-                    'cliente_rfc': 'ISI-870204-K4A',
-                    'cliente_direccion': 'Parque Industrial Rio XIX, Torreón, Coahuila.',
-                    'forma_pago': 'CONTADO / CRÉDITO',
-                    'lab': 'ALMACEN SIGRAMA',
-                    'tiempo_entrega': 'PROGRAMADO',
-                    'comprador': 'Alejandra Arellano / Josue Mesta',
-                    'subtotal': 30800.00,
-                    'descuento': 0.0,
-                    'iva': 4928.00,
-                    'ret_iva': 0.0,
-                    'ret_isr': 0.0,
-                    'total': 35728.00,
-                    'moneda': 'MXN',
-                    'observaciones': 'Fabricar conforme a plano adjunto 11-7761 rev.03.',
-                    'texto_etiqueta': 'SWBDCLOUD',
-                    'color_fondo': '#7C3AED',
-                    'color_texto': '#FFFFFF'
-                }
-                po2_part = [
-                    {
-                        'item_no': 1,
-                        'clave_sku': '11-7761-02',
-                        'descripcion_producto': 'PIEZA CORTADA/DOBLADA 11-7761 REV.03 (SWBDCLOUD)',
-                        'cantidad_requerida': 40.0,
-                        'unidad': 'PIEZA',
-                        'precio_unitario': 770.00,
-                        'precio_total': 30800.00,
-                        'fecha_entrega': '2026-07-30',
-                        'parcialidad': 'P1',
-                        'observaciones_partida': 'Plano anexo 11-7761 (rev.03).pdf'
-                    }
-                ]
-                
-                st.session_state['multi_po_batch'] = [
-                    {'cab': po1_cab, 'part': po1_part},
-                    {'cab': po2_cab, 'part': po2_part}
-                ]
-                st.success("✅ ¡Extracción Multi-PO Completada! Se procesaron 2 Órdenes de Compra vinculadas al Plano Técnico 11-7761.")
-
-        if 'multi_po_batch' in st.session_state:
-            batch = st.session_state['multi_po_batch']
-            
-            col_b1, col_b2 = st.columns(2)
-            
-            with col_b1:
-                with st.container(border=True):
-                    st.markdown(f"#### 📄 PO #1: `{batch[0]['cab']['po']}`")
-                    st.markdown(f"• **Proyecto:** `{batch[0]['cab']['proyecto']}`")
-                    st.markdown(f"• **Total Piezas:** `{sum(p['cantidad_requerida'] for p in batch[0]['part']):.0f} pzas`")
-                    st.markdown(f"• **Importe Total:** `${batch[0]['cab']['total']:,.2f} MXN`")
-                    st.dataframe(pd.DataFrame(batch[0]['part'])[['clave_sku', 'cantidad_requerida', 'precio_total', 'observaciones_partida']], use_container_width=True, hide_index=True)
-                    
-            with col_b2:
-                with st.container(border=True):
-                    st.markdown(f"#### 📄 PO #2: `{batch[1]['cab']['po']}`")
-                    st.markdown(f"• **Proyecto:** `{batch[1]['cab']['proyecto']}`")
-                    st.markdown(f"• **Total Piezas:** `{sum(p['cantidad_requerida'] for p in batch[1]['part']):.0f} pzas`")
-                    st.markdown(f"• **Importe Total:** `${batch[1]['cab']['total']:,.2f} MXN`")
-                    st.dataframe(pd.DataFrame(batch[1]['part'])[['clave_sku', 'cantidad_requerida', 'precio_total', 'observaciones_partida']], use_container_width=True, hide_index=True)
-                    
-            if st.button("🚀 Registrar Lote Completo (Guardar Ambas POs en Sistema)", type="primary", use_container_width=True, key="btn_save_multi_batch"):
-                ok1, msg1 = save_po(batch[0]['cab'], batch[0]['part'])
-                ok2, msg2 = save_po(batch[1]['cab'], batch[1]['part'])
-                
-                if ok1 and ok2:
-                    st.success(f"🎉 ¡Lote registrado con éxito! POs {batch[0]['cab']['po']} y {batch[1]['cab']['po']} agregadas y sincronizadas con Remisiones.")
-                    st.session_state.pop('multi_po_batch', None)
-                else:
-                    st.error(f"Error: {msg1} | {msg2}")
-
-    # --------------------------------------------------------------------------
-    # PESTAÑA 3: SUBIR NUEVO CORREO / MULTI-PDFS EXTERNOS
-    # --------------------------------------------------------------------------
-    with tab_mail_custom:
-        st.subheader("📥 Carga Asistida de Correo con Múltiples PDFs / Planos")
-        st.write("Puedes subir **múltiples archivos PDF simultáneamente** (varias POs y planos técnicos):")
-        
-        c_cu1, c_cu2 = st.columns([1, 1])
-        with c_cu1:
-            custom_email_subject = st.text_input("Asunto del Correo:", placeholder="ej. 2603-XXXX, 2603-YYYY SIGRAMA METALES", key="multi_subj")
-            custom_email_sender = st.text_input("Remitente / Comprador:", placeholder="ej. Nombre del solicitante", key="multi_send")
-            custom_email_body = st.text_area("Cuerpo del Correo (Pega el texto con folios y notas):", height=160, placeholder="Pega aquí el mensaje del cliente...", key="multi_body")
-        with c_cu2:
-            custom_pdfs = st.file_uploader(
-                "Adjuntar Archivo(s) de PO de Sigrama (.PDF) o Correos (.MSG):",
-                type=['pdf', 'msg'],
-                accept_multiple_files=True,
-                key="uploader_multi_custom_pdfs"
-            )
-            if custom_pdfs:
-                st.success(f"📎 Se cargaron **{len(custom_pdfs)}** archivo(s).")
-                for f in custom_pdfs:
-                    st.caption(f"• `{f.name}` ({f.size / 1024:.1f} KB)")
-                
-        if custom_pdfs:
-            if st.button("⚡ Procesar y Extraer Órdenes de Compra de Sigrama", type="primary", use_container_width=True):
-                with st.spinner("Analizando documentos de PO oficiales de Sigrama y procesando OCR..."):
-                    extracted_batch = []
-                    ctx = parse_email_text(custom_email_body or custom_email_subject)
-                    if custom_email_sender:
-                        ctx['remitente'] = custom_email_sender
-                        
-                    for uploaded_f in custom_pdfs:
-                        f_bytes = uploaded_f.read()
-                        f_name = uploaded_f.name
-                        
-                        # Si es archivo .msg, desempaquetar sus PDFs adjuntos
-                        if f_name.lower().endswith('.msg'):
-                            from pdf_parser import extract_attachments_from_msg
-                            msg_info = extract_attachments_from_msg(f_bytes)
-                            ctx_msg = parse_email_text(msg_info.get('body', ''))
-                            ctx_msg['remitente'] = msg_info.get('sender', '')
-                            
-                            for att in msg_info.get('attachments', []):
-                                att_n = att['filename']
-                                if att_n.lower().endswith('.pdf') and not any(w in att_n.lower() for w in ['plano', 'drawing', 'cotizacion']):
-                                    try:
-                                        cab_m, part_m = parse_po_pdf(att['data'], email_context=ctx_msg)
-                                        extracted_batch.append({'cab': cab_m, 'part': part_m, 'file_name': f"{f_name} ➔ {att_n}"})
-                                    except Exception as e_att:
-                                        st.error(f"Error en {att_n}: {e_att}")
-                        else:
-                            # Es archivo .pdf directo
-                            if any(w in f_name.lower() for w in ['plano', 'drawing', 'rev', 'cotizacion']):
-                                continue
-                            try:
-                                cab_f, part_f = parse_po_pdf(f_bytes, email_context=ctx)
-                                extracted_batch.append({'cab': cab_f, 'part': part_f, 'file_name': f_name})
-                            except Exception as e:
-                                st.error(f"Error procesando {f_name}: {e}")
-                            
-                    st.session_state['uploaded_batch_extracted'] = extracted_batch
-                    st.success(f"✅ Se extrajeron exitosamente **{len(extracted_batch)}** Órdenes de Compra de Sigrama.")
-                    
-        if 'uploaded_batch_extracted' in st.session_state and st.session_state['uploaded_batch_extracted']:
-            u_batch = st.session_state['uploaded_batch_extracted']
-            st.write("---")
-            st.markdown(f"### 📋 Lote de {len(u_batch)} Órdenes Detectadas")
-            
-            for idx, item in enumerate(u_batch):
-                with st.expander(f"📄 PO: {item['cab'].get('po', 'N/A')} ({item['file_name']})", expanded=True):
-                    c_b1, c_b2, c_b3 = st.columns(3)
-                    with c_b1:
-                        st.markdown(f"• **Folio:** `{item['cab'].get('po')}`")
-                        st.markdown(f"• **Proyecto:** `{item['cab'].get('proyecto')}`")
-                    with c_b2:
-                        st.markdown(f"• **Solicitante:** `{item['cab'].get('solicitante')}`")
-                        st.markdown(f"• **Total:** `${item['cab'].get('total', 0):,.2f} MXN`")
-                    with c_b3:
-                        st.markdown(f"• **Partidas:** `{len(item['part'])}`")
-                        
-                    df_p_view = pd.DataFrame(item['part'])
-                    col_order = [c for c in ['item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto', 'cantidad_requerida', 'unidad', 'precio_unitario', 'precio_total', 'fecha_entrega', 'parcialidad', 'observaciones_partida'] if c in df_p_view.columns]
-                    st.dataframe(
-                        df_p_view[col_order].rename(columns={
-                            'item_no': 'Item #',
-                            'sku_cliente': 'SKU Cliente (Clave)',
-                            'clave_sku': 'SKU Nuestro (Planta)',
-                            'descripcion_producto': 'Descripción del Producto',
-                            'cantidad_requerida': 'Cantidad',
-                            'unidad': 'Unidad',
-                            'precio_unitario': 'P. Unitario',
-                            'precio_total': 'P. Total',
-                            'fecha_entrega': 'Fecha Entrega',
-                            'parcialidad': 'Parcialidad',
-                            'observaciones_partida': 'Observaciones'
-                        }),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-                    
-            if st.button("🚀 Confirmar y Guardar Todo el Lote en Sistema", type="primary", use_container_width=True, key="btn_save_uploaded_batch"):
-                total_ok = 0
-                for item in u_batch:
-                    ok_u, _ = save_po(item['cab'], item['part'])
-                    if ok_u:
-                        total_ok += 1
-                st.success(f"🎉 Se guardaron y sincronizaron **{total_ok} de {len(u_batch)}** órdenes de compra.")
-                st.session_state.pop('uploaded_batch_extracted', None)
-
-
-# ==============================================================================
-# SECCIÓN 4: REGISTRAR / CARGAR PO
-# ==============================================================================
-elif menu == "📥 Registrar / Cargar PO":
-    st.title("📥 Registro y Carga de Órdenes de Compra (POs)")
-    st.markdown("Ingresa una nueva Orden de Compra mediante Formulario Manual, Carga Masiva en Excel o Extracción Inteligente de PDF.")
-    
-    tab_pdf, tab_excel, tab_manual = st.tabs([
-        "📄 Lector Inteligente de PDF (Recomendado)",
-        "📁 Carga Masiva de Excel",
-        "📝 Formulario Manual Guiado"
-    ])
-    
-    # 1. Pestaña PDF
-    with tab_pdf:
-        st.subheader("📄 Cargar y Extraer PDF de Orden de Compra")
-        st.write("Sube el PDF oficial emitido por el cliente o compras (ej. Industria Sigrama) para extraer automáticamente toda la cabecera, partidas, importes y fechas.")
-        
-        pdf_file = st.file_uploader("Selecciona el archivo PDF de la PO:", type=['pdf'], key="uploader_po_pdf")
-        
-        if pdf_file is not None:
-            if st.button("⚡ Procesar y Extraer Datos del PDF", type="primary", use_container_width=True):
-                with st.spinner("Analizando PDF y extrayendo campos..."):
-                    try:
-                        cab_extracted, part_extracted = parse_po_pdf(pdf_file.read())
-                        st.session_state['temp_cab_extracted'] = cab_extracted
-                        st.session_state['temp_part_extracted'] = part_extracted
-                        st.success(f"✅ ¡Extracción exitosa! Folio detectado: **{cab_extracted.get('po', 'N/A')}** con **{len(part_extracted)}** partidas.")
-                    except Exception as e:
-                        st.error(f"❌ Error al procesar el PDF: {e}")
-                        
-        if 'temp_cab_extracted' in st.session_state and 'temp_part_extracted' in st.session_state:
-            cab = st.session_state['temp_cab_extracted']
-            part = st.session_state['temp_part_extracted']
-            
-            st.write("---")
-            st.markdown("### 📋 Vista Previa de Datos Extraídos")
-            
-            c_p1, c_p2, c_p3 = st.columns(3)
-            with c_p1:
-                cab['po'] = st.text_input("Folio PO:", cab.get('po', ''), key="pdf_po")
-                cab['fecha_pedido'] = st.text_input("Fecha Pedido:", cab.get('fecha_pedido', ''), key="pdf_fped")
-                cab['requisicion'] = st.text_input("Requisición:", cab.get('requisicion', ''), key="pdf_req")
-            with c_p2:
-                cab['proyecto'] = st.text_input("Proyecto / Uso:", cab.get('proyecto', ''), key="pdf_proy")
-                cab['solicitante'] = st.text_input("Solicitante:", cab.get('solicitante', ''), key="pdf_sol")
-                cab['comprador'] = st.text_input("Comprador:", cab.get('comprador', ''), key="pdf_comp")
-            with c_p3:
-                cab['lab'] = st.text_input("L.A.B. / Destino:", cab.get('lab', 'ALMACEN SIGRAMA'), key="pdf_lab")
-                cab['tiempo_entrega'] = st.text_input("Tiempo Entrega:", cab.get('tiempo_entrega', ''), key="pdf_tent")
-                cab['total'] = st.number_input("Total ($ MXN):", value=float(cab.get('total', 0) or 0), key="pdf_tot")
-                
-            cab['observaciones'] = st.text_area("Observaciones:", cab.get('observaciones', ''), key="pdf_obs")
-            
-            st.write("**Partidas Extraídas:**")
-            df_part_edit = pd.DataFrame(part)
-            st.dataframe(df_part_edit, use_container_width=True, hide_index=True)
-            
-            if st.button("🚀 Confirmar y Guardar Orden de Compra en Sistema", type="primary", use_container_width=True):
-                ok, msg = save_po(cab, part)
-                if ok:
-                    st.success(f"✅ {msg}")
-                    st.session_state.pop('temp_cab_extracted', None)
-                    st.session_state.pop('temp_part_extracted', None)
-                else:
-                    st.error(f"❌ {msg}")
-                    
-    # 2. Pestaña Excel
-    with tab_excel:
-        st.subheader("📁 Carga de Requerimientos mediante Plantilla Excel")
-        st.write("Descarga la plantilla oficial estandarizada, llena los datos de cabecera y partidas/parcialidades, y cárgala aquí.")
-        
-        template_bytes = generate_po_excel_template()
-        st.download_button(
-            label="📥 Descargar Plantilla Oficial Excel (2 Pestañas)",
-            data=template_bytes,
-            file_name="Plantilla_Oficial_Orden_de_Compra_Sigrama.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-        
-        st.write("---")
-        excel_file = st.file_uploader("Subir Archivo Excel completado:", type=['xlsx'], key="uploader_po_excel")
-        
-        if excel_file is not None:
-            if st.button("🚀 Procesar e Integrar Archivo Excel", type="primary", use_container_width=True):
-                ok, msg, cab_xl, part_xl = parse_uploaded_excel(excel_file)
-                if ok:
-                    ok_save, msg_save = save_po(cab_xl, part_xl)
-                    if ok_save:
-                        st.success(f"✅ {msg_save}")
-                    else:
-                        st.error(f"❌ {msg_save}")
-                else:
-                    st.error(f"❌ {msg}")
-                    
-    # 3. Pestaña Manual
-    with tab_manual:
-        st.subheader("📝 Captura Manual Guiada de Orden de Compra")
-        
-        with st.form("form_manual_po"):
-            st.markdown("##### 1. Encabezado de la PO")
-            m1, m2, m3 = st.columns(3)
-            with m1:
-                man_po = st.text_input("Folio de PO (Obligatorio):", placeholder="ej. 26083186")
-                man_fecha = st.date_input("Fecha de Pedido:", value=datetime.date.today())
-                man_req = st.text_input("No. Requisición:", placeholder="ej. 22326")
-            with m2:
-                man_proy = st.text_input("Proyecto / Uso:", placeholder="ej. CLOUD / TAB-RQXP")
-                man_sol = st.text_input("Solicitante:", placeholder="ej. ESEFANIA IBARRA")
-                man_comp = st.text_input("Comprador:", placeholder="ej. Josue Mesta")
-            with m3:
-                man_lab = st.text_input("L.A.B. / Destino:", value="ALMACEN SIGRAMA")
-                man_tent = st.text_input("Tiempo de Entrega:", placeholder="ej. 18 AGOSTO 2026")
-                man_obs = st.text_input("Observaciones Generales:")
-                
-            st.markdown("##### 2. Partida Principal (o inicial)")
-            p1, p2, p3, p4 = st.columns([1.5, 3, 1, 1])
-            with p1:
-                man_sku = st.text_input("Clave / SKU:", placeholder="SWB01431")
-            with p2:
-                man_desc = st.text_input("Descripción del Producto:", placeholder="PP19380-03 BLANK DOOR")
-            with p3:
-                man_cant = st.number_input("Cantidad:", min_value=1.0, value=32.0, step=1.0)
-            with p4:
-                man_pu = st.number_input("P. Unitario ($):", min_value=0.0, value=385.55, step=10.0)
-                
-            man_submit = st.form_submit_button("💾 Guardar Orden de Compra", type="primary", use_container_width=True)
-            
-            if man_submit:
-                if not man_po.strip():
-                    st.error("❌ El Folio de la PO es obligatorio.")
-                elif not man_sku.strip():
-                    st.error("❌ Debes ingresar al menos una Clave/SKU.")
-                else:
-                    pt_val = man_cant * man_pu
-                    sub_val = pt_val
-                    iva_val = sub_val * 0.16
-                    tot_val = sub_val + iva_val
-                    
-                    cab_man = {
-                        "po": man_po.strip(),
-                        "fecha_pedido": man_fecha.strftime("%Y-%m-%d"),
-                        "proyecto": man_proy.strip(),
-                        "solicitante": man_sol.strip(),
-                        "requisicion": man_req.strip(),
-                        "destino": man_lab.strip(),
-                        "proveedor": "SIGRAMA PLANTA METALES",
-                        "proveedor_atencion": "JESUS MORALES",
-                        "cliente_facturar_a": "INDUSTRIA SIGRAMA S.A. DE C.V.",
-                        "cliente_rfc": "ISI-870204-K4A",
-                        "cliente_direccion": "C. JUAN ESCUTIA #50 COL. ABASTOS C.P. 27020 TORREON, COAH.",
-                        "forma_pago": "CONTADO / CRÉDITO",
-                        "lab": man_lab.strip(),
-                        "tiempo_entrega": man_tent.strip(),
-                        "comprador": man_comp.strip(),
-                        "subtotal": sub_val,
-                        "descuento": 0.0,
-                        "iva": iva_val,
-                        "ret_iva": 0.0,
-                        "ret_isr": 0.0,
-                        "total": tot_val,
-                        "moneda": "MXN",
-                        "observaciones": man_obs.strip(),
-                        "texto_etiqueta": man_proy.strip(),
-                        "color_fondo": "#EC2024",
-                        "color_texto": "#FFFFFF"
-                    }
-                    
-                    part_man = [{
-                        "item_no": 1,
-                        "clave_sku": man_sku.strip().upper(),
-                        "descripcion_producto": man_desc.strip(),
-                        "cantidad_requerida": man_cant,
-                        "unidad": "PIEZA",
-                        "precio_unitario": man_pu,
-                        "precio_total": pt_val,
-                        "fecha_entrega": (man_fecha + datetime.timedelta(days=7)).strftime("%Y-%m-%d"),
-                        "parcialidad": "P1",
-                        "observaciones_partida": ""
-                    }]
-                    
-                    ok, msg = save_po(cab_man, part_man)
-                    if ok:
-                        st.success(f"✅ {msg}")
-                    else:
-                        st.error(f"❌ {msg}")
-
-
-# ==============================================================================
-# SECCIÓN 5: ESTADO DE INTEGRACIÓN
+# SECCIÓN 6: ESTADO DE INTEGRACIÓN
 # ==============================================================================
 elif menu == "🔄 Estado de Integración":
     st.title("🔄 Estado de Integración y Enlace entre Aplicaciones")
@@ -1699,225 +1076,92 @@ elif menu == "🔄 Estado de Integración":
     if st.button("🔄 Forzar Re-Sincronización de Archivos Excel ahora", type="primary"):
         export_sync_to_excel()
         st.success("✅ Archivos de sincronización actualizados y copiados al directorio compartido.")
-        
-    st.write("---")
-    st.subheader("3. Conexión Futura con Corte y Doblez (Fase 2)")
-    st.info("📌 En la Fase 2, la app de Corte y Doblez se conectará a las partidas registradas aquí para vincular las Órdenes de Fabricación (OFs), anidamientos y avances por estación láser/doblez directamente a cada PO.")
 
 
 # ==============================================================================
-# SECCIÓN 6: MANUAL, INDUSTRIA 4.0 & STACK TECNOLÓGICO
+# SECCIÓN 7: MANUAL Y ARQUITECTURA INDUSTRIA 4.0
 # ==============================================================================
-elif menu == "📘 Manual & Arquitectura Industria 4.0":
+elif menu == "📘 Manual y Arquitectura 4.0":
     st.title("📘 Manual, Arquitectura Industria 4.0 & Stack Tecnológico")
     st.markdown("Documentación técnica, diagramas de arquitectura ciberfísica y manual operativo para el **PO Tracker & Master Hub de Industria Sigrama**.")
     
     tab_ind4, tab_diagrama_ocr, tab_stack, tab_manual_pasos = st.tabs([
         "🏭 Arquitectura Industria 4.0",
-        "⚡ Motor OCR Espacial (Diagrama Oficial)",
+        "⚡ Motor OCR Espacial (Diagrama)",
         "💻 Stack Tecnológico (Tech Stack)",
         "📖 Manual Operativo Paso a Paso"
     ])
     
-    # --------------------------------------------------------------------------
-    # PESTAÑA 1: ARQUITECTURA INDUSTRIA 4.0
-    # --------------------------------------------------------------------------
     with tab_ind4:
         st.subheader("🏭 El Hilo Digital (Digital Thread) en Industria Sigrama")
-        st.write("""
-En la manufactura moderna bajo el paradigma de **Industria 4.0**, la información debe fluir sin interrupciones desde el requerimiento del cliente hasta el embarque final.
-El **PO Tracker & Master Hub** actúa como el **Gemelo Digital del Requerimiento (Digital Thread)**, asegurando que cada orden de compra se convierta en una orden sistemática interconectada.
-""")
+        st.write("El **PO Tracker & Master Hub** actúa como el Gemelo Digital del Requerimiento, asegurando que cada orden de compra se convierta en una orden sistemática interconectada con Corte-Doblez y Remisiones.")
         
-        # Diagrama de Interconexión Ecosistema
-        st.markdown("""<div style="background-color:#0F172A; color:white; border-radius:10px; padding:20px; margin:15px 0;">
-<h4 style="color:#EC2024; margin-top:0; text-align:center;">ECOSISTEMA CIBERFÍSICO INTEGRADO DE INDUSTRIA SIGRAMA</h4>
-
-<div style="display:flex; justify-content:space-between; gap:15px; margin-top:20px;">
-<div style="flex:1; background-color:#1E293B; border:2px solid #EC2024; border-radius:8px; padding:14px; text-align:center;">
-<span style="font-size:24px;">📥</span>
-<h5 style="color:#EC2024; margin:8px 0 4px 0;">1. CAPTURA Y MASTER HUB</h5>
-<b style="color:white; font-size:13px;">PO Tracker App</b>
-<p style="font-size:11px; color:#94A3B8; margin-top:6px;">Ingesta de POs (.PDF / .MSG), OCR inteligente, extracción de requerimientos y estandarización.</p>
-</div>
-
-<div style="flex:1; background-color:#1E293B; border:2px solid #0284C7; border-radius:8px; padding:14px; text-align:center;">
-<span style="font-size:24px;">⚙️</span>
-<h5 style="color:#0284C7; margin:8px 0 4px 0;">2. MANUFACTURA CIBERFÍSICA</h5>
-<b style="color:white; font-size:13px;">App Corte y Doblez</b>
-<p style="font-size:11px; color:#94A3B8; margin-top:6px;">Programación de OFs, anidamientos CNC, corte láser, doblez y avance por estaciones.</p>
-</div>
-
-<div style="flex:1; background-color:#1E293B; border:2px solid #16A34A; border-radius:8px; padding:14px; text-align:center;">
-<span style="font-size:24px;">🚚</span>
-<h5 style="color:#16A34A; margin:8px 0 4px 0;">3. LOGÍSTICA & DESPACHO</h5>
-<b style="color:white; font-size:13px;">App Remisiones</b>
-<p style="font-size:11px; color:#94A3B8; margin-top:6px;">Inspección en almacén, consolidación en tarimas, folios de remisión y entrega al cliente.</p>
-</div>
-</div>
-</div>""", unsafe_allow_html=True)
-        
-        c_i1, c_i2 = st.columns(2)
-        with c_i1:
-            with st.container(border=True):
-                st.markdown("##### 🎯 Pilares Industria 4.0 Aplicados:")
-                st.markdown("• **Interoperabilidad en Tiempo Real**: Eliminación del 'efecto isla', los 3 sistemas comparten datos continuamente sin captura manual duplicada.")
-                st.markdown("• **Transparencia de Información**: Visualización en tiempo real del saldo de piezas fabricadas en taller vs despachadas.")
-                st.markdown("• **Digitalización de Documentos**: Transformación automática de órdenes no estructuradas (PDF/Email) a entidades estructuradas relacionales.")
-        with c_i2:
-            with st.container(border=True):
-                st.markdown("##### 🚀 Beneficios Operativos y de Negocio:")
-                st.markdown("• **Cero Pérdida de Trazabilidad**: Cada tornillo, puerta y pieza maquinada tiene su origen en una PO formal.")
-                st.markdown("• **Control de Urgencias**: Detección inmediata de entregas prioritarias marcadas por compras o clientes.")
-                st.markdown("• **Reducción de Tiempos de Ciclo**: De horas de captura manual a segundos mediante OCR espacial.")
-
-    # --------------------------------------------------------------------------
-    # PESTAÑA 2: MOTOR OCR ESPACIAL (DIAGRAMA OFICIAL)
-    # --------------------------------------------------------------------------
     with tab_diagrama_ocr:
-        st.subheader("¿Cómo analiza el motor los archivos de PO de Sigrama?")
-        st.markdown("El procesador utiliza un **motor de lectura espacial adaptado a la hoja membretada de Industria Sigrama**:")
+        st.subheader("⚡ Arquitectura del Motor OCR Espacial")
+        st.write("Diagrama del flujo de extracción cartesiana por coordenadas Y-clustering para documentos de 1 a N páginas.")
         
-        # Renderizado visual del diagrama de la imagen
-        st.markdown("""<div style="background-color:#111827; border:1px solid #374151; border-radius:12px; padding:24px; color:white; font-family:'Questrial',sans-serif; margin: 15px 0;">
-<div style="display:flex; align-items:center; justify-content:space-between; gap:15px;">
-
-<!-- Entrada -->
-<div style="background:#1F2937; border:1px solid #4B5563; border-radius:8px; padding:14px 18px; text-align:center; min-width:140px;">
-<span style="font-size:22px;">📄</span><br>
-<b style="font-size:13px; color:#F9FAFB;">Archivo PO Sigrama</b><br>
-<span style="font-size:11px; color:#9CA3AF;">.PDF directo o .MSG</span>
-</div>
-
-<div style="color:#60A5FA; font-size:20px; font-weight:bold;">➔</div>
-
-<!-- Extractor -->
-<div style="background:#1E3A8A; border:1px solid #3B82F6; border-radius:8px; padding:14px 18px; text-align:center; min-width:150px;">
-<span style="font-size:20px;">⚡</span><br>
-<b style="font-size:13px; color:#93C5FD;">Extractor OCR Espacial Sigrama</b>
-</div>
-
-<div style="color:#60A5FA; font-size:20px; font-weight:bold;">➔</div>
-
-<!-- Centro: Bloques Extraídos -->
-<div style="border:1px dashed #6B7280; border-radius:10px; padding:15px; background:#111827; flex:2;">
-<div style="font-size:11px; color:#9CA3AF; text-align:center; font-weight:700; margin-bottom:10px; letter-spacing:1px;">
-DATOS EXTRAÍDOS DEL FORMATO OFICIAL
-</div>
-
-<div style="display:flex; flex-direction:column; gap:10px;">
-<div style="background:#1F2937; border:1px solid #374151; border-radius:6px; padding:10px; font-size:11px;">
-<b style="color:#F3F4F6;">📋 Cabecera Oficial:</b><br>
-<span style="color:#9CA3AF;">• Folio PO (ej. 2608-3177 / 26083186) • Fecha Pedido (Día/Mes/Año)<br>
-• Requisición No. & Solicitante • Proveedor & Atención (Jesús Morales)<br>
-• Destino (Almacén Sigrama) • Comprador (Josué Mesta / Compras)<br>
-• Observaciones (Cuentas, Proyectos)</span>
-</div>
-
-<div style="background:#1F2937; border:1px solid #374151; border-radius:6px; padding:10px; font-size:11px;">
-<b style="color:#F3F4F6;">📦 Tabla de Partidas:</b><br>
-<span style="color:#9CA3AF;">• Item # & Cantidad (ej. 32.00, 64.00) • Unidad (PIEZA, PZA, KG, JGO)<br>
-• Clave / SKU (ej. SWB01431, P20325-24) • Descripción Oficial del Producto<br>
-• Precio Unitario & Precio Total ($) • Fecha de Entrega Prometida</span>
-</div>
-
-<div style="background:#1F2937; border:1px solid #374151; border-radius:6px; padding:10px; font-size:11px;">
-<b style="color:#F3F4F6;">💰 Totales Financieros:</b><br>
-<span style="color:#9CA3AF;">• Subtotal • IVA 16% • Total Neto MXN</span>
-</div>
-</div>
-</div>
-
-<div style="color:#60A5FA; font-size:20px; font-weight:bold;">➔</div>
-
-<!-- Salida -->
-<div style="background:#064E3B; border:1px solid #10B981; border-radius:8px; padding:14px 18px; text-align:center; min-width:150px;">
-<span style="font-size:20px;">🚀</span><br>
-<b style="font-size:13px; color:#A7F3D0;">Sincronización Automática</b><br>
-<span style="font-size:10px; color:#D1FAE5;">(Remisiones + Corte y Doblez)</span>
-</div>
-
-</div>
-</div>""", unsafe_allow_html=True)
-
-    # --------------------------------------------------------------------------
-    # PESTAÑA 3: STACK TECNOLÓGICO (TECH STACK)
-    # --------------------------------------------------------------------------
     with tab_stack:
         st.subheader("💻 Stack Tecnológico de la Aplicación")
-        st.markdown("Tecnologías y librerías de grado industrial que componen la solución:")
+        st.markdown("""
+- **Frontend:** Streamlit 1.40+ & Plotly Express
+- **Motor OCR:** PyMuPDF 1.28 (`fitz`) con Y-clustering espacial y `extract-msg`
+- **Base de Datos:** SQLite 3 (`po_tracker.db`) con soporte ACID
+- **Interoperabilidad:** Pandas 2.2 & OpenPyXL con espejos Excel automáticos
+""")
         
-        c_st1, c_st2 = st.columns(2)
-        with c_st1:
-            with st.container(border=True):
-                st.markdown("#### 🎨 Frontend & Experiencia de Usuario")
-                st.markdown("""
-- **Framework UI:** Streamlit 1.40+ (Python)
-- **Visualización de Datos:** Plotly Express & Plotly Graph Objects
-- **Estilos Corporativos:** CSS3 Moderno (Tipografía *Montserrat* y *Questrial*, Colores Oficiales Sigrama `#EC2024`, `#111111`)
-- **Diseño Adaptativo:** Contenedores interactivos, métricas dinámicas y feedback en tiempo real.
-""")
-                
-            with st.container(border=True):
-                st.markdown("#### 👁️ Motor de Ingesta & Extracción OCR")
-                st.markdown("""
-- **Lector Espacial de PDFs:** PyMuPDF 1.28 (`fitz`) con detección de bloques vectoriales y coordenadas `(x0, y0, x1, y1)`.
-- **Desempaquetador de Correos:** `extract-msg` 0.56 (Parseador nativo de archivos de mensaje OLE de Microsoft Outlook).
-- **Procesamiento de Texto:** Expresiones regulares adaptativas (RegEx) para detección de folios, fechas, precios y partidas.
-""")
-                
-        with c_st2:
-            with st.container(border=True):
-                st.markdown("#### 🗄️ Persistencia de Datos & Almacenamiento")
-                st.markdown("""
-- **Base de Datos Relacional:** SQLite 3 (`po_tracker.db`) con soporte ACID y relaciones integridad referencial (`po_cabecera` ➔ `po_partidas` ➔ `po_historial`).
-- **Data Wrangling:** Pandas 2.2+ para manipulación tabular de alto rendimiento.
-- **Intercambio en Excel:** OpenPyXL 3.1+ para exportación automática e importación de plantillas oficiales.
-""")
-                
-            with st.container(border=True):
-                st.markdown("#### 🔄 Integración & Interoperabilidad")
-                st.markdown("""
-- **Mapeo Normalizado:** Algoritmo de normalización de folios (ej. `PO 2608-3186` ➔ `26083186`) para correlación exacta.
-- **Sincronización Automática:** Espejo bidireccional hacia `BD_POs_Cabecera.xlsx` y `BD_Requerimientos_POs.xlsx` para consumo directo por la app de Remisiones.
-""")
-
-    # --------------------------------------------------------------------------
-    # PESTAÑA 4: MANUAL OPERATIVO PASO A PASO
-    # --------------------------------------------------------------------------
     with tab_manual_pasos:
         st.subheader("📖 Manual de Operación para el Usuario")
-        st.markdown("Guía práctica para operar el sistema en el día a día:")
+        st.markdown("""
+1. **Paso 1 (Ingesta)**: En **`📬 Bandeja de Entrada OCR`**, sube los correos `.msg` o archivos `.pdf` de las 58 órdenes internas.
+2. **Paso 2 (Ajuste)**: En **`✏️ Ajuste de PO`**, navega entre las órdenes para verificar `INT-XXXX`, fechas y corregir la tabla de artículos en vivo.
+3. **Paso 3 (Catálogo)**: En **`📋 Matriz de Órdenes`**, consulta el catálogo ordenado y exporta a Excel.
+4. **Paso 4 (Trazabilidad)**: En **`🔍 Ficha de Trazabilidad 360°`**, revisa piezas cortadas/dobladas y remisiones.
+""")
+
+
+# ==============================================================================
+# SECCIÓN 8: MANTENIMIENTO DE LA APP & RESPALDO DE BASE DE DATOS
+# ==============================================================================
+elif menu == "🛠️ Mantenimiento de la App":
+    st.title("🛠️ Mantenimiento de la App & Respaldo de Base de Datos")
+    st.markdown("Herramientas de respaldo, salud de datos, resincronización forzada y gobernanza del sistema.")
+    
+    df_pos = get_all_pos()
+    df_part = get_all_partidas()
+    
+    m_c1, m_c2, m_c3 = st.columns(3)
+    with m_c1:
+        st.metric("Total POs Registradas", len(df_pos))
+    with m_c2:
+        st.metric("Total Partidas Activas", len(df_part))
+    with m_c3:
+        db_file = DB_PATH
+        db_size_kb = (db_file.stat().st_size / 1024.0) if db_file.exists() else 0.0
+        st.metric("Tamaño Base de Datos SQLite", f"{db_size_kb:.1f} KB")
         
-        with st.container(border=True):
-            st.markdown("### 🔹 Paso 1: Ingreso de Órdenes de Compra (3 Opciones)")
-            st.markdown("""
-1. **Opción A (Archivo PDF o Correo .MSG)**: Ve a **`📬 Bandeja de Correos & OCR`** o **`📥 Registrar / Cargar PO`**, arrastra el archivo de la PO o el correo `.msg` y haz clic en **`⚡ Procesar y Extraer`**.
-2. **Opción B (Carga Masiva Excel)**: Descarga la plantilla oficial en **`📁 Carga Masiva de Excel`**, llena tus partidas y súbela para registrar múltiples órdenes en lote.
-3. **Opción C (Formulario Manual)**: Usa el formulario guiado para capturar la orden campo por campo si no cuentas con el documento digital.
-""")
+    st.write("---")
+    
+    b_col1, b_col2 = st.columns(2)
+    with b_col1:
+        st.subheader("💾 1. Descargar Respaldo de Base de Datos (Backup)")
+        st.write("Descarga una copia completa e íntegra del archivo SQLite `po_tracker.db` para salvaguarda de seguridad.")
+        if db_file.exists():
+            with open(db_file, "rb") as fp:
+                st.download_button(
+                    label="📥 Descargar Backup SQLite (.db)",
+                    data=fp.read(),
+                    file_name=f"backup_po_tracker_{datetime.date.today().strftime('%Y%m%d')}.db",
+                    mime="application/x-sqlite3",
+                    type="primary"
+                )
+        else:
+            st.warning("La base de datos aún no contiene registros.")
             
-        with st.container(border=True):
-            st.markdown("### 🔹 Paso 2: Verificación de Datos Extraídos")
-            st.markdown("""
-- Revisa que el **Folio**, **Proyecto**, **Solicitante**, **Precios** y **Cantidades** sean correctos en la tabla interactiva de vista previa.
-- Si el cliente marcó alguna urgencia (como las cantidades en verde del correo), verifica que aparezca la etiqueta **`🔥 Urgente`** en las observaciones.
-- Presiona **`🚀 Registrar y Guardar PO en el Sistema`**.
-""")
-            
-        with st.container(border=True):
-            st.markdown("### 🔹 Paso 3: Monitoreo en la Matriz de Control 360°")
-            st.markdown("""
-- Entra a **`🎯 Matriz de Control 360° (Producción + Remisión)`** para ver en una sola pantalla:
-  - **🔵 Piezas Fabricadas en Planta**: Corte láser, doblez y liberado en `app_corte_doblez`.
-  - **🟢 Piezas Remisionadas al Cliente**: Tarimas despachadas con número de remisión en `remisiones-de-materiales`.
-  - **Saldos Pendientes**: Sabrás al instante si una pieza está pendiente por cortar o si ya está en almacén lista para remisionarse.
-""")
-            
-        with st.container(border=True):
-            st.markdown("### 🔹 Paso 4: Trazabilidad en Profundidad y Exportación")
-            st.markdown("""
-- En **`🔍 Ficha de Trazabilidad 360°`**, selecciona cualquier orden de compra para ver el desglose completo de sus partidas, historial de tarimas enviadas y condiciones comerciales.
-- Puedes descargar cualquier reporte o matriz completa en formato **Excel** usando los botones de descarga ubicados en cada sección.
-""")
+    with b_col2:
+        st.subheader("🔄 2. Sincronización Forzada de Archivos Excel")
+        st.write("Regenera de forma inmediata los catálogos `BD_POs_Cabecera.xlsx` y `BD_Requerimientos_POs.xlsx` en el directorio compartido.")
+        if st.button("⚡ Ejecutar Resincronización Forzada", use_container_width=True):
+            export_sync_to_excel()
+            st.success("✅ Archivos Excel resincronizados exitosamente.")
+
 

@@ -1071,29 +1071,55 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
     if df_pos.empty:
         st.info("💡 No hay Órdenes de Compra registradas.")
     else:
-        col_sel1, col_sel2 = st.columns([2, 1])
+        col_sel1, col_sel2 = st.columns([2.5, 1.5])
         with col_sel1:
             pos_list = df_pos['po'].tolist()
-            sel_po = st.selectbox("Selecciona la Orden de Compra a inspeccionar:", pos_list)
+            def _format_po_option(p):
+                sub_df = df_pos[df_pos['po'].astype(str) == str(p)]
+                if not sub_df.empty:
+                    r = sub_df.iloc[0]
+                    int_id = str(r.get('id_interno', '')).strip()
+                    proy = str(r.get('proyecto', '')).strip()
+                    prefix = f"[{int_id}] " if int_id else ""
+                    return f"{prefix}PO {p} • {proy}" if proy else f"{prefix}PO {p}"
+                return f"PO {p}"
+                
+            sel_po = st.selectbox("Selecciona la Orden de Compra a inspeccionar:", pos_list, format_func=_format_po_option, key="sb_select_po_360")
             
         df_cab, df_partidas_po = get_po_by_folio(sel_po)
         
         if df_cab.empty:
-            st.error("No se encontraron datos de la PO.")
+            st.error("No se encontraron datos de la PO seleccionada.")
         else:
             cab_info = df_cab.iloc[0]
             tracking = get_tracking_for_po(sel_po, df_partidas_po)
+            id_int_txt = str(cab_info.get('id_interno', '')).strip()
+            id_int_badge = f'<span style="background-color:#EC2024; color:#FFFFFF; padding:4px 10px; border-radius:6px; font-weight:800; font-size:14px; margin-right:10px; display:inline-block;">{id_int_txt}</span>' if id_int_txt else '<span style="background-color:#555; color:#FFF; padding:4px 10px; border-radius:6px; font-size:12px; margin-right:10px;">SIN ID</span>'
+            
+            with col_sel2:
+                c_s1, c_s2 = st.columns(2)
+                with c_s1:
+                    st.metric("ID Interno", id_int_txt if id_int_txt else "N/A")
+                with c_s2:
+                    st.metric("Llegada PO", str(cab_info.get('fecha_llegada', 'N/A')))
             
             st.markdown(f"""
-            <div style="background-color:#111111; color:white; padding:18px; border-radius:10px; border-left:6px solid #EC2024; margin-bottom:20px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="background:#18181B; color:#FFFFFF; padding:20px; border-radius:10px; border-left:6px solid #EC2024; margin-bottom:20px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
                     <div>
-                        <h2 style="margin:0; color:#EC2024;">ORDEN DE COMPRA: {sel_po}</h2>
-                        <p style="margin:5px 0 0 0; font-size:14px; color:#A0A0A0;">Proyecto: <b>{cab_info.get('proyecto', 'N/A')}</b> | Solicitante: <b>{cab_info.get('solicitante', 'N/A')}</b> | Comprador: <b>{cab_info.get('comprador', 'N/A')}</b></p>
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                            {id_int_badge}
+                            <span style="font-size:22px; font-weight:800; color:#FFFFFF;">ORDEN DE COMPRA: <span style="color:#EC2024;">{sel_po}</span></span>
+                        </div>
+                        <p style="margin:0; font-size:14px; color:#D1D5DB;">
+                            🏗️ Proyecto: <b style="color:#FFFFFF;">{cab_info.get('proyecto', 'N/A')}</b> &nbsp;|&nbsp; 
+                            👤 Solicitante: <b style="color:#FFFFFF;">{cab_info.get('solicitante', 'N/A')}</b> &nbsp;|&nbsp; 
+                            💼 Comprador: <b style="color:#FFFFFF;">{cab_info.get('comprador', 'N/A')}</b>
+                        </p>
                     </div>
                     <div style="text-align:right;">
-                        <span style="background-color:{ESTATUS_COLORS.get(tracking['estatus_global'], '#333')}; padding:6px 14px; border-radius:20px; font-weight:bold; font-size:14px;">
-                            {tracking['estatus_global']} ({tracking['porcentaje_global']}%)
+                        <span style="background-color:{ESTATUS_COLORS.get(tracking['estatus_global'], '#333')}; color:#FFFFFF; padding:8px 16px; border-radius:20px; font-weight:bold; font-size:14px; display:inline-block;">
+                            ● {tracking['estatus_global']} ({tracking['porcentaje_global']}%)
                         </span>
                     </div>
                 </div>

@@ -1201,13 +1201,22 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 if not df_p_rem.empty:
                     # Unir información de ambas fuentes
                     df_merged_360 = df_p_rem.copy()
-                    if not df_p_cd.empty and 'sku' in df_p_cd.columns:
+                    if not df_p_cd.empty and 'item_no' in df_p_cd.columns:
+                        cd_cols = [c for c in ['item_no', 'piezas_cortadas', 'piezas_dobladas', 'piezas_terminadas_planta', 'pct_avance_fabricacion'] if c in df_p_cd.columns]
                         df_merged_360 = df_merged_360.merge(
-                            df_p_cd[['sku', 'cortado', 'doblado', 'terminado', 'porcentaje_fabricacion']],
-                            left_on='clave_sku',
-                            right_on='sku',
+                            df_p_cd[cd_cols],
+                            on='item_no',
                             how='left'
-                        ).fillna({'cortado': 0, 'doblado': 0, 'terminado': 0, 'porcentaje_fabricacion': 0.0})
+                        ).fillna({
+                            'piezas_cortadas': 0,
+                            'piezas_dobladas': 0,
+                            'piezas_terminadas_planta': 0,
+                            'pct_avance_fabricacion': 0.0
+                        })
+                        df_merged_360['cortado'] = df_merged_360['piezas_cortadas']
+                        df_merged_360['doblado'] = df_merged_360['piezas_dobladas']
+                        df_merged_360['terminado'] = df_merged_360['piezas_terminadas_planta']
+                        df_merged_360['porcentaje_fabricacion'] = df_merged_360['pct_avance_fabricacion']
                     else:
                         df_merged_360['cortado'] = 0.0
                         df_merged_360['doblado'] = 0.0

@@ -1092,7 +1092,45 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
             st.error("No se encontraron datos de la PO seleccionada.")
         else:
             cab_info = df_cab.iloc[0]
-            tracking = get_tracking_for_po(sel_po, df_partidas_po)
+            
+            # Botón de Sincronización en Vivo
+            sync_btn_col1, sync_btn_col2 = st.columns([3, 1])
+            with sync_btn_col1:
+                st.caption("Consulta el estado en vivo de las piezas en las máquinas de Corte-Doblez y los despachos en Remisiones.")
+            with sync_btn_col2:
+                if st.button("🔄 Sincronizar Estatus 360°", type="primary", use_container_width=True, key="btn_sync_360_live"):
+                    st.toast("✅ Consultando datos en tiempo real de Corte/Doblez y Remisiones...")
+                    st.rerun()
+
+            # Consultar ambas aplicaciones
+            rem_tracking = get_tracking_for_po(sel_po, df_partidas_po)
+            cd_tracking = get_corte_doblez_tracking_for_po(sel_po, df_partidas_po)
+            
+            tot_req = rem_tracking['total_requerido']
+            tot_fab = cd_tracking['total_fabricado']
+            tot_rem = rem_tracking['total_remisionado']
+            tot_pend_env = max(0.0, tot_req - tot_rem)
+            
+            pct_fab = (tot_fab / tot_req * 100.0) if tot_req > 0 else 0.0
+            pct_rem = (tot_rem / tot_req * 100.0) if tot_req > 0 else 0.0
+            
+            # Determinar Estatus 360 Global
+            if tot_rem >= tot_req and tot_req > 0:
+                estatus_360 = "Remisionada Total (100%)"
+                estatus_color = "#10B981"
+            elif tot_rem > 0:
+                estatus_360 = f"Remisionada Parcial ({pct_rem:.1f}%)"
+                estatus_color = "#3B82F6"
+            elif tot_fab >= tot_req and tot_req > 0:
+                estatus_360 = f"Listo para Remisión ({pct_fab:.1f}% Fab)"
+                estatus_color = "#8B5CF6"
+            elif tot_fab > 0:
+                estatus_360 = f"En Proceso de Fabricación ({pct_fab:.1f}% Fab)"
+                estatus_color = "#F59E0B"
+            else:
+                estatus_360 = "Registrada (En Espera)"
+                estatus_color = "#64748B"
+            
             id_int_txt = str(cab_info.get('id_interno', '')).strip()
             id_int_badge = f'<span style="background-color:#EC2024; color:#FFFFFF; padding:4px 10px; border-radius:6px; font-weight:800; font-size:14px; margin-right:10px; display:inline-block;">{id_int_txt}</span>' if id_int_txt else '<span style="background-color:#555; color:#FFF; padding:4px 10px; border-radius:6px; font-size:12px; margin-right:10px;">SIN ID</span>'
             
@@ -1118,54 +1156,99 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         </p>
                     </div>
                     <div style="text-align:right;">
-                        <span style="background-color:{ESTATUS_COLORS.get(tracking['estatus_global'], '#333')}; color:#FFFFFF; padding:8px 16px; border-radius:20px; font-weight:bold; font-size:14px; display:inline-block;">
-                            ● {tracking['estatus_global']} ({tracking['porcentaje_global']}%)
+                        <span style="background-color:{estatus_color}; color:#FFFFFF; padding:8px 16px; border-radius:20px; font-weight:bold; font-size:14px; display:inline-block;">
+                            ● {estatus_360}
                         </span>
                     </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
+            # 4 Tarjetas de Métricas Clave
             k1, k2, k3, k4 = st.columns(4)
             with k1:
-                st.metric("📦 Cantidad Requerida", f"{tracking['total_requerido']:,.0f} pzas")
+                st.metric("📦 1. Piezas Requeridas", f"{tot_req:,.0f} pzas", help="Total de piezas solicitadas en la Orden de Compra")
             with k2:
-                st.metric("🚚 Cantidad Remisionada", f"{tracking['total_remisionado']:,.0f} pzas")
+                ofs_cnt = len(cd_tracking.get('ofs_asociadas', []))
+                ofs_label = f"{ofs_cnt} OF(s) en taller" if ofs_cnt > 0 else "Sin OF aún"
+                st.metric("🔵 2. Fabricadas en Planta", f"{tot_fab:,.0f} pzas", f"{pct_fab:.1f}% Fab. ({ofs_label})", help="Piezas cortadas, dobladas o liberadas en la app de Corte y Doblez")
             with k3:
-                st.metric("⏳ Cantidad Pendiente", f"{tracking['total_pendiente']:,.0f} pzas")
+                rem_cnt = len(rem_tracking.get('remisiones_asociadas', []))
+                rem_label = f"{rem_cnt} Remisión(es)" if rem_cnt > 0 else "Sin remisión"
+                st.metric("🚚 3. Remisionadas al Cliente", f"{tot_rem:,.0f} pzas", f"{pct_rem:.1f}% Enviado ({rem_label})", help="Piezas enviadas con remisión y tarimas al cliente")
             with k4:
-                st.metric("💰 Importe Total PO", f"${float(cab_info.get('total', 0) or 0):,.2f} MXN")
+                st.metric("⏳ 4. Pendientes de Envío", f"{tot_pend_env:,.0f} pzas", delta=f"-{tot_pend_env:,.0f}", delta_color="inverse", help="Piezas que aún no han sido entregadas")
                 
             st.write("---")
             
-            tab_partidas, tab_remisiones_det, tab_acciones = st.tabs([
-                "📋 Desglose de Partidas vs Envíos",
-                "🚚 Historial de Tarimas y Remisiones",
+            tab_matriz_360, tab_corte_det, tab_remisiones_det, tab_acciones = st.tabs([
+                "🎯 Matriz Integral 360° (Fabricación vs Remisión)",
+                "🔵 Corte y Doblez (OFs de Planta)",
+                "🚚 Remisiones y Tarimas (Envíos)",
                 "⚙️ Mantenimiento de la Orden"
             ])
             
-            with tab_partidas:
-                st.subheader("📦 Partidas Requeridas y Avance de Remisión")
-                df_p_view = tracking['df_partidas']
-                if not df_p_view.empty:
-                    cols_part_show = [
+            # 1. Pestaña: Matriz Integral 360°
+            with tab_matriz_360:
+                st.subheader("🎯 Matriz Integral 360° por Partida")
+                st.caption("Cruce detallado por número de parte entre lo Requerido, lo Fabricado en Corte-Doblez y lo Despachado en Remisiones.")
+                
+                df_p_rem = rem_tracking['df_partidas']
+                df_p_cd = cd_tracking['df_partidas_cd']
+                
+                if not df_p_rem.empty:
+                    # Unir información de ambas fuentes
+                    df_merged_360 = df_p_rem.copy()
+                    if not df_p_cd.empty and 'sku' in df_p_cd.columns:
+                        df_merged_360 = df_merged_360.merge(
+                            df_p_cd[['sku', 'cortado', 'doblado', 'terminado', 'porcentaje_fabricacion']],
+                            left_on='clave_sku',
+                            right_on='sku',
+                            how='left'
+                        ).fillna({'cortado': 0, 'doblado': 0, 'terminado': 0, 'porcentaje_fabricacion': 0.0})
+                    else:
+                        df_merged_360['cortado'] = 0.0
+                        df_merged_360['doblado'] = 0.0
+                        df_merged_360['terminado'] = 0.0
+                        df_merged_360['porcentaje_fabricacion'] = 0.0
+                        
+                    def _calc_part_status(row):
+                        req = float(row.get('cantidad_requerida', 0) or 0)
+                        rem = float(row.get('cantidad_remisionada', 0) or 0)
+                        fab = float(row.get('terminado', 0) or 0)
+                        if rem >= req and req > 0:
+                            return "🟢 Remisionado Total"
+                        elif rem > 0:
+                            return "🔵 Remisionado Parcial"
+                        elif fab >= req and req > 0:
+                            return "🟣 Listo p/ Remisión"
+                        elif fab > 0:
+                            return "🟠 En Proceso Fab."
+                        return "⚪ En Espera"
+                        
+                    df_merged_360['estatus_partida_360'] = df_merged_360.apply(_calc_part_status, axis=1)
+                    
+                    cols_show_360 = [
                         'item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto',
-                        'cantidad_requerida', 'cantidad_remisionada', 'cantidad_pendiente',
-                        'porcentaje_cumplimiento', 'precio_unitario', 'precio_total', 'fecha_entrega'
+                        'cantidad_requerida', 'cortado', 'doblado', 'terminado', 'porcentaje_fabricacion',
+                        'cantidad_remisionada', 'porcentaje_cumplimiento', 'cantidad_pendiente', 'estatus_partida_360'
                     ]
+                    
                     st.dataframe(
-                        df_p_view[[c for c in cols_part_show if c in df_p_view.columns]].rename(columns={
+                        df_merged_360[[c for c in cols_show_360 if c in df_merged_360.columns]].rename(columns={
                             'item_no': 'Item #',
                             'sku_cliente': 'SKU Cliente (Clave)',
                             'clave_sku': 'SKU Nuestro (Planta)',
                             'descripcion_producto': 'Descripción',
-                            'cantidad_requerida': 'Req.',
-                            'cantidad_remisionada': 'Enviadas',
-                            'cantidad_pendiente': 'Pendientes',
-                            'porcentaje_cumplimiento': '% Avance',
-                            'precio_unitario': 'P. Unitario',
-                            'precio_total': 'P. Total',
-                            'fecha_entrega': 'Fecha Entrega'
+                            'cantidad_requerida': 'Req. (PO)',
+                            'cortado': '🔵 Cortado',
+                            'doblado': '🔵 Doblado',
+                            'terminado': '🔵 Terminado Fab.',
+                            'porcentaje_fabricacion': '🔵 % Fab.',
+                            'cantidad_remisionada': '🟢 Remisionadas',
+                            'porcentaje_cumplimiento': '🟢 % Envío',
+                            'cantidad_pendiente': '⏳ Pend. Envío',
+                            'estatus_partida_360': 'Estatus 360°'
                         }),
                         use_container_width=True,
                         hide_index=True
@@ -1173,21 +1256,40 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 else:
                     st.info("No hay partidas registradas para esta PO.")
                     
+            # 2. Pestaña: Detalle de Corte y Doblez
+            with tab_corte_det:
+                st.subheader("🔵 Órdenes de Fabricación (OFs) y Estado en Taller")
+                ofs_list = cd_tracking.get('ofs_asociadas', [])
+                if ofs_list:
+                    st.success(f"Se encontraron **{len(ofs_list)}** Órdenes de Fabricación vinculadas a esta PO: `{', '.join(ofs_list)}`")
+                    df_ofs_view = cd_tracking.get('df_ofs', pd.DataFrame())
+                    if not df_ofs_view.empty:
+                        st.dataframe(df_ofs_view, use_container_width=True, hide_index=True)
+                else:
+                    st.info("ℹ️ Aún no se han programado Órdenes de Fabricación (OFs) para esta PO en la aplicación de Corte y Doblez.")
+                    
+            # 3. Pestaña: Detalle de Remisiones
             with tab_remisiones_det:
                 st.subheader("🚚 Envíos Registrados en la App de Remisiones")
-                df_env = tracking['df_historial_envios']
+                df_env = rem_tracking['df_historial_envios']
+                rem_list = rem_tracking.get('remisiones_asociadas', [])
                 if not df_env.empty:
-                    st.success(f"Se encontraron **{len(df_env)}** registros de tarimas/piezas enviadas en **{len(tracking['remisiones_asociadas'])}** remisión(es): `{', '.join(tracking['remisiones_asociadas'])}`")
+                    st.success(f"Se encontraron **{len(df_env)}** registros de tarimas/piezas enviadas en **{len(rem_list)}** remisión(es): `{', '.join(rem_list)}`")
                     st.dataframe(df_env, use_container_width=True, hide_index=True)
                 else:
                     st.info("ℹ️ Aún no se han generado remisiones para esta PO en la aplicación de Remisiones de Materiales.")
                     
+            # 4. Pestaña: Acciones de Mantenimiento
             with tab_acciones:
                 st.subheader("⚙️ Mantenimiento de la Orden")
-                col_del1, col_del2 = st.columns([3, 1])
-                with col_del1:
+                c_act1, c_act2 = st.columns(2)
+                with c_act1:
+                    st.write("¿Deseas editar los datos o artículos de esta PO?")
+                    if st.button("✏️ Abrir en Ajuste de PO", use_container_width=True):
+                        st.session_state['current_po_edit_idx'] = pos_list.index(sel_po) if sel_po in pos_list else 0
+                        st.info("Navega a la sección '✏️ Ajuste de PO' en el menú lateral.")
+                with c_act2:
                     st.write("Si necesitas eliminar definitivamente esta PO del catálogo:")
-                with col_del2:
                     if st.button("🗑️ Eliminar esta PO", type="secondary", use_container_width=True):
                         st.session_state['confirm_del_po'] = sel_po
                         

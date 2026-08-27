@@ -93,18 +93,6 @@ def init_db():
     if 'sku_cliente' not in columns:
         cursor.execute("ALTER TABLE po_partidas ADD COLUMN sku_cliente TEXT DEFAULT ''")
     
-    # Sincronizar si los archivos Excel están vacíos (Reset limpio del repositorio)
-    cab_excel = EXCEL_CABECERA_PATH
-    if cab_excel.exists():
-        try:
-            df_c = pd.read_excel(cab_excel)
-            if df_c.empty:
-                cursor.execute('DELETE FROM po_cabecera')
-                cursor.execute('DELETE FROM po_partidas')
-                conn.commit()
-        except Exception:
-            pass
-            
     conn.commit()
     conn.close()
 

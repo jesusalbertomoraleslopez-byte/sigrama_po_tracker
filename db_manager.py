@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from config import (
     SQLITE_DB_PATH,
+    DATA_DIR,
     EXCEL_CABECERA_PATH,
     EXCEL_REQ_PATH,
     EXCEL_PARTIDAS_DETALLE_PATH,
@@ -93,7 +94,7 @@ def init_db():
         cursor.execute("ALTER TABLE po_partidas ADD COLUMN sku_cliente TEXT DEFAULT ''")
     
     # Sincronizar si los archivos Excel están vacíos (Reset limpio del repositorio)
-    cab_excel = DATA_DIR / 'BD_POs_Cabecera.xlsx'
+    cab_excel = EXCEL_CABECERA_PATH
     if cab_excel.exists():
         try:
             df_c = pd.read_excel(cab_excel)

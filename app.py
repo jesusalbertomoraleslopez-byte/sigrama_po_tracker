@@ -1106,13 +1106,13 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
             rem_tracking = get_tracking_for_po(sel_po, df_partidas_po)
             cd_tracking = get_corte_doblez_tracking_for_po(sel_po, df_partidas_po)
             
-            tot_req = rem_tracking['total_requerido']
-            tot_fab = cd_tracking['total_fabricado']
-            tot_rem = rem_tracking['total_remisionado']
+            tot_req = float(rem_tracking.get('total_requerido', 0.0) or 0.0)
+            tot_fab = float(cd_tracking.get('total_fabricado', cd_tracking.get('total_terminado_planta', 0.0)) or 0.0)
+            tot_rem = float(rem_tracking.get('total_remisionado', 0.0) or 0.0)
             tot_pend_env = max(0.0, tot_req - tot_rem)
             
-            pct_fab = (tot_fab / tot_req * 100.0) if tot_req > 0 else 0.0
-            pct_rem = (tot_rem / tot_req * 100.0) if tot_req > 0 else 0.0
+            pct_fab = float(cd_tracking.get('porcentaje_fabricacion', cd_tracking.get('pct_global_fabricacion', (tot_fab / tot_req * 100.0) if tot_req > 0 else 0.0)))
+            pct_rem = float(rem_tracking.get('porcentaje_global', (tot_rem / tot_req * 100.0) if tot_req > 0 else 0.0))
             
             # Determinar Estatus 360 Global
             if tot_rem >= tot_req and tot_req > 0:

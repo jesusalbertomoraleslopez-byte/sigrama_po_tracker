@@ -124,12 +124,16 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas):
     return {
         'po': po_str,
         'matched_ofs': sorted(list(matched_ofs)),
+        'ofs_asociadas': sorted(list(matched_ofs)),
         'total_programado': total_cortado,
         'total_cortado': total_cortado,
         'total_doblado': total_doblado,
         'total_terminado_planta': total_terminado,
+        'total_fabricado': total_terminado,
         'pct_global_fabricacion': round(min(100.0, pct_global_cd), 1),
-        'df_partidas_cd': pd.DataFrame(partidas_cd)
+        'porcentaje_fabricacion': round(min(100.0, pct_global_cd), 1),
+        'df_partidas_cd': pd.DataFrame(partidas_cd),
+        'df_ofs': pd.DataFrame({'OF': sorted(list(matched_ofs))}) if matched_ofs else pd.DataFrame()
     }
 
 def get_integrated_360_summary(df_all_pos, df_all_partidas):

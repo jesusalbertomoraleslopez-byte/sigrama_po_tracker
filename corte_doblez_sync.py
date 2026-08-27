@@ -9,12 +9,19 @@ def normalize_sku(s):
         return ""
     return re.sub(r'[^A-Z0-9]', '', str(s).upper())
 
-def sku_matches(target_sku, candidate_piece):
-    t_norm = normalize_sku(target_sku)
-    c_norm = normalize_sku(candidate_piece)
-    if not t_norm or not c_norm:
+def sku_matches(s1, s2):
+    """Compara dos SKUs permitiendo diferencias de guiones, mayúsculas o sufijos."""
+    if not s1 or not s2:
         return False
-    return t_norm == c_norm or t_norm in c_norm or c_norm in t_norm
+    norm1 = normalize_sku(s1)
+    norm2 = normalize_sku(s2)
+    if norm1 == norm2 or (len(norm1) >= 6 and (norm1 in norm2 or norm2 in norm1)):
+        return True
+    r1 = re.sub(r'-\d+$', '', str(s1).strip())
+    r2 = re.sub(r'-\d+$', '', str(s2).strip())
+    if len(r1) >= 5 and (r1 == r2 or r1 in r2 or r2 in r1):
+        return True
+    return False
 
 def load_corte_doblez_databases():
     """Carga las bases de datos relevantes de la app de Corte y Doblez."""
@@ -59,25 +66,50 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno=""):
                (id_int_clean and len(id_int_clean) >= 2 and id_int_clean in normalize_po(of_num)):
                 matched_ofs.add(of_num)
                 
+    # 1.1 Si no hubo coincidencia por PO, rastreo inteligente por SKU en piezas de Pronest
+    if not matched_ofs and not df_partidas.empty and not df_pie.empty:
+        po_skus = []
+        for _, p_row in df_partidas.iterrows():
+            k1 = str(p_row.get('clave_sku', '')).strip().upper()
+            k2 = str(p_row.get('sku_cliente', '')).strip().upper()
+            if k1: po_skus.append(k1)
+            if k2: po_skus.append(k2)
+            
+        for _, pie_r in df_pie.iterrows():
+            pie_n = str(pie_r.get('no_pieza', '')).strip().upper()
+            if any(sku_matches(ps, pie_n) for ps in po_skus):
+                of_n = str(pie_r.get('of_number', '')).strip()
+                if of_n:
+                    matched_ofs.add(of_n)
+                
     # 2. Filtrar piezas, avances y nidos de esas OFs
     df_pie_po = df_pie[df_pie['of_number'].isin(matched_ofs)] if not df_pie.empty and matched_ofs else pd.DataFrame()
     df_ava_po = df_ava[df_ava['of_number'].isin(matched_ofs)] if not df_ava.empty and matched_ofs else pd.DataFrame()
     df_tar_po = df_tar[df_tar['of_number'].isin(matched_ofs)] if not df_tar.empty and matched_ofs else pd.DataFrame()
     df_nid_po = df_nid[df_nid['of_number'].isin(matched_ofs)] if not df_nid.empty and matched_ofs else pd.DataFrame()
     
+    # Filtrar a los nidos específicos donde se anidaron estas piezas si son OFs de lote compartido
+    if not df_pie_po.empty and 'nido' in df_pie_po.columns and not df_nid_po.empty:
+        m_nested_nidos = df_pie_po[df_pie_po['no_pieza'].apply(lambda p: any(sku_matches(str(pr.get('clave_sku', '')), p) or sku_matches(str(pr.get('sku_cliente', '')), p) for _, pr in df_partidas.iterrows()))]
+        if not m_nested_nidos.empty:
+            valid_nidos = set(m_nested_nidos['nido'].dropna().unique())
+            df_nid_calc = df_nid_po[df_nid_po['nido'].isin(valid_nidos)]
+            if not df_nid_calc.empty:
+                df_nid_po = df_nid_calc
+    
     # Resumen de Láminas Utilizadas
     laminas_summary = []
     total_laminas = 0.0
     if not df_nid_po.empty and 'hojas' in df_nid_po.columns:
         def extract_mat(of_name):
-            s = str(of_name).upper()
-            if 'CAL. 10' in s or 'CAL 10' in s:
+            s = str(of_name).upper().replace(' ', '')
+            if 'CAL.10' in s or 'CAL10' in s or '10GA' in s:
                 return 'Lámina Galvanizada Cal. 10'
-            elif 'CAL. 12' in s or 'CAL 12' in s:
+            elif 'CAL.12' in s or 'CAL12' in s or '12GA' in s:
                 return 'Lámina Galvanizada Cal. 12'
-            elif 'CAL. 14' in s or 'CAL 14' in s:
+            elif 'CAL.14' in s or 'CAL14' in s or '14GA' in s:
                 return 'Lámina Galvanizada Cal. 14'
-            elif 'CAL. 16' in s or 'CAL 16' in s:
+            elif 'CAL.16' in s or 'CAL16' in s or '16GA' in s:
                 return 'Lámina Galvanizada Cal. 16'
             elif 'DECP' in s:
                 return 'Lámina Decapada'

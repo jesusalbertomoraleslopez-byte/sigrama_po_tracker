@@ -1229,25 +1229,125 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
             </div>
             """, unsafe_allow_html=True)
             
-            # 5 Tarjetas de Métricas Clave de la Cadena de Suministro
+            # 5 Tarjetas de Métricas Clave de la Cadena de Suministro (Diseño Premium con Iconos Grandes)
             tot_ent = float(rem_tracking.get('total_entarimado', tot_rem) or 0)
             pct_ent = (tot_ent / tot_req * 100.0) if tot_req > 0 else 0.0
+            ofs_cnt = len(cd_tracking.get('ofs_asociadas', []))
+            ofs_label = f"{ofs_cnt} OF(s)" if ofs_cnt > 0 else "Sin OF"
+            rem_cnt = len(rem_tracking.get('remisiones_asociadas', []))
+            rem_label = f"{rem_cnt} Remisión(es)" if rem_cnt > 0 else "Sin remisión"
             
             k1, k2, k3, k4, k5 = st.columns(5)
+            
             with k1:
-                st.metric("📦 1. Requeridas", f"{tot_req:,.0f} pzas", help="Total de piezas solicitadas en la Orden de Compra")
+                st.markdown(f"""
+                <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #475569; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); display:flex; flex-direction:column; justify-content:space-between; min-height:120px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div>
+                            <span style="font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#475569;">1. REQUERIDAS</span>
+                            <div style="font-size:24px; font-weight:900; color:#0F172A; line-height:1.2; margin-top:4px;">
+                                {tot_req:,.0f} <span style="font-size:12px; font-weight:600; color:#64748B;">pzas</span>
+                            </div>
+                        </div>
+                        <div style="background-color:#F1F5F9; width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                            <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="13" y2="16"></line></svg>
+                        </div>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <span style="background-color:#F1F5F9; color:#334155; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:12px; display:inline-block;">
+                            📋 100% Pedido Original
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
             with k2:
-                ofs_cnt = len(cd_tracking.get('ofs_asociadas', []))
-                ofs_label = f"{ofs_cnt} OF(s)" if ofs_cnt > 0 else "Sin OF"
-                st.metric("🔵 2. Fabricadas", f"{tot_fab:,.0f} pzas", f"{pct_fab:.1f}% Fab. ({ofs_label})", help="Piezas cortadas, dobladas o liberadas en taller")
+                st.markdown(f"""
+                <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #2563EB; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); display:flex; flex-direction:column; justify-content:space-between; min-height:120px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div>
+                            <span style="font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#1D4ED8;">2. FABRICADAS</span>
+                            <div style="font-size:24px; font-weight:900; color:#0F172A; line-height:1.2; margin-top:4px;">
+                                {tot_fab:,.0f} <span style="font-size:12px; font-weight:600; color:#64748B;">pzas</span>
+                            </div>
+                        </div>
+                        <div style="background-color:#EFF6FF; width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                            <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                        </div>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <span style="background-color:#DBEAFE; color:#1D4ED8; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:12px; display:inline-block;">
+                            ↑ {pct_fab:.1f}% Fab. ({ofs_label})
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
             with k3:
-                st.metric("📦 3. Entarimadas", f"{tot_ent:,.0f} pzas", f"{pct_ent:.1f}% en Tarimas", help="Piezas empaquetadas en tarimas en almacén listas para despacho")
+                st.markdown(f"""
+                <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #D97706; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); display:flex; flex-direction:column; justify-content:space-between; min-height:120px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div>
+                            <span style="font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#B45309;">3. ENTARIMADAS</span>
+                            <div style="font-size:24px; font-weight:900; color:#0F172A; line-height:1.2; margin-top:4px;">
+                                {tot_ent:,.0f} <span style="font-size:12px; font-weight:600; color:#64748B;">pzas</span>
+                            </div>
+                        </div>
+                        <div style="background-color:#FEF3C7; width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                            <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                        </div>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <span style="background-color:#FEF3C7; color:#B45309; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:12px; display:inline-block;">
+                            ↑ {pct_ent:.1f}% en Tarimas (PT)
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
             with k4:
-                rem_cnt = len(rem_tracking.get('remisiones_asociadas', []))
-                rem_label = f"{rem_cnt} Remisión(es)" if rem_cnt > 0 else "Sin remisión"
-                st.metric("🚚 4. Remisionadas", f"{tot_rem:,.0f} pzas", f"{pct_rem:.1f}% Enviado ({rem_label})", help="Piezas despachadas con remisión al cliente")
+                st.markdown(f"""
+                <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #059669; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); display:flex; flex-direction:column; justify-content:space-between; min-height:120px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div>
+                            <span style="font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#047857;">4. REMISIONADAS</span>
+                            <div style="font-size:24px; font-weight:900; color:#0F172A; line-height:1.2; margin-top:4px;">
+                                {tot_rem:,.0f} <span style="font-size:12px; font-weight:600; color:#64748B;">pzas</span>
+                            </div>
+                        </div>
+                        <div style="background-color:#D1FAE5; width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                            <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+                        </div>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <span style="background-color:#DCFCE7; color:#15803D; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:12px; display:inline-block;">
+                            ↑ {pct_rem:.1f}% Enviado ({rem_label})
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
             with k5:
-                st.metric("⏳ 5. Pendientes", f"{tot_pend_env:,.0f} pzas", delta=f"-{tot_pend_env:,.0f}", delta_color="inverse", help="Piezas que aún faltan por remisionar")
+                st.markdown(f"""
+                <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #DC2626; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); display:flex; flex-direction:column; justify-content:space-between; min-height:120px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div>
+                            <span style="font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#B91C1C;">5. PENDIENTES</span>
+                            <div style="font-size:24px; font-weight:900; color:#0F172A; line-height:1.2; margin-top:4px;">
+                                {tot_pend_env:,.0f} <span style="font-size:12px; font-weight:600; color:#64748B;">pzas</span>
+                            </div>
+                        </div>
+                        <div style="background-color:#FEE2E2; width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                            <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"></path><path d="M5 2h14"></path><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"></path><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"></path></svg>
+                        </div>
+                    </div>
+                    <div style="margin-top:10px;">
+                        <span style="background-color:#FEE2E2; color:#B91C1C; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:12px; display:inline-block;">
+                            ↓ {tot_pend_env:,.0f} pzas pendientes
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
                 
             st.write("---")
             

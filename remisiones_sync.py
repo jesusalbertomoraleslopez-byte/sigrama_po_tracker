@@ -131,6 +131,7 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno=""):
             cant_req = float(part.get('cantidad_requerida', 0) or 0)
             total_requerido += cant_req
             
+            cant_entarimada = 0.0
             cant_rem = 0.0
             rem_folios_partida = set()
             
@@ -141,10 +142,11 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno=""):
                 for _, d_row in match_det.iterrows():
                     t_id = str(d_row.get('ID_Tarima', '')).strip()
                     c_piezas = float(d_row.get('Cantidad', 0) or 0)
-                    cant_rem += c_piezas
+                    cant_entarimada += c_piezas
                     
                     rem_infos = tarima_to_remision.get(t_id, [])
                     if rem_infos:
+                        cant_rem += c_piezas
                         for info in rem_infos:
                             rem_folios_partida.add(info['folio_remision'])
                             remisiones_asociadas_set.add(info['folio_remision'])
@@ -164,11 +166,12 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno=""):
                             'Descripción': part.get('descripcion_producto', ''),
                             'Cantidad Enviada': c_piezas,
                             'ID Tarima': t_id,
-                            'Folio Remisión': 'En Almacén (Tarima armada)',
+                            'Folio Remisión': 'En Almacén (Entarimado sin remisión)',
                             'Fecha Salida': 'Pendiente de Salida',
                             'Receptor': 'Planta Sigrama'
                         })
                         
+            cant_entarimada = max(cant_entarimada, cant_rem)
             total_remisionado += cant_rem
             cant_pend = max(0.0, cant_req - cant_rem)
             pct = (cant_rem / cant_req * 100.0) if cant_req > 0 else 0.0
@@ -181,11 +184,12 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno=""):
                 st_item = ESTATUS_REGISTRADA
                 
             p_dict = dict(part)
+            p_dict['cantidad_entarimada'] = cant_entarimada
             p_dict['cantidad_remisionada'] = cant_rem
             p_dict['cantidad_pendiente'] = cant_pend
             p_dict['porcentaje_cumplimiento'] = round(pct, 1)
             p_dict['estatus_partida'] = st_item
-            p_dict['remisiones_folios'] = ', '.join(sorted(rem_folios_partida)) if rem_folios_partida else ('Tarima Armada' if cant_rem > 0 else 'Sin envío')
+            p_dict['remisiones_folios'] = ', '.join(sorted(rem_folios_partida)) if rem_folios_partida else ('Tarima Armada (Sin Remisión)' if cant_entarimada > 0 else 'Sin envío')
             partidas_enriched.append(p_dict)
             
     # 3. Estatus Global de la PO
@@ -199,10 +203,12 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno=""):
         
     df_partidas_res = pd.DataFrame(partidas_enriched)
     df_envios_res = pd.DataFrame(historial_envios).drop_duplicates() if historial_envios else pd.DataFrame()
+    tot_entarimado = float(df_partidas_res['cantidad_entarimada'].sum()) if (not df_partidas_res.empty and 'cantidad_entarimada' in df_partidas_res.columns) else 0.0
     
     return {
         'po': po_str,
         'total_requerido': total_requerido,
+        'total_entarimado': tot_entarimado,
         'total_remisionado': total_remisionado,
         'total_pendiente': max(0.0, total_requerido - total_remisionado),
         'porcentaje_global': round(pct_global, 1),

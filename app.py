@@ -1229,20 +1229,25 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
             </div>
             """, unsafe_allow_html=True)
             
-            # 4 Tarjetas de Métricas Clave
-            k1, k2, k3, k4 = st.columns(4)
+            # 5 Tarjetas de Métricas Clave de la Cadena de Suministro
+            tot_ent = float(rem_tracking.get('total_entarimado', tot_rem) or 0)
+            pct_ent = (tot_ent / tot_req * 100.0) if tot_req > 0 else 0.0
+            
+            k1, k2, k3, k4, k5 = st.columns(5)
             with k1:
-                st.metric("📦 1. Piezas Requeridas", f"{tot_req:,.0f} pzas", help="Total de piezas solicitadas en la Orden de Compra")
+                st.metric("📦 1. Requeridas", f"{tot_req:,.0f} pzas", help="Total de piezas solicitadas en la Orden de Compra")
             with k2:
                 ofs_cnt = len(cd_tracking.get('ofs_asociadas', []))
-                ofs_label = f"{ofs_cnt} OF(s) en taller" if ofs_cnt > 0 else "Sin OF aún"
-                st.metric("🔵 2. Fabricadas en Planta", f"{tot_fab:,.0f} pzas", f"{pct_fab:.1f}% Fab. ({ofs_label})", help="Piezas cortadas, dobladas o liberadas en la app de Corte y Doblez")
+                ofs_label = f"{ofs_cnt} OF(s)" if ofs_cnt > 0 else "Sin OF"
+                st.metric("🔵 2. Fabricadas", f"{tot_fab:,.0f} pzas", f"{pct_fab:.1f}% Fab. ({ofs_label})", help="Piezas cortadas, dobladas o liberadas en taller")
             with k3:
+                st.metric("📦 3. Entarimadas", f"{tot_ent:,.0f} pzas", f"{pct_ent:.1f}% en Tarimas", help="Piezas empaquetadas en tarimas en almacén listas para despacho")
+            with k4:
                 rem_cnt = len(rem_tracking.get('remisiones_asociadas', []))
                 rem_label = f"{rem_cnt} Remisión(es)" if rem_cnt > 0 else "Sin remisión"
-                st.metric("🚚 3. Remisionadas al Cliente", f"{tot_rem:,.0f} pzas", f"{pct_rem:.1f}% Enviado ({rem_label})", help="Piezas enviadas con remisión y tarimas al cliente")
-            with k4:
-                st.metric("⏳ 4. Pendientes de Envío", f"{tot_pend_env:,.0f} pzas", delta=f"-{tot_pend_env:,.0f}", delta_color="inverse", help="Piezas que aún no han sido entregadas")
+                st.metric("🚚 4. Remisionadas", f"{tot_rem:,.0f} pzas", f"{pct_rem:.1f}% Enviado ({rem_label})", help="Piezas despachadas con remisión al cliente")
+            with k5:
+                st.metric("⏳ 5. Pendientes", f"{tot_pend_env:,.0f} pzas", delta=f"-{tot_pend_env:,.0f}", delta_color="inverse", help="Piezas que aún faltan por remisionar")
                 
             st.write("---")
             
@@ -1257,7 +1262,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
             # 1. Pestaña: Matriz Integral 360°
             with tab_matriz_360:
                 st.subheader("🎯 Matriz Integral 360° por Partida")
-                st.caption("Cruce detallado por número de parte entre lo Requerido, lo Fabricado en Corte-Doblez y lo Despachado en Remisiones.")
+                st.caption("Cruce detallado por número de parte entre lo Requerido, Fabricado en Corte-Doblez, Entarimado en Almacén y Despachado en Remisiones.")
                 
                 df_p_rem = rem_tracking['df_partidas']
                 df_p_cd = cd_tracking['df_partidas_cd']
@@ -1287,16 +1292,26 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         df_merged_360['terminado'] = 0.0
                         df_merged_360['porcentaje_fabricacion'] = 0.0
                         
+                    if 'cantidad_entarimada' in df_merged_360.columns:
+                        df_merged_360['entarimado'] = df_merged_360['cantidad_entarimada']
+                    else:
+                        df_merged_360['entarimado'] = df_merged_360['cantidad_remisionada']
+                        
                     def _calc_part_status(row):
                         req = float(row.get('cantidad_requerida', 0) or 0)
                         rem = float(row.get('cantidad_remisionada', 0) or 0)
+                        ent = float(row.get('entarimado', 0) or 0)
                         fab = float(row.get('terminado', 0) or 0)
                         if rem >= req and req > 0:
                             return "🟢 Remisionado Total"
                         elif rem > 0:
                             return "🔵 Remisionado Parcial"
+                        elif ent >= req and req > 0:
+                            return "📦 Entarimado (Sin Remisión)"
+                        elif ent > 0:
+                            return "📦 Entarimado Parcial"
                         elif fab >= req and req > 0:
-                            return "🟣 Listo p/ Remisión"
+                            return "🟣 Listo p/ Entarimar"
                         elif fab > 0:
                             return "🟠 En Proceso Fab."
                         return "⚪ En Espera"
@@ -1329,7 +1344,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         ]
                         
                     if modo_vista == "📊 Vista Tipo Excel (Barras en Celdas)":
-                        st.caption("ℹ️ **Formato Excel (Barras de Datos):** La longitud de la barra en cada celda muestra el porcentaje completado respecto al **Requerido (PO)** para comparar inmediatamente el cuello de botella entre **Cortado**, **Doblado** y **Remisionado**.")
+                        st.caption("ℹ️ **Formato Excel (Barras de Datos):** La longitud de la barra en cada celda muestra el porcentaje completado respecto al **Requerido (PO)** para comparar inmediatamente el cuello de botella entre **Cortado**, **Doblado**, **Entarimado** y **Remisionado**.")
                         
                         html_table = """
                         <div style="overflow-x:auto; max-height:650px; border:1px solid #CBD5E1; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.04); margin-top:8px;">
@@ -1341,10 +1356,11 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                     <th style="padding:10px 10px; border-bottom:2px solid #EC2024; text-align:left;">SKU Planta</th>
                                     <th style="padding:10px 10px; border-bottom:2px solid #EC2024; text-align:left;">Descripción</th>
                                     <th style="padding:10px 10px; border-bottom:2px solid #EC2024; text-align:right; width:80px;">Req. (PO)</th>
-                                    <th style="padding:10px 12px; border-bottom:2px solid #3B82F6; text-align:center; min-width:130px; background-color:#1E3A8A;">🔵 Cortado</th>
-                                    <th style="padding:10px 12px; border-bottom:2px solid #6366F1; text-align:center; min-width:130px; background-color:#312E81;">🟣 Doblado</th>
-                                    <th style="padding:10px 12px; border-bottom:2px solid #10B981; text-align:center; min-width:130px; background-color:#064E3B;">🟢 Remisionadas</th>
-                                    <th style="padding:10px 12px; border-bottom:2px solid #EF4444; text-align:center; min-width:120px; background-color:#7C2D12;">⏳ Pendiente</th>
+                                    <th style="padding:10px 12px; border-bottom:2px solid #3B82F6; text-align:center; min-width:125px; background-color:#1E3A8A;">🔵 Cortado</th>
+                                    <th style="padding:10px 12px; border-bottom:2px solid #6366F1; text-align:center; min-width:125px; background-color:#312E81;">🟣 Doblado</th>
+                                    <th style="padding:10px 12px; border-bottom:2px solid #F59E0B; text-align:center; min-width:125px; background-color:#78350F;">📦 Entarimado</th>
+                                    <th style="padding:10px 12px; border-bottom:2px solid #10B981; text-align:center; min-width:125px; background-color:#064E3B;">🟢 Remisionadas</th>
+                                    <th style="padding:10px 12px; border-bottom:2px solid #EF4444; text-align:center; min-width:115px; background-color:#7C2D12;">⏳ Pendiente</th>
                                     <th style="padding:10px 10px; border-bottom:2px solid #EC2024; text-align:center; width:135px;">Estatus 360°</th>
                                 </tr>
                             </thead>
@@ -1361,11 +1377,13 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                             
                             c_cort = float(r_bar.get('cortado', 0) or 0)
                             c_dobl = float(r_bar.get('doblado', 0) or 0)
+                            c_ent = float(r_bar.get('entarimado', r_bar.get('cantidad_entarimada', 0)) or 0)
                             c_rem = float(r_bar.get('cantidad_remisionada', 0) or 0)
                             c_pend = float(r_bar.get('cantidad_pendiente', max(0.0, c_req - c_rem)) or 0)
                             
                             pct_c = min(100.0, max(0.0, (c_cort / base_div * 100.0)))
                             pct_d = min(100.0, max(0.0, (c_dobl / base_div * 100.0)))
+                            pct_e = min(100.0, max(0.0, (c_ent / base_div * 100.0)))
                             pct_r = min(100.0, max(0.0, (c_rem / base_div * 100.0)))
                             pct_p = min(100.0, max(0.0, (c_pend / base_div * 100.0)))
                             
@@ -1374,10 +1392,12 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 b_bg, b_fg = "#DCFCE7", "#15803D"
                             elif "Remisionado Parcial" in st_txt:
                                 b_bg, b_fg = "#DBEAFE", "#1D4ED8"
+                            elif "Entarimado" in st_txt:
+                                b_bg, b_fg = "#FEF3C7", "#B45309"
                             elif "Listo" in st_txt:
                                 b_bg, b_fg = "#F3E8FF", "#6B21A8"
                             elif "Proceso" in st_txt:
-                                b_bg, b_fg = "#FEF3C7", "#B45309"
+                                b_bg, b_fg = "#FFF7ED", "#C2410C"
                             else:
                                 b_bg, b_fg = "#F1F5F9", "#64748B"
                                 
@@ -1402,6 +1422,14 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                     <div style="display:flex; justify-content:space-between; align-items:center;">
                                         <b style="color:#4338CA; font-size:12.5px;">{c_dobl:,.0f}</b>
                                         <span style="font-size:10.5px; color:#4F46E5; font-weight:bold;">{pct_d:.1f}%</span>
+                                    </div>
+                                </td>
+                                
+                                <!-- BARRA ENTARIMADO -->
+                                <td style="padding:6px 10px; background:linear-gradient(90deg, rgba(245,158,11,0.38) {pct_e:.1f}%, transparent {pct_e:.1f}%); border-right:1px solid #E2E8F0;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <b style="color:#B45309; font-size:12.5px;">{c_ent:,.0f}</b>
+                                        <span style="font-size:10.5px; color:#D97706; font-weight:bold;">{pct_e:.1f}%</span>
                                     </div>
                                 </td>
                                 
@@ -1438,7 +1466,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     else:
                         cols_show_360 = [
                             'item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto',
-                            'cantidad_requerida', 'cortado', 'doblado', 'terminado', 'porcentaje_fabricacion',
+                            'cantidad_requerida', 'cortado', 'doblado', 'terminado', 'entarimado',
                             'cantidad_remisionada', 'porcentaje_cumplimiento', 'cantidad_pendiente', 'estatus_partida_360'
                         ]
                         
@@ -1452,7 +1480,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 'cortado': '🔵 Cortado',
                                 'doblado': '🔵 Doblado',
                                 'terminado': '🔵 Terminado Fab.',
-                                'porcentaje_fabricacion': '🔵 % Fab.',
+                                'entarimado': '📦 Entarimado',
                                 'cantidad_remisionada': '🟢 Remisionadas',
                                 'porcentaje_cumplimiento': '🟢 % Envío',
                                 'cantidad_pendiente': '⏳ Pend. Envío',

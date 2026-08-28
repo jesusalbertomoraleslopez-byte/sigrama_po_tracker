@@ -50,6 +50,7 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno=""):
     po_str = str(po_folio).strip()
     po_norm = normalize_po(po_str)
     id_int_clean = re.sub(r'[^0-9]', '', str(id_interno)) if id_interno else ""
+    id_int_num = int(id_int_clean) if id_int_clean else None
     
     # 1. Encontrar OFs relacionadas con esta PO
     matched_ofs = set()
@@ -58,12 +59,21 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno=""):
             of_num = str(o_row.get('of_number', '')).strip()
             po_field = str(o_row.get('po', '')).strip()
             proy_field = str(o_row.get('proyecto', '')).strip()
+            comb_txt = f"{of_num} {po_field} {proy_field}".upper()
             
-            # Coincidencia por PO, por nombre de OF o por ID Interno
-            if (po_field and normalize_po(po_field) == po_norm) or \
-               (po_norm and po_norm in normalize_po(of_num)) or \
-               (po_str and po_str in of_num) or \
-               (id_int_clean and len(id_int_clean) >= 2 and id_int_clean in normalize_po(of_num)):
+            # Coincidencia por PO directa
+            m_by_po = (po_field and normalize_po(po_field) == po_norm) or \
+                      (po_norm and po_norm in normalize_po(of_num)) or \
+                      (po_str and po_str in of_num)
+                      
+            # Coincidencia por ID Interno flexible (ej. 47 en PO 047, INT-0047, etc.)
+            m_by_id = False
+            if id_int_num is not None:
+                pat = rf'\b(PO|INT|OC)?\s*0*{id_int_num}\b'
+                if re.search(pat, comb_txt):
+                    m_by_id = True
+                    
+            if m_by_po or m_by_id:
                 matched_ofs.add(of_num)
                 
     # 1.1 Si no hubo coincidencia por PO, rastreo por SKU SOLO si la PO tiene remisiones despachadas

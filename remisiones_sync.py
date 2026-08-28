@@ -63,8 +63,8 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno=""):
     
     po_str = str(po_folio).strip()
     po_norm = normalize_po(po_str)
-    id_int_norm = normalize_po(id_interno) if id_interno else ""
     id_int_clean = re.sub(r'[^0-9]', '', str(id_interno)) if id_interno else ""
+    id_int_num = int(id_int_clean) if id_int_clean else None
     
     # 1. Filtrar registros de Detalle_Tarimas asociados a esta PO (búsqueda normalizada y flexible)
     df_det_po = pd.DataFrame()
@@ -73,9 +73,9 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno=""):
         if 'PO' in df_det.columns:
             df_det['norm_po'] = df_det['PO'].apply(normalize_po)
             mask_match = mask_match | (df_det['norm_po'] == po_norm) | (df_det['norm_po'].str.contains(po_norm, na=False)) | (df_det['PO'].astype(str).str.contains(po_str, na=False))
-        if 'Proyecto' in df_det.columns and id_int_clean and len(id_int_clean) >= 2:
-            df_det['norm_proy'] = df_det['Proyecto'].apply(normalize_po)
-            mask_match = mask_match | (df_det['norm_proy'] == id_int_norm) | (df_det['norm_proy'].str.contains(id_int_clean, na=False)) | (df_det['Proyecto'].astype(str).str.contains(id_int_clean, na=False))
+        if 'Proyecto' in df_det.columns and id_int_num is not None:
+            pat = rf'\b(?:PO|INT|OC)?\s*0*{id_int_num}\b'
+            mask_match = mask_match | df_det['Proyecto'].astype(str).str.contains(pat, regex=True, case=False, na=False)
         df_det_po = df_det[mask_match].copy()
         
     # Mapeo de Tarimas a Folios de Remisión

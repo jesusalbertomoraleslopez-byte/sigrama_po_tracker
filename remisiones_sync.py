@@ -29,6 +29,26 @@ def parse_tarimas_asociadas(raw_val):
     s = s.replace("[", "").replace("]", "").replace("'", "").replace('"', "")
     return [t.strip() for t in s.split(",") if t.strip()]
 
+def sync_live_remisiones_from_github():
+    """Descarga en caliente las bases de datos de remisiones directamente de GitHub o local."""
+    import urllib.request
+    rem_dir = get_remisiones_dir()
+    urls = [
+        'https://raw.githubusercontent.com/jesusalbertomoraleslopez-byte/remisiones-de-materiales/main/BD_Detalle_Tarimas.xlsx',
+        'https://raw.githubusercontent.com/jesusalbertomoraleslopez-byte/remisiones-de-materiales/main/BD_Datos_Generales_Remision.xlsx',
+        'https://raw.githubusercontent.com/jesusalbertomoraleslopez-byte/remisiones-de-materiales/main/BD_Tarimas.xlsx'
+    ]
+    ok_any = False
+    for u in urls:
+        fname = u.split('/')[-1]
+        try:
+            target = rem_dir / fname
+            urllib.request.urlretrieve(u, target)
+            ok_any = True
+        except Exception:
+            pass
+    return ok_any
+
 def load_remisiones_databases():
     """Carga las bases de datos relevantes de la app de Remisiones."""
     rem_dir = get_remisiones_dir()

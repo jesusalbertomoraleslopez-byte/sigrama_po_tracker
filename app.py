@@ -1162,7 +1162,11 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 st.caption("Consulta el estado en vivo de las piezas en las máquinas de Corte-Doblez y los despachos en Remisiones.")
             with sync_btn_col2:
                 if st.button("🔄 Sincronizar Estatus 360°", type="primary", use_container_width=True, key="btn_sync_360_live"):
-                    st.toast("✅ Consultando datos en tiempo real de Corte/Doblez y Remisiones...")
+                    from remisiones_sync import sync_live_remisiones_from_github
+                    with st.spinner("Sincronizando con Almacén y Remisiones en vivo..."):
+                        sync_live_remisiones_from_github()
+                    st.cache_data.clear()
+                    st.toast("✅ ¡Bases de datos de Almacén y Remisiones sincronizadas en tiempo real!")
                     st.rerun()
 
             id_int_txt = str(cab_info.get('id_interno', '')).strip()
@@ -2058,8 +2062,150 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         use_container_width=True
                     )
                     
+                import fitz
+                def _pdf_to_high_res_png(pdf_data):
+                    try:
+                        doc = fitz.open(stream=pdf_data, filetype="pdf")
+                        if len(doc) > 0:
+                            pix = doc[0].get_pixmap(dpi=200)
+                            return pix.tobytes("png")
+                    except Exception:
+                        pass
+                    return None
+                    
+                png_img_bytes = _pdf_to_high_res_png(rep_pdf_att)
+                if png_img_bytes:
+                    st.download_button(
+                        label=f"🖼️ Descargar Imagen Oficial del Reporte (PNG)",
+                        data=png_img_bytes,
+                        file_name=f"Reporte_Grafico_PO_{sel_po}_{id_int_txt if id_int_txt else 'INT'}.png",
+                        mime="image/png",
+                        use_container_width=True
+                    )
+                    
                 with st.expander("👁️ Vista Previa del Correo Oficial (HTML)", expanded=True):
-                    st.components.v1.html(eml_html, height=800, scrolling=True)
+                    # Interfaz interactiva con html2canvas para Copiar al Portapapeles y Descargar Imagen PNG
+                    preview_with_actions = f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                    <meta charset="utf-8">
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+                    <style>
+                        * {{ box-sizing: border-box; }}
+                        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #F1F5F9; margin: 0; padding: 12px; }}
+                        .action-bar {{
+                            position: sticky;
+                            top: 0;
+                            z-index: 999;
+                            background: #0F172A;
+                            padding: 10px 16px;
+                            border-radius: 8px;
+                            display: flex;
+                            gap: 12px;
+                            align-items: center;
+                            margin-bottom: 15px;
+                            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+                        }}
+                        .btn-img {{
+                            background: #EC2024;
+                            color: #FFFFFF;
+                            border: none;
+                            padding: 8px 16px;
+                            border-radius: 6px;
+                            font-weight: 700;
+                            font-size: 13px;
+                            cursor: pointer;
+                            display: flex;
+                            align-items: center;
+                            gap: 8px;
+                            transition: background 0.15s ease, transform 0.1s ease;
+                        }}
+                        .btn-img:hover {{ background: #C71B1E; transform: translateY(-1px); }}
+                        .btn-img:active {{ transform: translateY(0); }}
+                        .btn-clipboard {{ background: #2563EB; }}
+                        .btn-clipboard:hover {{ background: #1D4ED8; }}
+                        .info-tag {{ color: #94A3B8; font-size: 12px; margin-left: auto; font-weight: 500; }}
+                        #email-render-target {{
+                            background: #FFFFFF;
+                            border-radius: 10px;
+                            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+                            overflow: hidden;
+                        }}
+                    </style>
+                    </head>
+                    <body>
+                    <div class="action-bar">
+                        <button class="btn-img" id="btn-dl" onclick="downloadImage()">
+                            <svg width="15" height="15" fill="currentColor" viewBox="0 0 16 16"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/></svg>
+                            📥 Descargar Imagen (PNG)
+                        </button>
+                        <button class="btn-img btn-clipboard" id="btn-cp" onclick="copyImage()">
+                            <svg width="15" height="15" fill="currentColor" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
+                            📋 Copiar Imagen al Portapapeles
+                        </button>
+                        <span class="info-tag" id="status-label">📸 Resolución HD 2x</span>
+                    </div>
+                    <div id="email-render-target">
+                        {eml_html}
+                    </div>
+                    <script>
+                    function captureCanvas(cb) {{
+                        const target = document.getElementById('email-render-target');
+                        const lbl = document.getElementById('status-label');
+                        lbl.innerText = 'Generando imagen HD...';
+                        html2canvas(target, {{
+                            scale: 2,
+                            useCORS: true,
+                            backgroundColor: '#FFFFFF',
+                            logging: false
+                        }}).then(canvas => {{
+                            lbl.innerText = '📸 Resolución HD 2x';
+                            cb(canvas);
+                        }}).catch(e => {{
+                            lbl.innerText = 'Error al capturar imagen';
+                            console.error(e);
+                        }});
+                    }}
+                    function downloadImage() {{
+                        captureCanvas(canvas => {{
+                            const a = document.createElement('a');
+                            a.download = 'Reporte_Correo_PO_{sel_po}.png';
+                            a.href = canvas.toDataURL('image/png');
+                            a.click();
+                            document.getElementById('status-label').innerText = '✅ Imagen descargada correctamente';
+                        }});
+                    }}
+                    function copyImage() {{
+                        const btn = document.getElementById('btn-cp');
+                        const lbl = document.getElementById('status-label');
+                        captureCanvas(canvas => {{
+                            canvas.toBlob(blob => {{
+                                if (navigator.clipboard && navigator.clipboard.write) {{
+                                    navigator.clipboard.write([
+                                        new ClipboardItem({{ 'image/png': blob }})
+                                    ]).then(() => {{
+                                        btn.innerHTML = '✅ ¡Copiado al Portapapeles!';
+                                        lbl.innerText = 'Listo para pegar con Ctrl + V';
+                                        setTimeout(() => {{
+                                            btn.innerHTML = '<svg width=\"15\" height=\"15\" fill=\"currentColor\" viewBox=\"0 0 16 16\"><path d=\"M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z\"/><path d=\"M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z\"/></svg> 📋 Copiar Imagen al Portapapeles';
+                                        }}, 3000);
+                                    }}).catch(err => {{
+                                        downloadImage();
+                                        lbl.innerText = 'Descargada (portapapeles restringido por navegador)';
+                                    }});
+                                }} else {{
+                                    downloadImage();
+                                    lbl.innerText = 'Descargada (portapapeles no disponible)';
+                                }}
+                            }}, 'image/png');
+                        }});
+                    }}
+                    </script>
+                    </body>
+                    </html>
+                    """
+                    st.components.v1.html(preview_with_actions, height=850, scrolling=True)
                     
             # 4. Pestaña: Acciones de Mantenimiento
             with tab_acciones:

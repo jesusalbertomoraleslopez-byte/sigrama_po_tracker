@@ -1346,22 +1346,40 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     if modo_vista == "📊 Vista Tipo Excel (Barras en Celdas)":
                         st.caption("ℹ️ **Formato Excel (Barras de Datos):** La longitud de la barra en cada celda muestra el porcentaje completado respecto al **Requerido (PO)** para comparar inmediatamente el cuello de botella entre **Cortado**, **Doblado**, **Entarimado** y **Remisionado**.")
                         
+                        import streamlit.components.v1 as components
+                        
                         html_table = """
-                        <div style="overflow-x:auto; max-height:650px; border:1px solid #CBD5E1; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.04); margin-top:8px;">
-                        <table style="width:100%; border-collapse:collapse; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size:12px;">
-                            <thead style="position:sticky; top:0; background-color:#0F172A; color:#FFFFFF; z-index:10;">
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                        <meta charset="utf-8">
+                        <style>
+                            body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 12px; background: transparent; }
+                            .table-container { overflow-x: auto; max-height: 600px; border: 1px solid #CBD5E1; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+                            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+                            thead th { position: sticky; top: 0; background-color: #0F172A; color: #FFFFFF; z-index: 10; padding: 10px 8px; font-weight: 700; text-align: center; }
+                            tbody tr { border-bottom: 1px solid #E2E8F0; background-color: #FFFFFF; }
+                            tbody tr:hover { background-color: #F1F5F9 !important; }
+                            td { padding: 6px 8px; }
+                            .badge { font-size: 10.5px; padding: 3px 8px; border-radius: 12px; font-weight: bold; display: inline-block; white-space: nowrap; }
+                        </style>
+                        </head>
+                        <body>
+                        <div class="table-container">
+                        <table>
+                            <thead>
                                 <tr>
-                                    <th style="padding:10px 6px; border-bottom:2px solid #EC2024; text-align:center; width:45px;">#</th>
-                                    <th style="padding:10px 10px; border-bottom:2px solid #EC2024; text-align:left;">SKU Cliente</th>
-                                    <th style="padding:10px 10px; border-bottom:2px solid #EC2024; text-align:left;">SKU Planta</th>
-                                    <th style="padding:10px 10px; border-bottom:2px solid #EC2024; text-align:left;">Descripción</th>
-                                    <th style="padding:10px 10px; border-bottom:2px solid #EC2024; text-align:right; width:80px;">Req. (PO)</th>
-                                    <th style="padding:10px 12px; border-bottom:2px solid #3B82F6; text-align:center; min-width:125px; background-color:#1E3A8A;">🔵 Cortado</th>
-                                    <th style="padding:10px 12px; border-bottom:2px solid #6366F1; text-align:center; min-width:125px; background-color:#312E81;">🟣 Doblado</th>
-                                    <th style="padding:10px 12px; border-bottom:2px solid #F59E0B; text-align:center; min-width:125px; background-color:#78350F;">📦 Entarimado</th>
-                                    <th style="padding:10px 12px; border-bottom:2px solid #10B981; text-align:center; min-width:125px; background-color:#064E3B;">🟢 Remisionadas</th>
-                                    <th style="padding:10px 12px; border-bottom:2px solid #EF4444; text-align:center; min-width:115px; background-color:#7C2D12;">⏳ Pendiente</th>
-                                    <th style="padding:10px 10px; border-bottom:2px solid #EC2024; text-align:center; width:135px;">Estatus 360°</th>
+                                    <th style="border-bottom:2px solid #EC2024; width:40px;">#</th>
+                                    <th style="border-bottom:2px solid #EC2024; text-align:left; min-width:110px;">SKU Cliente</th>
+                                    <th style="border-bottom:2px solid #EC2024; text-align:left; min-width:130px;">SKU Planta</th>
+                                    <th style="border-bottom:2px solid #EC2024; text-align:left; min-width:200px;">Descripción</th>
+                                    <th style="border-bottom:2px solid #EC2024; text-align:right; width:75px;">Req. (PO)</th>
+                                    <th style="border-bottom:2px solid #3B82F6; min-width:120px; background-color:#1E3A8A;">🔵 Cortado</th>
+                                    <th style="border-bottom:2px solid #6366F1; min-width:120px; background-color:#312E81;">🟣 Doblado</th>
+                                    <th style="border-bottom:2px solid #F59E0B; min-width:120px; background-color:#78350F;">📦 Entarimado</th>
+                                    <th style="border-bottom:2px solid #10B981; min-width:120px; background-color:#064E3B;">🟢 Remisionadas</th>
+                                    <th style="border-bottom:2px solid #EF4444; min-width:110px; background-color:#7C2D12;">⏳ Pendiente</th>
+                                    <th style="border-bottom:2px solid #EC2024; width:140px;">Estatus 360°</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1402,15 +1420,15 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 b_bg, b_fg = "#F1F5F9", "#64748B"
                                 
                             html_table += f"""
-                            <tr style="border-bottom:1px solid #E2E8F0; background-color:#FFFFFF;">
-                                <td style="padding:8px 6px; text-align:center; font-weight:bold; color:#64748B;">{i_no}</td>
-                                <td style="padding:8px 10px; font-weight:600; color:#1E293B;">{sk_c}</td>
-                                <td style="padding:8px 10px; font-weight:700; color:#EC2024;">{sk_p}</td>
-                                <td style="padding:8px 10px; color:#475569; font-size:11.5px; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{desc}">{desc}</td>
-                                <td style="padding:8px 10px; text-align:right; font-weight:800; color:#0F172A; background-color:#F8FAFC;">{c_req:,.0f}</td>
+                            <tr>
+                                <td style="text-align:center; font-weight:bold; color:#64748B;">{i_no}</td>
+                                <td style="font-weight:600; color:#1E293B;">{sk_c}</td>
+                                <td style="font-weight:700; color:#EC2024;">{sk_p}</td>
+                                <td style="color:#475569; font-size:11.5px; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{desc}">{desc}</td>
+                                <td style="text-align:right; font-weight:800; color:#0F172A; background-color:#F8FAFC;">{c_req:,.0f}</td>
                                 
                                 <!-- BARRA CORTADO -->
-                                <td style="padding:6px 10px; background:linear-gradient(90deg, rgba(59,130,246,0.38) {pct_c:.1f}%, transparent {pct_c:.1f}%); border-left:1px solid #E2E8F0; border-right:1px solid #E2E8F0;">
+                                <td style="background:linear-gradient(90deg, rgba(59,130,246,0.38) {pct_c:.1f}%, transparent {pct_c:.1f}%); border-left:1px solid #E2E8F0; border-right:1px solid #E2E8F0;">
                                     <div style="display:flex; justify-content:space-between; align-items:center;">
                                         <b style="color:#1D4ED8; font-size:12.5px;">{c_cort:,.0f}</b>
                                         <span style="font-size:10.5px; color:#2563EB; font-weight:bold;">{pct_c:.1f}%</span>
@@ -1418,7 +1436,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 </td>
                                 
                                 <!-- BARRA DOBLADO -->
-                                <td style="padding:6px 10px; background:linear-gradient(90deg, rgba(99,102,241,0.38) {pct_d:.1f}%, transparent {pct_d:.1f}%); border-right:1px solid #E2E8F0;">
+                                <td style="background:linear-gradient(90deg, rgba(99,102,241,0.38) {pct_d:.1f}%, transparent {pct_d:.1f}%); border-right:1px solid #E2E8F0;">
                                     <div style="display:flex; justify-content:space-between; align-items:center;">
                                         <b style="color:#4338CA; font-size:12.5px;">{c_dobl:,.0f}</b>
                                         <span style="font-size:10.5px; color:#4F46E5; font-weight:bold;">{pct_d:.1f}%</span>
@@ -1426,7 +1444,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 </td>
                                 
                                 <!-- BARRA ENTARIMADO -->
-                                <td style="padding:6px 10px; background:linear-gradient(90deg, rgba(245,158,11,0.38) {pct_e:.1f}%, transparent {pct_e:.1f}%); border-right:1px solid #E2E8F0;">
+                                <td style="background:linear-gradient(90deg, rgba(245,158,11,0.38) {pct_e:.1f}%, transparent {pct_e:.1f}%); border-right:1px solid #E2E8F0;">
                                     <div style="display:flex; justify-content:space-between; align-items:center;">
                                         <b style="color:#B45309; font-size:12.5px;">{c_ent:,.0f}</b>
                                         <span style="font-size:10.5px; color:#D97706; font-weight:bold;">{pct_e:.1f}%</span>
@@ -1434,7 +1452,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 </td>
                                 
                                 <!-- BARRA REMISIONADAS -->
-                                <td style="padding:6px 10px; background:linear-gradient(90deg, rgba(16,185,129,0.40) {pct_r:.1f}%, transparent {pct_r:.1f}%); border-right:1px solid #E2E8F0;">
+                                <td style="background:linear-gradient(90deg, rgba(16,185,129,0.40) {pct_r:.1f}%, transparent {pct_r:.1f}%); border-right:1px solid #E2E8F0;">
                                     <div style="display:flex; justify-content:space-between; align-items:center;">
                                         <b style="color:#15803D; font-size:12.5px;">{c_rem:,.0f}</b>
                                         <span style="font-size:10.5px; color:#16A34A; font-weight:bold;">{pct_r:.1f}%</span>
@@ -1442,7 +1460,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 </td>
                                 
                                 <!-- BARRA PENDIENTES -->
-                                <td style="padding:6px 10px; background:linear-gradient(90deg, rgba(239,68,68,0.22) {pct_p:.1f}%, transparent {pct_p:.1f}%); border-right:1px solid #E2E8F0;">
+                                <td style="background:linear-gradient(90deg, rgba(239,68,68,0.22) {pct_p:.1f}%, transparent {pct_p:.1f}%); border-right:1px solid #E2E8F0;">
                                     <div style="display:flex; justify-content:space-between; align-items:center;">
                                         <b style="color:#B91C1C; font-size:12.5px;">{c_pend:,.0f}</b>
                                         <span style="font-size:10.5px; color:#DC2626; font-weight:bold;">{pct_p:.1f}%</span>
@@ -1450,8 +1468,8 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 </td>
                                 
                                 <!-- ESTATUS PILL -->
-                                <td style="padding:6px 8px; text-align:center;">
-                                    <span style="background-color:{b_bg}; color:{b_fg}; font-size:10.5px; padding:3px 8px; border-radius:15px; font-weight:bold; display:inline-block;">
+                                <td style="text-align:center;">
+                                    <span class="badge" style="background-color:{b_bg}; color:{b_fg};">
                                         {st_txt}
                                     </span>
                                 </td>
@@ -1461,8 +1479,11 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                             </tbody>
                         </table>
                         </div>
+                        </body>
+                        </html>
                         """
-                        st.markdown(html_table, unsafe_allow_html=True)
+                        calc_h = min(750, max(280, 80 + len(df_to_render) * 44))
+                        components.html(html_table, height=calc_h, scrolling=True)
                     else:
                         cols_show_360 = [
                             'item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto',

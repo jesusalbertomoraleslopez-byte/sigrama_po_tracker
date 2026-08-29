@@ -4,23 +4,36 @@ import re
 from pathlib import Path
 from config import normalize_po, get_corte_doblez_dir
 
+def clean_pronest_piece_name(p):
+    s = str(p).strip()
+    # Eliminar prefijo de número de ítem de Pronest: '20.-', '01.-', '1.', etc.
+    s = re.sub(r'^\d+[\.\-_]\s*', '', s)
+    # Eliminar sufijo de fecha/anidado: '-(10-08-26)', ' (10-08-26)', etc.
+    s = re.sub(r'[\-_]\s*\(\d+[-/]\d+[-/]\d+\).*$', '', s)
+    return s.strip()
+
 def normalize_sku(s):
     if not s or pd.isna(s):
         return ""
     return re.sub(r'[^A-Z0-9]', '', str(s).upper())
 
 def sku_matches(s1, s2):
-    """Compara dos SKUs permitiendo diferencias de guiones, mayúsculas o sufijos."""
+    """Compara dos SKUs de forma exacta, tolerando guiones, espacios y prefijos de anidado de Pronest."""
     if not s1 or not s2:
         return False
     norm1 = normalize_sku(s1)
     norm2 = normalize_sku(s2)
-    if norm1 == norm2 or (len(norm1) >= 6 and (norm1 in norm2 or norm2 in norm1)):
+    if not norm1 or not norm2:
+        return False
+    if norm1 == norm2:
         return True
-    r1 = re.sub(r'-\d+$', '', str(s1).strip())
-    r2 = re.sub(r'-\d+$', '', str(s2).strip())
-    if len(r1) >= 5 and (r1 == r2 or r1 in r2 or r2 in r1):
+    
+    # Limpiar posibles prefijos/sufijos de Pronest en s1 y s2
+    c1 = normalize_sku(clean_pronest_piece_name(s1))
+    c2 = normalize_sku(clean_pronest_piece_name(s2))
+    if c1 == c2 or norm1 == c2 or c1 == norm2:
         return True
+        
     return False
 
 def load_corte_doblez_databases():

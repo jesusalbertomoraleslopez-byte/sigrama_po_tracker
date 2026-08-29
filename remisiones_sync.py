@@ -65,17 +65,30 @@ def load_remisiones_databases():
 
 import re
 
+def clean_pronest_piece_name(p):
+    s = str(p).strip()
+    s = re.sub(r'^\d+[\.\-_]\s*', '', s)
+    s = re.sub(r'[\-_]\s*\(\d+[-/]\d+[-/]\d+\).*$', '', s)
+    return s.strip()
+
 def normalize_sku(s):
     if not s or pd.isna(s):
         return ""
     return re.sub(r'[^A-Z0-9]', '', str(s).upper())
 
 def sku_matches(target_sku, candidate_piece):
+    if not target_sku or not candidate_piece:
+        return False
     t_norm = normalize_sku(target_sku)
     c_norm = normalize_sku(candidate_piece)
     if not t_norm or not c_norm:
         return False
-    return t_norm == c_norm or t_norm in c_norm or c_norm in t_norm
+    if t_norm == c_norm:
+        return True
+    c_clean = normalize_sku(clean_pronest_piece_name(candidate_piece))
+    if t_norm == c_clean:
+        return True
+    return False
 
 def get_tracking_for_po(po_folio, df_partidas, id_interno=""):
     """Calcula el estatus de remisión/envío para cada partida y global de una PO dada."""

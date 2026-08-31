@@ -298,33 +298,38 @@ with st.sidebar:
 # ==============================================================================
 # ENCABEZADO / BANNER SUPERIOR CORPORATIVO (MANUAL OFICIAL SIGRAMA)
 # ==============================================================================
-logo_b64 = ""
-logo_path_main = Path(__file__).resolve().parent / "logo_sigrama.png"
-if logo_path_main.exists():
-    import base64
-    logo_b64 = base64.b64encode(logo_path_main.read_bytes()).decode()
+banner_path = Path(__file__).resolve().parent / "banner_sigrama.png"
+if banner_path.exists():
+    st.image(str(banner_path), use_container_width=True)
+    st.markdown('<hr style="border: 0; height: 3px; background: linear-gradient(90deg, #EC2024 0%, #111111 100%); margin: 8px 0 16px 0; border-radius: 2px;">', unsafe_allow_html=True)
+else:
+    logo_b64 = ""
+    logo_path_main = Path(__file__).resolve().parent / "logo_sigrama.png"
+    if logo_path_main.exists():
+        import base64
+        logo_b64 = base64.b64encode(logo_path_main.read_bytes()).decode()
 
-st.markdown(f"""
-<div style="background: linear-gradient(135deg, #111111 0%, #1A1A1A 60%, #0F172A 100%); border-bottom: 4px solid #EC2024; border-radius: 8px; padding: 14px 20px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.07); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;">
-    <div style="display: flex; align-items: center; gap: 16px;">
-        <div style="background: #FFFFFF; padding: 5px 10px; border-radius: 6px; display: flex; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.15);">
-            <img src="data:image/png;base64,{logo_b64}" style="height: 30px; display: block;" alt="Industria Sigrama">
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #111111 0%, #1A1A1A 60%, #0F172A 100%); border-bottom: 4px solid #EC2024; border-radius: 8px; padding: 14px 20px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.07); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;">
+        <div style="display: flex; align-items: center; gap: 16px;">
+            <div style="background: #FFFFFF; padding: 5px 10px; border-radius: 6px; display: flex; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.15);">
+                <img src="data:image/png;base64,{logo_b64}" style="height: 30px; display: block;" alt="Industria Sigrama">
+            </div>
+            <div>
+                <span style="font-family: 'Montserrat', sans-serif; font-size: 10px; font-weight: 800; color: #EC2024; letter-spacing: 1.5px; text-transform: uppercase;">INDUSTRIA SIGRAMA • SUITE 4.0</span>
+                <h2 style="font-family: 'Montserrat', sans-serif; font-size: 19px; font-weight: 900; color: #FFFFFF; margin: 2px 0 0 0; letter-spacing: -0.2px;">
+                    PO TRACKER & TRAZABILIDAD INTEGRAL 360°
+                </h2>
+            </div>
         </div>
-        <div>
-            <span style="font-family: 'Montserrat', sans-serif; font-size: 10px; font-weight: 800; color: #EC2024; letter-spacing: 1.5px; text-transform: uppercase;">INDUSTRIA SIGRAMA • SUITE 4.0</span>
-            <h2 style="font-family: 'Montserrat', sans-serif; font-size: 19px; font-weight: 900; color: #FFFFFF; margin: 2px 0 0 0; letter-spacing: -0.2px;">
-                PO TRACKER & TRAZABILIDAD INTEGRAL 360°
-            </h2>
+        <div style="text-align: right;">
+            <span style="font-family: 'Montserrat', sans-serif; font-size: 11.5px; font-weight: 800; color: #EC2024; letter-spacing: 0.8px; text-transform: uppercase;">
+                SOLUCIONES QUE TRANSFORMAN TU EMPRESA
+            </span>
+            <div style="color: #94A3B8; font-size: 11px; margin-top: 2px; font-family: 'Questrial', sans-serif;">Corte Láser • Prensas Doblez • Almacén PT • Logística y Envíos</div>
         </div>
     </div>
-    <div style="text-align: right;">
-        <span style="font-family: 'Montserrat', sans-serif; font-size: 11.5px; font-weight: 800; color: #EC2024; letter-spacing: 0.8px; text-transform: uppercase;">
-            SOLUCIONES QUE TRANSFORMAN TU EMPRESA
-        </span>
-        <div style="color: #94A3B8; font-size: 11px; margin-top: 2px; font-family: 'Questrial', sans-serif;">Corte Láser • Prensas Doblez • Almacén PT • Logística y Envíos</div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 
 # ==============================================================================

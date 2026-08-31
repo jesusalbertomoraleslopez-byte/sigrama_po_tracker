@@ -29,7 +29,9 @@ from db_manager import (
     get_po_by_folio,
     get_all_partidas,
     get_po_history,
-    export_sync_to_excel
+    export_sync_to_excel,
+    push_db_to_github,
+    pull_db_from_github
 )
 from remisiones_sync import (
     get_tracking_for_po,
@@ -44,8 +46,19 @@ from corte_doblez_sync import (
 from pdf_parser import parse_po_pdf, parse_email_text
 from excel_importer import generate_po_excel_template, parse_uploaded_excel
 
+# ── PERSISTENCIA: Restaurar BD desde GitHub al arrancar (Streamlit Cloud) ─────
+if 'db_pulled' not in st.session_state:
+    st.session_state['db_pulled'] = False
+
+if not st.session_state['db_pulled']:
+    _pulled = pull_db_from_github()
+    st.session_state['db_pulled'] = True
+    if _pulled:
+        st.session_state['db_restored_from_github'] = True
+
 # Inicializar Base de Datos
 init_db()
+
 
 # Configuración de Página
 st.set_page_config(
@@ -312,6 +325,16 @@ with st.sidebar:
         st.cache_data.clear()
         st.toast("✅ ¡Datos actualizados desde GitHub en tiempo real!")
         st.rerun()
+    
+    if st.button("☁️ Guardar Respaldo en Nube", use_container_width=True, key="btn_manual_gh_backup"):
+        with st.spinner("Subiendo base de datos a GitHub..."):
+            push_db_to_github(background=False)
+        st.toast("✅ Base de datos respaldada en GitHub correctamente.")
+
+    # Mostrar notificación si la BD fue restaurada desde GitHub en este arranque
+    if st.session_state.get('db_restored_from_github'):
+        st.success("☁️ BD restaurada desde GitHub")
+        st.session_state['db_restored_from_github'] = False
         
     # Cierre Oficial de Barra Lateral (Manual pág. 27, 28, 29)
     st.markdown("""

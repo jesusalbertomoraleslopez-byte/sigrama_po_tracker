@@ -3,6 +3,9 @@ import pandas as pd
 import datetime
 import shutil
 import os
+import base64
+import json
+import threading
 from pathlib import Path
 from config import (
     SQLITE_DB_PATH,
@@ -13,6 +16,175 @@ from config import (
     get_remisiones_dir,
     ESTATUS_REGISTRADA
 )
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GITHUB DB PERSISTENCE
+# Subimos po_tracker.db + archivos Excel a GitHub después de cada escritura.
+# Esto garantiza que Streamlit Cloud nunca pierda datos al reiniciarse.
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _get_github_config():
+    """Lee la configuración de GitHub desde st.secrets o variables de entorno."""
+    token = None
+    repo  = None
+    user  = None
+    branch = None
+    
+    # 1. Intentar desde Streamlit secrets (prioridad en producción)
+    try:
+        import streamlit as st
+        token  = st.secrets.get("GITHUB_TOKEN", None)
+        repo   = st.secrets.get("GITHUB_REPO", None)
+        user   = st.secrets.get("GITHUB_USER", None)
+        branch = st.secrets.get("GITHUB_BRANCH", "main")
+    except Exception:
+        pass
+    
+    # 2. Fallback a variables de entorno (desarrollo local)
+    if not token:
+        token  = os.environ.get("GITHUB_TOKEN", "")
+        repo   = os.environ.get("GITHUB_REPO", "jesusalbertomoraleslopez-byte/sigrama_po_tracker")
+        user   = os.environ.get("GITHUB_USER", "jesusalbertomoraleslopez-byte")
+        branch = os.environ.get("GITHUB_BRANCH", "main")
+    
+    return token, repo, user, branch
+
+
+def push_db_to_github(background=True):
+    """
+    Sube po_tracker.db y los archivos Excel de la carpeta data/ a GitHub vía API REST.
+    Se ejecuta en background para no bloquear la UI de Streamlit.
+    """
+    def _push():
+        try:
+            import urllib.request
+            token, repo, user, branch = _get_github_config()
+            if not token or not repo:
+                return  # Sin configuración, salir silenciosamente
+            
+            api_base = f"https://api.github.com/repos/{repo}/contents"
+            headers = {
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github.v3+json",
+                "Content-Type": "application/json"
+            }
+            
+            files_to_push = [
+                SQLITE_DB_PATH,
+                EXCEL_CABECERA_PATH,
+                EXCEL_REQ_PATH,
+                EXCEL_PARTIDAS_DETALLE_PATH,
+            ]
+            
+            for local_path in files_to_push:
+                if not local_path.exists():
+                    continue
+                    
+                # Ruta relativa dentro del repositorio
+                repo_path = local_path.relative_to(SQLITE_DB_PATH.parent.parent)
+                github_path = repo_path.as_posix()  # e.g. "data/po_tracker.db"
+                
+                with open(local_path, 'rb') as f:
+                    content_b64 = base64.b64encode(f.read()).decode('utf-8')
+                
+                url = f"{api_base}/{github_path}"
+                
+                # Obtener SHA actual del archivo en GitHub (necesario para actualizar)
+                try:
+                    req_get = urllib.request.Request(url, headers=headers, method="GET")
+                    with urllib.request.urlopen(req_get, timeout=10) as resp:
+                        remote_info = json.loads(resp.read().decode())
+                        sha = remote_info.get("sha", "")
+                except Exception:
+                    sha = ""
+                
+                now_ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+                payload = {
+                    "message": f"auto-backup: {github_path} @ {now_ts}",
+                    "content": content_b64,
+                    "branch": branch
+                }
+                if sha:
+                    payload["sha"] = sha
+                
+                req_put = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode('utf-8'),
+                    headers=headers,
+                    method="PUT"
+                )
+                try:
+                    with urllib.request.urlopen(req_put, timeout=20) as resp_put:
+                        resp_put.read()  # consume response
+                except Exception as e_put:
+                    print(f"[GH-PUSH] Error subiendo {github_path}: {e_put}")
+                    
+        except Exception as e:
+            print(f"[GH-PUSH] Error general: {e}")
+    
+    if background:
+        t = threading.Thread(target=_push, daemon=True)
+        t.start()
+    else:
+        _push()
+
+
+def pull_db_from_github():
+    """
+    Descarga po_tracker.db desde GitHub si la copia local está vacía o 
+    desactualizada. Se llama al arrancar la app en Streamlit Cloud.
+    Retorna True si se descargó/actualizó, False si ya estaba al día.
+    """
+    try:
+        import urllib.request
+        token, repo, user, branch = _get_github_config()
+        if not token or not repo:
+            return False
+        
+        api_url = f"https://api.github.com/repos/{repo}/contents/data/po_tracker.db?ref={branch}"
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        req = urllib.request.Request(api_url, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                info = json.loads(resp.read().decode())
+                remote_sha = info.get("sha", "")
+                download_url = info.get("download_url", "")
+        except Exception:
+            return False
+        
+        # Verificar si la BD local tiene los mismos datos (comparar size aproximado)
+        local_path = SQLITE_DB_PATH
+        local_size = local_path.stat().st_size if local_path.exists() else 0
+        remote_size = info.get("size", 0)
+        
+        # Si la BD local ya tiene más datos que la remota, no bajar (para no pisar datos nuevos)
+        if local_size > 0 and local_size >= remote_size:
+            return False
+        
+        if not download_url:
+            return False
+        
+        # Descargar y escribir
+        dl_req = urllib.request.Request(download_url, headers={"Authorization": f"token {token}"})
+        with urllib.request.urlopen(dl_req, timeout=30) as dl_resp:
+            db_bytes = dl_resp.read()
+        
+        DATA_DIR.mkdir(exist_ok=True)
+        with open(local_path, 'wb') as f:
+            f.write(db_bytes)
+            
+        print(f"[GH-PULL] BD descargada desde GitHub ({len(db_bytes):,} bytes)")
+        return True
+        
+    except Exception as e:
+        print(f"[GH-PULL] Error: {e}")
+        return False
+
+
 
 def get_connection():
     return sqlite3.connect(str(SQLITE_DB_PATH), check_same_thread=False)
@@ -314,6 +486,7 @@ def save_po(cabecera, partidas, usuario='Usuario'):
         conn.close()
         
         export_sync_to_excel()
+        push_db_to_github()  # Auto-backup en GitHub para persistencia en Streamlit Cloud
         return True, f'Orden de Compra {po_folio} guardada exitosamente.'
     except Exception as e:
         conn.rollback()
@@ -349,6 +522,7 @@ def update_po_fields(po_folio, fields_dict, usuario='Usuario'):
         conn.commit()
         conn.close()
         export_sync_to_excel()
+        push_db_to_github()  # Auto-backup en GitHub
         return True, f"Datos de la PO {po_folio} actualizados correctamente."
     except Exception as e:
         conn.close()
@@ -368,6 +542,7 @@ def delete_po(po_folio, usuario='Usuario'):
         conn.commit()
         conn.close()
         export_sync_to_excel()
+        push_db_to_github()  # Auto-backup en GitHub
         return True, f'PO {po_folio} eliminada correctamente.'
     except Exception as e:
         conn.close()

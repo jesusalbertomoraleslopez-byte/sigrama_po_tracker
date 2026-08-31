@@ -22,3 +22,5 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Streamlit Secrets (NUNCA subir a GitHub - contiene tokens)
+.streamlit/secrets.toml

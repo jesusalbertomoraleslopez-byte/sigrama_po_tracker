@@ -55,11 +55,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Inyección de CSS Oficial Sigrama
+# Inyección de CSS Oficial Sigrama (Manual de Identidad Corporativa - PANTONE 485 C & Black 7 C)
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=Questrial&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,700;1,900&family=Questrial&display=swap');
 
+    /* Fuentes globales según manual corporativo */
     html, body, [class*="css"], .stApp {
         font-family: 'Questrial', sans-serif !important;
         background-color: #F8FAFC !important;
@@ -71,135 +72,259 @@ st.markdown("""
         color: #111111 !important;
     }
 
-    /* Barra lateral */
+    /* Barra lateral corporativa en Negro profundo #111111 (PANTONE Black 7 C) */
     [data-testid="stSidebar"] {
         background-color: #111111 !important;
         border-right: 1px solid #1E293B !important;
     }
-    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
+    [data-testid="stSidebar"] p, 
+    [data-testid="stSidebar"] span, 
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] {
         color: #FFFFFF !important;
+        font-family: 'Questrial', sans-serif !important;
     }
     
-    /* Botones primarios */
-    button[kind="primary"], div.stButton > button[kind="primary"] {
+    /* Radio de navegación en sidebar estilizado */
+    [data-testid="stSidebar"] div[role="radiogroup"] {
+        background-color: #18181B !important;
+        border: 1px solid #27272A !important;
+        border-radius: 8px !important;
+        padding: 6px !important;
+        gap: 3px !important;
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] label {
+        color: #E2E8F0 !important;
+        font-size: 13.5px !important;
+        font-family: 'Questrial', sans-serif !important;
+        padding: 8px 12px !important;
+        border-radius: 6px !important;
+        transition: all 0.2s ease !important;
+        margin: 0 !important;
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+        color: #FFFFFF !important;
+        background-color: rgba(236, 32, 36, 0.15) !important;
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] {
         background-color: #EC2024 !important;
         color: #FFFFFF !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-        border: none !important;
+        font-weight: 700 !important;
     }
-    button[kind="primary"]:hover {
+
+    /* Botones Oficiales - Rojo Corporativo PANTONE 485 C (#EC2024) */
+    button[kind="primary"], div.stButton > button[kind="primary"],
+    div.stDownloadButton > button[kind="primary"],
+    div.stFormSubmitButton > button {
+        background-color: #EC2024 !important;
+        color: #FFFFFF !important;
+        font-family: 'Montserrat', sans-serif !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.5px !important;
+        border-radius: 6px !important;
+        border: 1px solid #EC2024 !important;
+        padding: 8px 20px !important;
+        box-shadow: 0 3px 8px rgba(236, 32, 36, 0.25) !important;
+        transition: all 0.25s ease !important;
+        font-size: 13px !important;
+    }
+    button[kind="primary"]:hover, div.stButton > button[kind="primary"]:hover,
+    div.stDownloadButton > button[kind="primary"]:hover,
+    div.stFormSubmitButton > button:hover {
         background-color: #C01216 !important;
+        border-color: #C01216 !important;
+        box-shadow: 0 5px 14px rgba(236, 32, 36, 0.35) !important;
+        transform: translateY(-1px) !important;
     }
 
-    /* Tarjetas KPI */
-    .kpi-card {
-        background: white;
-        border-radius: 12px;
-        padding: 18px 20px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        border-left: 5px solid #EC2024;
-        margin-bottom: 12px;
+    /* Botones Secundarios */
+    button[kind="secondary"], div.stButton > button[kind="secondary"],
+    div.stDownloadButton > button[kind="secondary"] {
+        background-color: #FFFFFF !important;
+        color: #111111 !important;
+        border: 1px solid #CBD5E1 !important;
+        font-family: 'Montserrat', sans-serif !important;
+        font-weight: 600 !important;
+        border-radius: 6px !important;
+        transition: all 0.2s ease !important;
     }
-    .kpi-card-green {
-        border-left: 5px solid #10B981;
-    }
-    .kpi-card-amber {
-        border-left: 5px solid #F59E0B;
-    }
-    .kpi-card-blue {
-        border-left: 5px solid #3B82F6;
-    }
-    .kpi-val {
-        font-size: 28px;
-        font-family: 'Montserrat', sans-serif;
-        font-weight: 800;
-        color: #111111;
-    }
-    .kpi-lbl {
-        font-size: 13px;
-        color: #64748B;
-        text-transform: uppercase;
-        font-weight: 600;
+    button[kind="secondary"]:hover, div.stButton > button[kind="secondary"]:hover {
+        border-color: #EC2024 !important;
+        color: #EC2024 !important;
+        background-color: #FFF5F5 !important;
     }
 
-    /* Insignias de estatus */
-    .badge {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 9999px;
-        font-size: 12px;
-        font-weight: 700;
-        color: white;
+    /* Estilo de las pestañas (Tabs) */
+    button[role="tab"] {
+        font-family: 'Montserrat', sans-serif !important;
+        font-weight: 700 !important;
+        color: #475569 !important;
+        font-size: 14px !important;
+        padding: 10px 16px !important;
+    }
+    button[role="tab"][aria-selected="true"] {
+        color: #EC2024 !important;
+        border-bottom-color: #EC2024 !important;
+        border-bottom-width: 3px !important;
     }
 
-    /* Tarjeta PO formato oficial */
-    .po-preview-box {
-        background: white;
-        border: 2px solid #E2E8F0;
-        border-radius: 10px;
-        padding: 24px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.04);
+    /* Contenedores de Métricas (KPIs) Oficiales */
+    [data-testid="metric-container"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-left: 5px solid #EC2024 !important;
+        border-radius: 8px !important;
+        padding: 14px 18px !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
     }
-    .po-header-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 15px;
+    [data-testid="metric-container"] label {
+        font-family: 'Montserrat', sans-serif !important;
+        color: #64748B !important;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        font-size: 11px !important;
+        letter-spacing: 0.5px !important;
     }
-    .po-header-table th {
-        background-color: #111111;
-        color: white;
-        padding: 6px 10px;
-        font-size: 12px;
-        text-align: left;
+    [data-testid="metric-container"] div[data-testid="stMetricValue"] {
+        font-family: 'Montserrat', sans-serif !important;
+        color: #0F172A !important;
+        font-weight: 900 !important;
+        font-size: 26px !important;
     }
-    .po-header-table td {
-        border: 1px solid #CBD5E1;
-        padding: 6px 10px;
-        font-size: 13px;
+
+    /* Inputs, Selectboxes y Formularios */
+    div[data-baseweb="input"], div[data-baseweb="select"], textarea {
+        border-color: #D2D3D5 !important;
+        border-radius: 6px !important;
     }
+    div[data-baseweb="input"]:focus-within, div[data-baseweb="select"]:focus-within {
+        border-color: #EC2024 !important;
+        box-shadow: 0 0 0 1px #EC2024 !important;
+    }
+
+    /* Ocultar encabezados Streamlit no requeridos */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    .stAppDeployButton {display: none !important;}
 </style>
 """, unsafe_allow_html=True)
 
-# Sidebar Corporativo
+# Sidebar Corporativo Oficial Sigrama (Manual pág. 28-29)
 with st.sidebar:
+    logo_neg_path = Path(__file__).resolve().parent / "logo_sigrama_negative.png"
     logo_path = Path(__file__).resolve().parent / "logo_sigrama.png"
-    if logo_path.exists():
+    
+    if logo_neg_path.exists():
+        st.image(str(logo_neg_path), use_container_width=True)
+    elif logo_path.exists():
         st.image(str(logo_path), use_container_width=True)
     else:
-        st.markdown("<h2 style='color:#EC2024; text-align:center;'>INDUSTRIA SIGRAMA</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='color:#EC2024; text-align:center; font-family:\"Montserrat\";'>INDUSTRIA SIGRAMA</h2>", unsafe_allow_html=True)
         
-    st.markdown("<h4 style='color:white; margin-top:0; text-align:center;'>PO Tracker & Master Hub</h4>", unsafe_allow_html=True)
-    st.markdown("---")
+    st.markdown("""
+    <div style="background: rgba(236,32,36,0.12); border: 1px solid rgba(236,32,36,0.35); border-radius: 6px; padding: 7px 10px; margin: 10px 0 14px 0; text-align: center;">
+        <span style="font-family: 'Montserrat', sans-serif; font-size: 10.5px; font-weight: 800; color: #EC2024; letter-spacing: 1px; text-transform: uppercase;">
+            🛡️ CONTROL CENTRAL 4.0
+        </span>
+        <div style="color: #CBD5E1; font-size: 10.5px; margin-top: 1px;">Gestión y Trazabilidad de Órdenes (PO)</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<p style='font-family: \"Montserrat\", sans-serif; font-size: 11px; font-weight: 700; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;'>Menú de Navegación:</p>", unsafe_allow_html=True)
     
     menu = st.radio(
         "Navegación:",
         [
             "📊 Dashboard Ejecutivo",
+            "🔍 Ficha de Trazabilidad 360°",
+            "📋 Matriz de Órdenes",
             "📬 Bandeja de Entrada OCR",
             "✏️ Ajuste de PO",
-            "📋 Matriz de Órdenes",
-            "🔍 Ficha de Trazabilidad 360°",
             "🔄 Estado de Integración",
             "📘 Manual y Arquitectura 4.0",
             "🛠️ Mantenimiento de la App"
         ],
-        index=0
+        index=0,
+        label_visibility="collapsed"
     )
     
-    st.markdown("---")
-    st.caption("🚀 **SIGRAMA Suite**")
-    st.caption("• PO Tracker Hub *(Esta App)*")
-    st.caption("• Remisiones de Materiales *(Fase 1)*")
-    st.caption("• Corte y Doblez *(Fase 2)*")
-    
-    # Resumen rápido en sidebar
+    # Resumen Operativo en Vivo en Sidebar
     df_all_pos = get_all_pos()
     df_all_part = get_all_partidas()
+    c_req_tot = float(df_all_part['cantidad_requerida'].sum()) if not df_all_part.empty and 'cantidad_requerida' in df_all_part.columns else 0.0
     
-    st.markdown("---")
-    st.markdown(f"**Total POs en Sistema:** `{len(df_all_pos)}`")
-    st.markdown(f"**Total Partidas Activas:** `{len(df_all_part)}`")
+    st.markdown(f"""
+    <div style="background: #18181B; border: 1px solid #27272A; border-left: 4px solid #EC2024; border-radius: 6px; padding: 12px 14px; margin-top: 18px;">
+        <div style="font-family: 'Montserrat', sans-serif; font-size: 10px; color: #EC2024; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px;">
+            Planta y Cadena de Suministro
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+            <span style="color: #94A3B8; font-size: 11.5px;">Órdenes Activas:</span>
+            <b style="color: #FFFFFF; font-size: 13px; font-family: 'Montserrat', sans-serif;">{len(df_all_pos)} POs</b>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+            <span style="color: #94A3B8; font-size: 11.5px;">Partidas en Catálogo:</span>
+            <b style="color: #FFFFFF; font-size: 13px; font-family: 'Montserrat', sans-serif;">{len(df_all_part)} SKU</b>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+            <span style="color: #94A3B8; font-size: 11.5px;">Piezas Requeridas:</span>
+            <b style="color: #E2E8F0; font-size: 13px; font-family: 'Montserrat', sans-serif;">{c_req_tot:,.0f} pzas</b>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+    if st.button("🔄 Sincronizar Planta en Vivo", use_container_width=True, key="btn_sync_sidebar_live"):
+        from remisiones_sync import sync_live_remisiones_from_github
+        with st.spinner("Sincronizando con Almacén y Taller..."):
+            sync_live_remisiones_from_github()
+        st.cache_data.clear()
+        st.toast("✅ ¡Datos actualizados desde GitHub en tiempo real!")
+        st.rerun()
+        
+    # Cierre Oficial de Barra Lateral (Manual pág. 27, 28, 29)
+    st.markdown("""
+    <div style="text-align: center; margin-top: 25px; padding-top: 15px; border-top: 1px solid #27272A;">
+        <span style="font-family: 'Questrial', sans-serif; font-style: italic; font-size: 13px; color: #FFFFFF; border-bottom: 2px solid #EC2024; padding-bottom: 2px;">
+            Ingeniería que da resultados!!
+        </span>
+        <p style="color: #64748B; font-size: 10px; margin-top: 8px; margin-bottom: 0; font-family: 'Montserrat', sans-serif;">
+            Industria Sigrama S.A. de C.V.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ==============================================================================
+# ENCABEZADO / BANNER SUPERIOR CORPORATIVO (MANUAL OFICIAL SIGRAMA)
+# ==============================================================================
+logo_b64 = ""
+logo_path_main = Path(__file__).resolve().parent / "logo_sigrama.png"
+if logo_path_main.exists():
+    import base64
+    logo_b64 = base64.b64encode(logo_path_main.read_bytes()).decode()
+
+st.markdown(f"""
+<div style="background: linear-gradient(135deg, #111111 0%, #1A1A1A 60%, #0F172A 100%); border-bottom: 4px solid #EC2024; border-radius: 8px; padding: 14px 20px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.07); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;">
+    <div style="display: flex; align-items: center; gap: 16px;">
+        <div style="background: #FFFFFF; padding: 5px 10px; border-radius: 6px; display: flex; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.15);">
+            <img src="data:image/png;base64,{logo_b64}" style="height: 30px; display: block;" alt="Industria Sigrama">
+        </div>
+        <div>
+            <span style="font-family: 'Montserrat', sans-serif; font-size: 10px; font-weight: 800; color: #EC2024; letter-spacing: 1.5px; text-transform: uppercase;">INDUSTRIA SIGRAMA • SUITE 4.0</span>
+            <h2 style="font-family: 'Montserrat', sans-serif; font-size: 19px; font-weight: 900; color: #FFFFFF; margin: 2px 0 0 0; letter-spacing: -0.2px;">
+                PO TRACKER & TRAZABILIDAD INTEGRAL 360°
+            </h2>
+        </div>
+    </div>
+    <div style="text-align: right;">
+        <span style="font-family: 'Montserrat', sans-serif; font-size: 11.5px; font-weight: 800; color: #EC2024; letter-spacing: 0.8px; text-transform: uppercase;">
+            SOLUCIONES QUE TRANSFORMAN TU EMPRESA
+        </span>
+        <div style="color: #94A3B8; font-size: 11px; margin-top: 2px; font-family: 'Questrial', sans-serif;">Corte Láser • Prensas Doblez • Almacén PT • Logística y Envíos</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 
 # ==============================================================================
@@ -2281,8 +2406,9 @@ elif menu == "📘 Manual y Arquitectura 4.0":
     st.title("📘 Manual, Arquitectura Industria 4.0 & Stack Tecnológico")
     st.markdown("Documentación técnica, diagramas de arquitectura ciberfísica y manual operativo para el **PO Tracker & Master Hub de Industria Sigrama**.")
     
-    tab_ind4, tab_diagrama_ocr, tab_stack, tab_manual_pasos = st.tabs([
+    tab_ind4, tab_identidad, tab_diagrama_ocr, tab_stack, tab_manual_pasos = st.tabs([
         "🏭 Arquitectura Industria 4.0",
+        "🎨 Identidad Corporativa Sigrama",
         "⚡ Motor OCR Espacial (Diagrama)",
         "💻 Stack Tecnológico (Tech Stack)",
         "📖 Manual Operativo Paso a Paso"
@@ -2291,6 +2417,41 @@ elif menu == "📘 Manual y Arquitectura 4.0":
     with tab_ind4:
         st.subheader("🏭 El Hilo Digital (Digital Thread) en Industria Sigrama")
         st.write("El **PO Tracker & Master Hub** actúa como el Gemelo Digital del Requerimiento, asegurando que cada orden de compra se convierta en una orden sistemática interconectada con Corte-Doblez y Remisiones.")
+        
+    with tab_identidad:
+        st.subheader("🎨 Manual de Identidad Corporativa Oficial (Industria Sigrama S.A. de C.V.)")
+        st.markdown("""
+        Esta aplicación se rige bajo los lineamientos oficiales del **Manual de Identidad Corporativa de Industria Sigrama**:
+        """)
+        
+        c_col1, c_col2 = st.columns(2)
+        with c_col1:
+            st.markdown("""
+            #### 🔴 Paleta de Color Institucional
+            - **PANTONE® 485 C (Rojo Sigrama)**:
+              - RGB: `(236, 32, 36)` | Hex: `#EC2024`
+              - Uso: Botones principales, acentos de estado, bordes activos y llamado a la acción.
+            - **PANTONE® Black 7 C (Negro Carbón)**:
+              - RGB: `(17, 17, 17)` | Hex: `#111111`
+              - Uso: Barra lateral corporativa, encabezados de tablas y tipografía de alto contraste.
+            - **PANTONE® 14-4107 (Gris Técnico)**:
+              - Hex: `#D2D3D5` / `#E2E8F0`
+              - Uso: Bordes de tarjetas, líneas divisorias y fondos secundarios.
+            - **PANTONE® 000C (Blanco Puro)**:
+              - Hex: `#FFFFFF`
+            """)
+        with c_col2:
+            st.markdown("""
+            #### ✍️ Tipografía & Lemas Oficiales
+            - **Tipografía de Títulos y Logotipo**: `Montserrat` / `Gotham` (Pesos 700 y 900).
+            - **Tipografía de Contenido y Tablas**: `Questrial` (Diseño limpio y legible).
+            - **Slogan Principal**:
+              > <span style="color:#EC2024; font-family:'Montserrat', sans-serif; font-weight:bold;">SOLUCIONES QUE TRANSFORMAN TU EMPRESA</span>
+            - **Lema Institucional**:
+              > <span style="font-family:'Questrial', sans-serif; font-style:italic; border-bottom:2px solid #EC2024;">Ingeniería que da resultados!!</span>
+            """, unsafe_allow_html=True)
+            
+        st.info("💡 La suite de herramientas de Industria Sigrama (**Remisiones de Materiales**, **Corte y Doblez** y **PO Tracker**) comparte la misma línea de diseño unificada para asegurar una experiencia corporativa continua.")
         
     with tab_diagrama_ocr:
         st.subheader("⚡ Arquitectura del Motor OCR Espacial")

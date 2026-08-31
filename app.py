@@ -203,10 +203,40 @@ st.markdown("""
         box-shadow: 0 0 0 1px #EC2024 !important;
     }
 
-    /* Ocultar encabezados Streamlit no requeridos */
+    /* Eliminar por completo el espacio en blanco superior para pegar el Banner arriba */
+    header, [data-testid="stHeader"], header[data-testid="stHeader"] {
+        display: none !important;
+        height: 0px !important;
+        min-height: 0px !important;
+        padding: 0px !important;
+        margin: 0px !important;
+        visibility: hidden !important;
+    }
+
+    .main .block-container,
+    [data-testid="stMainBlockContainer"],
+    div[data-testid="block-container"],
+    .block-container {
+        padding-top: 0.2rem !important;
+        margin-top: 0rem !important;
+        padding-left: 1.5rem !important;
+        padding-right: 1.5rem !important;
+        padding-bottom: 2rem !important;
+    }
+
+    /* Reducir cualquier margen antes del primer elemento / banner */
+    [data-testid="stMainBlockContainer"] > div:first-child,
+    div[data-testid="stVerticalBlock"] > div:first-child,
+    div[data-testid="stImage"]:first-of-type {
+        margin-top: 0px !important;
+        padding-top: 0px !important;
+    }
+
+    /* Ocultar elementos predeterminados de Streamlit */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     .stAppDeployButton {display: none !important;}
+    [data-testid="stViewerBadge"] {display: none !important;}
 </style>
 """, unsafe_allow_html=True)
 

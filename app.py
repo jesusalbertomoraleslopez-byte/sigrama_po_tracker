@@ -587,6 +587,11 @@ elif menu == "📬 Bandeja de Entrada OCR":
                             m_int = re.search(r'\bINT[\s\-_]?(\d{1,4})\b', f"{f_name} {msg_info.get('subject', '')}", re.IGNORECASE)
                             id_int_auto = f"INT-{int(m_int.group(1)):04d}" if m_int else ""
                             
+                            # 1.1 Si el nombre del archivo .msg o asunto trae una PO explícita, asignarla prioritariamente
+                            m_po_msg = re.search(r'\b(26\d{2}[-\s]?\d{4}|26\d{6})\b', f"{f_name} {msg_info.get('subject', '')}")
+                            if m_po_msg:
+                                ctx_msg['po_detectada'] = m_po_msg.group(1).replace('-', '').replace(' ', '')
+                            
                             # 2. Extraer Fecha de llegada desde metadatos del correo
                             date_raw = str(msg_info.get('date', ''))
                             m_dt = re.search(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})', date_raw)
@@ -616,8 +621,12 @@ elif menu == "📬 Bandeja de Entrada OCR":
                                 
                                 if is_pdf_file and not any(w in att_n.lower() for w in ['plano', 'drawing', 'cotizacion']):
                                     try:
-                                        ctx_msg['pdf_filename'] = att_n
-                                        cab_m, part_m = parse_po_pdf(att_d, email_context=ctx_msg)
+                                        ctx_att = dict(ctx_msg)
+                                        ctx_att['pdf_filename'] = att_n
+                                        m_po_pdf_att = re.search(r'\b(26\d{2}[-\s]?\d{4}|26\d{6})\b', att_n)
+                                        if m_po_pdf_att:
+                                            ctx_att['po_detectada'] = m_po_pdf_att.group(1).replace('-', '').replace(' ', '')
+                                        cab_m, part_m = parse_po_pdf(att_d, email_context=ctx_att)
                                         if cab_m:
                                             extracted_batch.append({'cab': cab_m, 'part': part_m, 'file_name': f"{f_name} ➔ {att_n}"})
                                             found_pdf_in_msg = True

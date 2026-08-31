@@ -49,6 +49,27 @@ def extract_attachments_from_msg(msg_bytes_or_path):
         print(f"Error parseando .msg: {e}")
         return {'subject': '', 'sender': '', 'date': '', 'body': '', 'attachments': []}
 
+def strip_quoted_thread(text):
+    """Corta respuestas y cadenas de correos anteriores para evitar capturar firmas, fechas o POs de hilos viejos."""
+    if not text:
+        return ""
+    split_patterns = [
+        r'-----Mensaje original-----',
+        r'-----Original Message-----',
+        r'De:\s+[^\n]+[\r\n]+(?:Enviado|Sent):',
+        r'From:\s+[^\n]+[\r\n]+Sent:',
+        r'El\s+\d{1,2}.*escribió:',
+        r'On\s+.*wrote:',
+        r'_{15,}',
+        r'-{15,}'
+    ]
+    cleaned = str(text)
+    for pat in split_patterns:
+        m = re.search(pat, cleaned, re.IGNORECASE)
+        if m and m.start() > 10:
+            cleaned = cleaned[:m.start()]
+    return cleaned.strip()
+
 def parse_email_text(email_text):
     """Extrae información clave de correos electrónicos de requerimientos de clientes."""
     if not email_text:
@@ -63,22 +84,30 @@ def parse_email_text(email_text):
         'tabla_matriz': []
     }
     
-    # 1. Detectar múltiples POs
-    pos_found = re.findall(r'(?:26\d{2}[-\s]?\d{4}|26\d{6})', email_text)
+    clean_body = strip_quoted_thread(email_text)
+    
+    # 1. Detectar múltiples POs en el cuerpo activo (priorizando el mensaje nuevo sobre el hilo citado)
+    pos_found = re.findall(r'(?:26\d{2}[-\s]?\d{4}|26\d{6})', clean_body)
+    if not pos_found:
+        pos_found = re.findall(r'(?:26\d{2}[-\s]?\d{4}|26\d{6})', email_text)
+        
     clean_pos = list(dict.fromkeys([p.replace(' ', '').replace('-', '') for p in pos_found]))
     info['pos_detectadas'] = clean_pos
     if clean_pos:
         info['po_detectada'] = clean_pos[0]
         
     # 2. Detectar remitente
-    m_rem = re.search(r'(?:De:|From:|Remitente:)\s*([A-Za-zÁÉÍÓÚáéíóúñÑ\s]+)(?:<|\n)', email_text)
+    m_rem = re.search(r'(?:De:|From:|Remitente:)\s*([A-Za-zÁÉÍÓÚáéíóúñÑ\s]+)(?:<|\n)', clean_body)
+    if not m_rem:
+        m_rem = re.search(r'(?:De:|From:|Remitente:)\s*([A-Za-zÁÉÍÓÚáéíóúñÑ\s]+)(?:<|\n)', email_text)
     if m_rem:
         info['remitente'] = m_rem.group(1).strip()
         
     # 3. Detectar tabla de números de parte y cantidades (ej. P20325-24 | 64 | 2 | 4 ...)
     patron_linea_parte = re.compile(r'([A-Z0-9\-_]{5,15})\s*[\|\t ]+\s*(\d+(?:\.\d+)?)([\s\d\|\t]+)', re.IGNORECASE)
     
-    for line in email_text.split('\n'):
+    target_text_partes = clean_body if clean_body else email_text
+    for line in target_text_partes.split('\n'):
         m_parte = patron_linea_parte.search(line.strip())
         if m_parte:
             sku = m_parte.group(1).strip().upper()
@@ -273,22 +302,41 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
         full_text = page.get_text()
         
         if page_idx == 0:
-            # Folio PO
+            # Folio PO con jerarquía de máxima fidelidad
             po_folio = ""
-            for b in blocks:
-                if 390 <= b[0] <= 570 and 100 <= b[1] <= 155:
-                    lines = [l.strip() for l in b[4].split('\n') if l.strip()]
-                    for l in lines:
-                        if re.match(r'^\d{4}[-\s]?\d{4}$|^\d{8}$|^26\d{2}[-\s]?\d{4}$|^26\d{6}$', l):
-                            po_folio = l.replace(' ', '').replace('-', '')
+            # Prioridad 0: Si el nombre del archivo PDF tiene el folio explícito (ej. 2608-3450 SIGRAMA.pdf)
+            if email_context and email_context.get('pdf_filename'):
+                m_fn = re.search(r'\b(26\d{2}[-\s]?\d{4}|26\d{6})\b', str(email_context['pdf_filename']))
+                if m_fn:
+                    po_folio = m_fn.group(1).replace(' ', '').replace('-', '')
+                    
+            # Prioridad 1: Coordenadas del encabezado del formato oficial PDF
+            if not po_folio:
+                for b in blocks:
+                    if 390 <= b[0] <= 570 and 100 <= b[1] <= 155:
+                        lines = [l.strip() for l in b[4].split('\n') if l.strip()]
+                        for l in lines:
+                            if re.match(r'^\d{4}[-\s]?\d{4}$|^\d{8}$|^26\d{2}[-\s]?\d{4}$|^26\d{6}$', l):
+                                po_folio = l.replace(' ', '').replace('-', '')
+                                break
+                                
+            # Prioridad 2: Búsqueda en el texto completo del documento PDF (página 1)
             if not po_folio:
                 m_fol = re.search(r'\b(26\d{2}[-\s]?\d{4}|26\d{6})\b', full_text)
                 if m_fol:
                     po_folio = m_fol.group(1).replace(' ', '').replace('-', '')
-                elif email_context and email_context.get('po_detectada'):
-                    po_folio = email_context['po_detectada']
-                else:
-                    po_folio = "2608-TEMP"
+                    
+            # Prioridad 3: Asunto o nombre del archivo .msg si viene explícito
+            if not po_folio and email_context:
+                m_msg_fn = re.search(r'\b(26\d{2}[-\s]?\d{4}|26\d{6})\b', f"{email_context.get('msg_filename', '')} {email_context.get('asunto', '')}")
+                if m_msg_fn:
+                    po_folio = m_msg_fn.group(1).replace(' ', '').replace('-', '')
+                    
+            # Prioridad 4: PO detectada en el cuerpo del mensaje nuevo (limpio de hilos de respuesta)
+            if not po_folio and email_context and email_context.get('po_detectada'):
+                po_folio = email_context['po_detectada']
+            elif not po_folio:
+                po_folio = "2608-TEMP"
                     
             # Fecha de Pedido
             dia, mes, anio = "", "", ""

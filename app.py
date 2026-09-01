@@ -31,7 +31,12 @@ from db_manager import (
     get_po_history,
     export_sync_to_excel,
     push_db_to_github,
-    pull_db_from_github
+    pull_db_from_github,
+    save_archivo_adjunto,
+    get_archivos_adjuntos_por_po,
+    get_todos_archivos_adjuntos,
+    get_contenido_archivo_por_nombre,
+    get_contenido_archivo_por_id
 )
 from remisiones_sync import (
     get_tracking_for_po,
@@ -698,7 +703,13 @@ elif menu == "📬 Bandeja de Entrada OCR":
                                             ctx_att['po_detectada'] = m_po_pdf_att.group(1).replace('-', '').replace(' ', '')
                                         cab_m, part_m = parse_po_pdf(att_d, email_context=ctx_att)
                                         if cab_m:
-                                            extracted_batch.append({'cab': cab_m, 'part': part_m, 'file_name': f"{f_name} ➔ {att_n}"})
+                                            extracted_batch.append({
+                                                'cab': cab_m,
+                                                'part': part_m,
+                                                'file_name': f"{f_name} ➔ {att_n}",
+                                                'msg_file': (f_name, f_bytes),
+                                                'pdf_file': (att_n, att_d)
+                                            })
                                             found_pdf_in_msg = True
                                     except Exception as e_att:
                                         st.error(f"Error procesando {att_n}: {e_att}")
@@ -738,7 +749,13 @@ elif menu == "📬 Bandeja de Entrada OCR":
                                         'parcialidad': 'P1',
                                         'observaciones_partida': ''
                                     })
-                                extracted_batch.append({'cab': cab_m, 'part': part_m, 'file_name': f_name})
+                                extracted_batch.append({
+                                    'cab': cab_m,
+                                    'part': part_m,
+                                    'file_name': f_name,
+                                    'msg_file': (f_name, f_bytes),
+                                    'pdf_file': None
+                                })
                         else:
                             if any(w in f_name.lower() for w in ['plano', 'drawing', 'rev', 'cotizacion']):
                                 continue
@@ -751,20 +768,35 @@ elif menu == "📬 Bandeja de Entrada OCR":
                                     'fecha_llegada': datetime.date.today().strftime('%Y-%m-%d')
                                 }
                                 cab_f, part_f = parse_po_pdf(f_bytes, email_context=ctx_pdf)
-                                extracted_batch.append({'cab': cab_f, 'part': part_f, 'file_name': f_name})
+                                extracted_batch.append({
+                                    'cab': cab_f,
+                                    'part': part_f,
+                                    'file_name': f_name,
+                                    'msg_file': None,
+                                    'pdf_file': (f_name, f_bytes)
+                                })
                             except Exception as e:
                                 st.error(f"Error procesando {f_name}: {e}")
                                 
-                    # GUARDADO AUTOMÁTICO EN LA BASE DE DATOS
+                    # GUARDADO AUTOMÁTICO EN LA BASE DE DATOS Y EN TABLA DE ARCHIVOS
                     guardadas_auto = 0
                     for item in extracted_batch:
                         ok_g, _ = save_po(item['cab'], item['part'])
                         if ok_g:
                             guardadas_auto += 1
+                            po_val = item['cab'].get('po', '')
+                            id_int_val = item['cab'].get('id_interno', '')
+                            if item.get('msg_file'):
+                                m_n, m_b = item['msg_file']
+                                save_archivo_adjunto(po_val, id_int_val, m_n, 'msg', m_b)
+                            if item.get('pdf_file') and item['pdf_file'][1]:
+                                p_n, p_b = item['pdf_file']
+                                save_archivo_adjunto(po_val, id_int_val, p_n, 'pdf', p_b)
                             
                     st.session_state['ocr_batch_results'] = extracted_batch
                     if extracted_batch:
-                        st.success(f"🎉 Se procesaron y registraron exitosamente **{len(extracted_batch)}** Órdenes de Compra en el sistema.")
+                        push_db_to_github(background=True)
+                        st.success(f"🎉 Se procesaron y registraron exitosamente **{len(extracted_batch)}** Órdenes de Compra con sus archivos de correo (.msg) y PDFs oficiales respaldados.")
                         st.rerun()
                     else:
                         st.warning("⚠️ No se pudieron extraer datos de la orden. Verifique que el archivo .msg contenga el PDF de la PO o que el archivo no esté protegido.")
@@ -1471,6 +1503,36 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 </div>
             </div>
             """, unsafe_allow_html=True)
+            
+            # Bloque de Archivos Adjuntos Oficiales (Correo .msg y PDF)
+            archivos_po = get_archivos_adjuntos_por_po(sel_po)
+            if not archivos_po.empty:
+                st.markdown("""
+                <div style="font-family:'Montserrat',sans-serif; font-size:12px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">
+                    📎 Archivos Originales de Respaldo (Guardados en Base de Datos & GitHub):
+                </div>
+                """, unsafe_allow_html=True)
+                c_att_cols = st.columns([1] * min(4, len(archivos_po)))
+                for idx_att, (_, r_att) in enumerate(archivos_po.iterrows()):
+                    f_id = r_att['id']
+                    f_name = r_att['nombre_archivo']
+                    f_tipo = r_att['tipo']
+                    f_size_kb = (r_att['tamano_bytes'] / 1024.0) if r_att['tamano_bytes'] else 0.0
+                    icon_f = "📧" if f_tipo == 'msg' else "📄"
+                    
+                    _, _, file_bytes = get_contenido_archivo_por_id(f_id)
+                    if file_bytes:
+                        with c_att_cols[idx_att % len(c_att_cols)]:
+                            st.download_button(
+                                label=f"{icon_f} Descargar {f_tipo.upper()} ({f_size_kb:.0f} KB)",
+                                data=file_bytes,
+                                file_name=f_name,
+                                mime="application/vnd.ms-outlook" if f_tipo == 'msg' else "application/pdf",
+                                key=f"dl_att_{sel_po}_{f_id}",
+                                use_container_width=True,
+                                help=f"Descargar archivo original: {f_name}"
+                            )
+                st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
             
             # 5 Tarjetas de Métricas Clave de la Cadena de Suministro (Diseño Premium con Iconos Grandes)
             tot_ent = float(rem_tracking.get('total_entarimado', tot_rem) or 0)
@@ -2636,30 +2698,58 @@ elif menu == "🛠️ Mantenimiento de la App":
     with gh_c4:
         st.metric("🗄️ BD SQLite", f"{db_size_kb:.1f} KB")
 
-    # Tabla de auditoría de archivos en data/correos/
-    if correos_files:
-        st.markdown("##### 📂 Archivos en `data/correos/` (Respaldados en GitHub)")
-        rows = []
-        for f in sorted(correos_files):
-            rows.append({
-                'Archivo': f.name,
-                'Tipo': '📧 .MSG' if f.suffix.lower() == '.msg' else '📄 .PDF',
-                'Tamaño (KB)': round(f.stat().st_size / 1024, 1),
-            })
+    # Tabla de auditoría de archivos persistidos en la Base de Datos
+    df_db_files = get_todos_archivos_adjuntos()
+    if not df_db_files.empty:
+        st.markdown(f"##### 🗄️ Archivos Respaldados en Base de Datos & GitHub ({len(df_db_files)} archivos)")
+        disp_files = df_db_files[['po', 'id_interno', 'nombre_archivo', 'tipo', 'tamano_bytes', 'fecha_subida']].copy()
+        disp_files['Tamaño (KB)'] = disp_files['tamano_bytes'].apply(lambda x: round(float(x) / 1024.0, 1) if x else 0.0)
+        disp_files['Tipo'] = disp_files['tipo'].apply(lambda x: '📧 Correo .MSG' if str(x).lower() == 'msg' else '📄 Documento PDF')
+        disp_files = disp_files.rename(columns={
+            'po': 'PO',
+            'id_interno': 'ID Interno',
+            'nombre_archivo': 'Nombre del Archivo',
+            'fecha_subida': 'Fecha de Subida'
+        })
+        st.dataframe(disp_files[['PO', 'ID Interno', 'Tipo', 'Nombre del Archivo', 'Tamaño (KB)', 'Fecha de Subida']], use_container_width=True, hide_index=True)
+        
+        # Descarga interactiva de cualquier archivo guardado
+        col_dl_a, col_dl_b = st.columns([3, 2])
+        with col_dl_a:
+            file_options = df_db_files['nombre_archivo'].tolist()
+            chosen_file = st.selectbox("Selecciona un archivo para descargar desde la base de datos:", file_options, key="sb_choose_dl_file")
+        with col_dl_b:
+            if chosen_file:
+                _, f_t, f_data = get_contenido_archivo_por_nombre(chosen_file)
+                if f_data:
+                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                    st.download_button(
+                        label=f"📥 Descargar {chosen_file[:24]}...",
+                        data=f_data,
+                        file_name=chosen_file,
+                        mime="application/vnd.ms-outlook" if f_t == 'msg' else "application/pdf",
+                        key=f"btn_dl_manten_{chosen_file}",
+                        use_container_width=True
+                    )
+    elif correos_files:
+        st.markdown(f"##### 📂 Archivos en Disco `data/correos/` ({len(correos_files)} archivos)")
+        rows = [{'Archivo': f.name, 'Tipo': '📧 .MSG' if f.suffix.lower() == '.msg' else '📄 .PDF', 'Tamaño (KB)': round(f.stat().st_size / 1024, 1)} for f in sorted(correos_files)]
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     else:
-        st.info("📭 No hay archivos de correo guardados en `data/correos/` todavía. Sube tus correos desde **Bandeja de Entrada OCR** para que queden respaldados.")
+        st.info("📭 No hay archivos de correo guardados todavía. Sube tus correos desde **Bandeja de Entrada OCR** para que queden respaldados permanentemente.")
 
+    st.markdown("""
+    🔗 **Carpeta en GitHub:** [Ver archivos en vivo en el repositorio de GitHub (data/correos)](https://github.com/jesusalbertomoraleslopez-byte/sigrama_po_tracker/tree/main/data/correos)
+    """)
     st.write("")
     sync_c1, sync_c2 = st.columns([2, 1])
     with sync_c1:
         st.markdown("""
-        **¿Qué sincroniza este botón?**
-        - `data/po_tracker.db` — Base de datos completa de órdenes
-        - `data/BD_POs_Cabecera.xlsx` — Catálogo Excel de cabeceras
-        - `data/BD_Requerimientos_POs.xlsx` — Requerimientos por PO
-        - `data/BD_POs_Partidas_Detalladas.xlsx` — Detalle de partidas
-        - `data/correos/*.msg` y `*.pdf` — Todos los archivos de correo cargados
+        **¿Cómo garantizamos que NUNCA se pierdan los correos?**
+        - **Capa 1 (Base de Datos):** Cada `.msg` y `.pdf` se almacena como dato binario dentro de `data/po_tracker.db`.
+        - **Capa 2 (Auto-Push):** La base de datos completa se sube a GitHub automáticamente tras cada subida.
+        - **Capa 3 (Auto-Restore):** Al arrancar la app en Streamlit Cloud, se descarga la BD y los archivos se reconstruyen automáticamente.
+        - **Capa 4 (Archivos Sueltos):** Los archivos también se respaldan individualmente en la carpeta `data/correos/` de GitHub.
         """)
     with sync_c2:
         st.markdown("<br>", unsafe_allow_html=True)

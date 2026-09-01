@@ -6,6 +6,7 @@ import os
 import base64
 import json
 import threading
+import urllib.parse
 from pathlib import Path
 from config import (
     SQLITE_DB_PATH,
@@ -19,7 +20,7 @@ from config import (
 
 # ──────────────────────────────────────────────────────────────────────────────
 # GITHUB DB PERSISTENCE
-# Subimos po_tracker.db + archivos Excel a GitHub después de cada escritura.
+# Subimos po_tracker.db + archivos Excel + correos a GitHub después de cada escritura.
 # Esto garantiza que Streamlit Cloud nunca pierda datos al reiniciarse.
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ def _get_github_config():
 
 def push_db_to_github(background=True):
     """
-    Sube po_tracker.db y los archivos Excel de la carpeta data/ a GitHub vía API REST.
+    Sube po_tracker.db, archivos Excel y correos a GitHub vía API REST.
     Se ejecuta en background para no bloquear la UI de Streamlit.
     """
     def _push():
@@ -60,7 +61,8 @@ def push_db_to_github(background=True):
             import urllib.request
             token, repo, user, branch = _get_github_config()
             if not token or not repo:
-                return  # Sin configuración, salir silenciosamente
+                print("[GH-PUSH] Advertencia: No se encontró GITHUB_TOKEN configurado.")
+                return
             
             api_base = f"https://api.github.com/repos/{repo}/contents"
             headers = {
@@ -88,15 +90,24 @@ def push_db_to_github(background=True):
                     continue
                     
                 # Ruta relativa dentro del repositorio
-                repo_path = local_path.relative_to(SQLITE_DB_PATH.parent.parent)
+                try:
+                    repo_path = local_path.relative_to(SQLITE_DB_PATH.parent.parent)
+                except Exception:
+                    repo_path = Path("data") / local_path.name
                 github_path = repo_path.as_posix()  # e.g. "data/po_tracker.db"
                 
-                with open(local_path, 'rb') as f:
-                    content_b64 = base64.b64encode(f.read()).decode('utf-8')
+                try:
+                    with open(local_path, 'rb') as f:
+                        content_b64 = base64.b64encode(f.read()).decode('utf-8')
+                except Exception as e_read:
+                    print(f"[GH-PUSH] Error leyendo {local_path}: {e_read}")
+                    continue
                 
-                url = f"{api_base}/{github_path}"
+                encoded_path = urllib.parse.quote(github_path, safe='/')
+                url = f"{api_base}/{encoded_path}"
                 
                 # Obtener SHA actual del archivo en GitHub (necesario para actualizar)
+                sha = ""
                 try:
                     req_get = urllib.request.Request(url, headers=headers, method="GET")
                     with urllib.request.urlopen(req_get, timeout=10) as resp:
@@ -121,10 +132,11 @@ def push_db_to_github(background=True):
                     method="PUT"
                 )
                 try:
-                    with urllib.request.urlopen(req_put, timeout=20) as resp_put:
+                    with urllib.request.urlopen(req_put, timeout=25) as resp_put:
                         resp_put.read()  # consume response
+                    print(f"[GH-PUSH] ✅ Subido a GitHub: {github_path}")
                 except Exception as e_put:
-                    print(f"[GH-PUSH] Error subiendo {github_path}: {e_put}")
+                    print(f"[GH-PUSH] ❌ Error subiendo {github_path}: {e_put}")
                     
         except Exception as e:
             print(f"[GH-PUSH] Error general: {e}")
@@ -134,6 +146,7 @@ def push_db_to_github(background=True):
         t.start()
     else:
         _push()
+
 
 
 def pull_db_from_github():
@@ -272,8 +285,134 @@ def init_db():
     if 'sku_cliente' not in columns:
         cursor.execute("ALTER TABLE po_partidas ADD COLUMN sku_cliente TEXT DEFAULT ''")
     
+    # 3. Tabla de Archivos Adjuntos (.msg y .pdf persistidos en BLOB)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS po_archivos_adjuntos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        po TEXT,
+        id_interno TEXT,
+        nombre_archivo TEXT UNIQUE,
+        tipo TEXT,
+        contenido BLOB,
+        tamano_bytes INTEGER,
+        fecha_subida TEXT
+    )
+    ''')
+    
     conn.commit()
     conn.close()
+    
+    # Reconstruir en disco los archivos almacenados en la BD si faltan en data/correos/
+    reconstruct_correos_on_disk()
+
+def reconstruct_correos_on_disk():
+    """
+    Restaura en disco (data/correos/) todos los correos y PDFs
+    que están guardados en la tabla po_archivos_adjuntos de SQLite.
+    Esto garantiza que tras cualquier reinicio del servidor de Streamlit Cloud,
+    los archivos vuelvan a aparecer inmediatamente en disco.
+    """
+    try:
+        correos_dir = DATA_DIR / 'correos'
+        correos_dir.mkdir(parents=True, exist_ok=True)
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT nombre_archivo, contenido FROM po_archivos_adjuntos WHERE contenido IS NOT NULL")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        restored = 0
+        for nombre, contenido in rows:
+            if not nombre or not contenido:
+                continue
+            dest = correos_dir / nombre
+            if not dest.exists() or dest.stat().st_size == 0:
+                with open(dest, 'wb') as f:
+                    f.write(contenido)
+                restored += 1
+        if restored > 0:
+            print(f"[RECONSTRUCT] Se restauraron {restored} archivos de correo en data/correos/ desde la base de datos.")
+    except Exception as e:
+        print(f"[RECONSTRUCT] Error reconstruyendo correos: {e}")
+
+def save_archivo_adjunto(po, id_interno, nombre_archivo, tipo, contenido_bytes):
+    """
+    Guarda el archivo binario (.msg o .pdf) dentro de la base de datos SQLite.
+    Al estar dentro de SQLite, viaja con po_tracker.db a GitHub y NUNCA se pierde.
+    """
+    if not nombre_archivo or not contenido_bytes:
+        return False
+    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    tamano = len(contenido_bytes)
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO po_archivos_adjuntos (po, id_interno, nombre_archivo, tipo, contenido, tamano_bytes, fecha_subida)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(nombre_archivo) DO UPDATE SET
+                po=excluded.po,
+                id_interno=excluded.id_interno,
+                tipo=excluded.tipo,
+                contenido=excluded.contenido,
+                tamano_bytes=excluded.tamano_bytes,
+                fecha_subida=excluded.fecha_subida
+        ''', (str(po), str(id_interno), str(nombre_archivo), str(tipo).lower(), contenido_bytes, tamano, now_str))
+        conn.commit()
+        conn.close()
+        
+        # También guardar en disco data/correos/
+        correos_dir = DATA_DIR / 'correos'
+        correos_dir.mkdir(parents=True, exist_ok=True)
+        with open(correos_dir / nombre_archivo, 'wb') as f:
+            f.write(contenido_bytes)
+            
+        return True
+    except Exception as e:
+        print(f"Error guardando archivo adjunto {nombre_archivo}: {e}")
+        return False
+
+def get_archivos_adjuntos_por_po(po):
+    """Obtiene la lista de archivos asociados a una PO."""
+    conn = get_connection()
+    df = pd.read_sql_query(
+        "SELECT id, po, id_interno, nombre_archivo, tipo, tamano_bytes, fecha_subida FROM po_archivos_adjuntos WHERE po = ? ORDER BY id ASC",
+        conn, params=[str(po)]
+    )
+    conn.close()
+    return df
+
+def get_todos_archivos_adjuntos():
+    """Obtiene la lista de todos los archivos adjuntos guardados en la BD."""
+    conn = get_connection()
+    df = pd.read_sql_query(
+        "SELECT id, po, id_interno, nombre_archivo, tipo, tamano_bytes, fecha_subida FROM po_archivos_adjuntos ORDER BY po DESC, id ASC",
+        conn
+    )
+    conn.close()
+    return df
+
+def get_contenido_archivo_por_nombre(nombre_archivo):
+    """Obtiene el binario de un archivo por su nombre."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT nombre_archivo, tipo, contenido FROM po_archivos_adjuntos WHERE nombre_archivo = ?", (str(nombre_archivo),))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return row[0], row[1], row[2]
+    return None, None, None
+
+def get_contenido_archivo_por_id(id_archivo):
+    """Obtiene el binario de un archivo por su ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT nombre_archivo, tipo, contenido FROM po_archivos_adjuntos WHERE id = ?", (int(id_archivo),))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return row[0], row[1], row[2]
+    return None, None, None
 
 def clear_all_pos_db(usuario='Usuario'):
     """Limpia completamente todas las tablas de POs en SQLite y vacía los archivos Excel."""

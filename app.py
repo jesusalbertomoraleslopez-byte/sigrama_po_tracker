@@ -46,6 +46,14 @@ from corte_doblez_sync import (
 from pdf_parser import parse_po_pdf, parse_email_text
 from excel_importer import generate_po_excel_template, parse_uploaded_excel
 
+# ── Configuración de Página (DEBE ser el primer comando de Streamlit) ──────────
+st.set_page_config(
+    page_title="SIGRAMA - Control Central de Órdenes de Compra (PO Tracker)",
+    page_icon="📑",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 # ── PERSISTENCIA: Restaurar BD desde GitHub al arrancar (Streamlit Cloud) ─────
 if 'db_pulled' not in st.session_state:
     st.session_state['db_pulled'] = False
@@ -56,17 +64,9 @@ if not st.session_state['db_pulled']:
     if _pulled:
         st.session_state['db_restored_from_github'] = True
 
-# Inicializar Base de Datos
+# ── Inicializar Base de Datos ───────────────────────────────────────────────────
 init_db()
 
-
-# Configuración de Página
-st.set_page_config(
-    page_title="SIGRAMA - Control Central de Órdenes de Compra (PO Tracker)",
-    page_icon="📑",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 # Inyección de CSS Oficial Sigrama (Manual de Identidad Corporativa - PANTONE 485 C & Black 7 C)
 st.markdown("""

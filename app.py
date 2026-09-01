@@ -596,10 +596,25 @@ elif menu == "📬 Bandeja de Entrada OCR":
             st.write(f"📁 **{len(custom_files)}** archivo(s) seleccionado(s).")
             if st.button("⚡ Procesar y Extraer Órdenes de Compra", type="primary", use_container_width=True, key="btn_ocr_process"):
                 extracted_batch = []
+                
+                # Carpeta de almacenamiento permanente de correos y PDFs
+                CORREOS_DIR = Path("data/correos")
+                CORREOS_DIR.mkdir(parents=True, exist_ok=True)
+                
                 with st.spinner("Analizando documentos con motor OCR espacial..."):
                     for uploaded_f in custom_files:
                         f_bytes = uploaded_f.read()
                         f_name = uploaded_f.name
+                        
+                        # ── GUARDAR ARCHIVO FÍSICAMENTE EN data/correos/ ──────────────
+                        safe_name = re.sub(r'[^\w\.\-_ ]', '_', f_name)
+                        dest_path = CORREOS_DIR / safe_name
+                        try:
+                            with open(dest_path, 'wb') as fp_save:
+                                fp_save.write(f_bytes)
+                        except Exception as e_save:
+                            st.warning(f"⚠️ No se pudo guardar {f_name}: {e_save}")
+                        # ─────────────────────────────────────────────────────────────
                         
                         if f_name.lower().endswith('.msg'):
                             from pdf_parser import extract_attachments_from_msg

@@ -76,6 +76,13 @@ def push_db_to_github(background=True):
                 EXCEL_PARTIDAS_DETALLE_PATH,
             ]
             
+            # Agregar archivos de data/correos/ si existen
+            correos_dir = SQLITE_DB_PATH.parent / 'correos'
+            if correos_dir.exists():
+                for correo_file in sorted(correos_dir.iterdir()):
+                    if correo_file.is_file() and correo_file.suffix.lower() in ('.msg', '.pdf'):
+                        files_to_push.append(correo_file)
+            
             for local_path in files_to_push:
                 if not local_path.exists():
                     continue

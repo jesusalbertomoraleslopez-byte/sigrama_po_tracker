@@ -168,6 +168,38 @@ st.markdown("""
         background-color: #FFF5F5 !important;
     }
 
+    /* ── Botones dentro de la Barra Lateral (sidebar) ── */
+    [data-testid="stSidebar"] div.stButton > button {
+        background-color: #1E293B !important;
+        color: #FFFFFF !important;
+        border: 1px solid #334155 !important;
+        font-family: 'Questrial', sans-serif !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        border-radius: 6px !important;
+        padding: 8px 12px !important;
+        width: 100% !important;
+        text-align: left !important;
+        transition: all 0.2s ease !important;
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        min-height: 40px !important;
+    }
+    [data-testid="stSidebar"] div.stButton > button:hover {
+        background-color: #EC2024 !important;
+        border-color: #EC2024 !important;
+        color: #FFFFFF !important;
+        box-shadow: 0 3px 8px rgba(236, 32, 36, 0.3) !important;
+    }
+    /* Asegurar que el span de texto dentro del botón sidebar sea visible */
+    [data-testid="stSidebar"] div.stButton > button p,
+    [data-testid="stSidebar"] div.stButton > button span {
+        color: #FFFFFF !important;
+        font-size: 13px !important;
+        font-family: 'Questrial', sans-serif !important;
+    }
+
+
     /* Estilo de las pestañas (Tabs) */
     button[role="tab"] {
         font-family: 'Montserrat', sans-serif !important;

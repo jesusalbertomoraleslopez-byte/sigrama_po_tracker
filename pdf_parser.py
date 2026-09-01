@@ -137,6 +137,16 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
     else:
         doc = fitz.open(pdf_bytes_or_path)
         
+    # Verificar si el documento es realmente una Orden de Compra oficial
+    first_page_text = doc[0].get_text().upper() if len(doc) > 0 else ""
+    is_po_text = any(k in first_page_text for k in ['ORDEN DE COMPRA', 'DATOS DEL PROVEEDOR', 'SIGRAMA PLANTA METALES', 'REQUISICION', 'FORMA DE PAGO'])
+    fn_check = str(email_context.get('pdf_filename', '')).upper() if email_context else ""
+    is_po_filename = bool(re.search(r'\b(26\d{2}[-\s]?\d{4}|26\d{6})\b', fn_check))
+    
+    if not is_po_text and not is_po_filename:
+        # Es un plano técnico, dibujo o anexo sin formato de PO oficial
+        return None, []
+        
     all_partidas = []
     cabecera = {}
     

@@ -56,12 +56,16 @@ def strip_quoted_thread(text):
     split_patterns = [
         r'-----Mensaje original-----',
         r'-----Original Message-----',
-        r'De:\s+[^\n]+[\r\n]+(?:Enviado|Sent):',
-        r'From:\s+[^\n]+[\r\n]+Sent:',
-        r'El\s+\d{1,2}.*escribió:',
-        r'On\s+.*wrote:',
-        r'_{15,}',
-        r'-{15,}'
+        r'---------- Mensaje reenviado ---------',
+        r'---------- Forwarded message ---------',
+        r'De:\s+[^\n]+[\r\n]+(?:Enviado|Sent)(?:\s+el)?:\s*',
+        r'From:\s+[^\n]+[\r\n]+(?:Sent|Date):\s*',
+        r'\bDe:\s+[^\n]+<[^\n]+@',
+        r'\bFrom:\s+[^\n]+<[^\n]+@',
+        r'\bEl\s+\d{1,2}.*?(?:escribió|escribio):',
+        r'\bOn\s+.*wrote:',
+        r'_{10,}',
+        r'-{10,}'
     ]
     cleaned = str(text)
     for pat in split_patterns:
@@ -183,8 +187,8 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
         i = 0
         while i < len(sorted_ys):
             y = sorted_ys[i]
-            # En página 1, saltar encabezado superior
-            if page_idx == 0 and y < 320:
+            # En página 1, saltar encabezado de la empresa (arriba de y=230)
+            if page_idx == 0 and y < 230:
                 i += 1
                 continue
                 
@@ -192,8 +196,8 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
             line_text = ' '.join([w[1] for w in line_words]).strip()
             
             # Detener si llegamos al pie de página con totales
-            if any(k in line_text.upper() for k in ['SUBTOTAL:', 'IMPORTE NETO:', 'OBSERVACIONES', 'FACTURAR A:', 'TOTAL']):
-                if page_idx == 0 and y > 360:
+            if any(k in line_text.upper() for k in ['SUBTOTAL:', 'IMPORTE NETO:', 'OBSERVACIONES:', 'FACTURAR A:']):
+                if y > 400:
                     i += 1
                     continue
             

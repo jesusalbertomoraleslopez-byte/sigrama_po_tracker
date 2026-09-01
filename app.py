@@ -320,7 +320,7 @@ with st.sidebar:
             "🔍 Ficha de Trazabilidad 360°",
             "📋 Matriz de Órdenes",
             "📬 Bandeja de Entrada OCR",
-            "📁 Repositorio de Correos y GitHub",
+            "📁 Repositorio de Correos y Archivos",
             "✏️ Ajuste de PO",
             "🔄 Estado de Integración",
             "📘 Manual y Arquitectura 4.0",
@@ -1066,9 +1066,9 @@ elif menu == "📬 Bandeja de Entrada OCR":
 
 
 # ==============================================================================
-# SECCIÓN: REPOSITORIO DE CORREOS Y GITHUB
+# SECCIÓN: REPOSITORIO DE CORREOS Y ARCHIVOS
 # ==============================================================================
-elif menu == "📁 Repositorio de Correos y GitHub":
+elif menu == "📁 Repositorio de Correos y Archivos":
     from email_viewer import render_modulo_repositorio
     render_modulo_repositorio()
 
@@ -2772,9 +2772,6 @@ elif menu == "🛠️ Mantenimiento de la App":
     else:
         st.info("📭 No hay archivos de correo guardados todavía. Sube tus correos desde **Bandeja de Entrada OCR** para que queden respaldados permanentemente.")
 
-    st.markdown("""
-    🔗 **Carpeta en GitHub:** [Ver archivos en vivo en el repositorio de GitHub (data/correos)](https://github.com/jesusalbertomoraleslopez-byte/sigrama_po_tracker/tree/main/data/correos)
-    """)
     st.write("")
     sync_c1, sync_c2 = st.columns([2, 1])
     with sync_c1:

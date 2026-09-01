@@ -172,10 +172,10 @@ def render_modulo_repositorio():
     st.markdown("""
     <div style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); border-radius: 10px; padding: 22px 28px; margin-bottom: 22px; border-left: 6px solid #EC2024; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
         <h2 style="color: #FFFFFF; font-family: 'Montserrat', sans-serif; font-size: 22px; font-weight: 800; margin: 0 0 6px 0; text-transform: uppercase; letter-spacing: 0.5px;">
-            📁 Repositorio de Correos y GitHub
+            📁 Repositorio de Correos y Archivos
         </h2>
         <p style="color: #94A3B8; font-size: 13.5px; margin: 0; font-family: 'Questrial', sans-serif;">
-            Explorador en vivo de correos <b>.msg de Outlook</b>, órdenes oficiales en <b>PDF</b> y archivos respaldados en la nube de <b>GitHub</b>.
+            Explorador en vivo de correos <b>.msg de Outlook</b>, órdenes oficiales en <b>PDF</b> y archivos respaldados en la nube.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -186,7 +186,7 @@ def render_modulo_repositorio():
     t_msg, t_pdf, t_gh = st.tabs([
         "✉️ Visor de Correos (.msg)",
         "📄 Visor de PDFs de Órdenes de Compra",
-        "☁️ Explorador de Carpetas de GitHub"
+        "☁️ Inventario de Archivos en Nube"
     ])
     
     # ── PESTAÑA 1: VISOR DE CORREOS (.MSG) ──
@@ -271,33 +271,14 @@ def render_modulo_repositorio():
                 if pdf_bytes:
                     render_pdf_embed(pdf_bytes, height=720, key=f"embed_{sel_pdf_id}")
                     
-    # ── PESTAÑA 3: EXPLORADOR DE CARPETAS GITHUB ──
+    # ── PESTAÑA 3: INVENTARIO DE ARCHIVOS EN NUBE ──
     with t_gh:
-        repo_url = "https://github.com/jesusalbertomoraleslopez-byte/sigrama_po_tracker"
-        folder_url = f"{repo_url}/tree/main/data/correos"
-        
-        st.markdown(f"""
-        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 18px; margin-bottom: 18px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                <div>
-                    <h4 style="margin: 0; color: #0F172A; font-family: 'Montserrat', sans-serif;">Repositorio Oficial en GitHub</h4>
-                    <p style="margin: 4px 0 0 0; color: #64748B; font-size: 13px;">
-                        Rama activa: <code style="color:#0F172A; font-weight:700;">main</code> | Carpeta de correos: <code>data/correos/</code>
-                    </p>
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <a href="{folder_url}" target="_blank" style="text-decoration: none;">
-                        <button style="background: #24292F; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-                            📁 Ver Carpeta data/correos en GitHub ↗
-                        </button>
-                    </a>
-                    <a href="{repo_url}" target="_blank" style="text-decoration: none;">
-                        <button style="background: #EC2024; color: #FFFFFF; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer;">
-                            🌐 Ver Repositorio Completo ↗
-                        </button>
-                    </a>
-                </div>
-            </div>
+        st.markdown("""
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px 20px; margin-bottom: 18px;">
+            <h4 style="margin: 0; color: #0F172A; font-family: 'Montserrat', sans-serif;">Inventario de Archivos Digitales y Nube</h4>
+            <p style="margin: 4px 0 0 0; color: #64748B; font-size: 13px;">
+                Respaldo sincronizado de correos <code>.msg</code> y órdenes oficiales <code>.pdf</code>.
+            </p>
         </div>
         """, unsafe_allow_html=True)
         

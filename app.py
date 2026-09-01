@@ -320,6 +320,7 @@ with st.sidebar:
             "🔍 Ficha de Trazabilidad 360°",
             "📋 Matriz de Órdenes",
             "📬 Bandeja de Entrada OCR",
+            "📁 Repositorio de Correos y GitHub",
             "✏️ Ajuste de PO",
             "🔄 Estado de Integración",
             "📘 Manual y Arquitectura 4.0",
@@ -1065,6 +1066,13 @@ elif menu == "📬 Bandeja de Entrada OCR":
 
 
 # ==============================================================================
+# SECCIÓN: REPOSITORIO DE CORREOS Y GITHUB
+# ==============================================================================
+elif menu == "📁 Repositorio de Correos y GitHub":
+    from email_viewer import render_modulo_repositorio
+    render_modulo_repositorio()
+
+# ==============================================================================
 # SECCIÓN 3: AJUSTE DE PO (AJUSTE MAESTRO 1° GENERALES + 2° ARTÍCULOS)
 # ==============================================================================
 elif menu == "✏️ Ajuste de PO":
@@ -1539,8 +1547,28 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 help=f"Descargar archivo original: {f_name}"
                             )
                 st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-            
-            # 5 Tarjetas de Métricas Clave de la Cadena de Suministro (Diseño Premium con Iconos Grandes)
+                
+                # Expander para ver el correo original y PDF en pantalla
+                msg_att = archivos_po[archivos_po['tipo'] == 'msg'] if not archivos_po.empty else pd.DataFrame()
+                pdf_att = archivos_po[archivos_po['tipo'] == 'pdf'] if not archivos_po.empty else pd.DataFrame()
+                if not msg_att.empty or not pdf_att.empty:
+                    with st.expander("👁️ Ver Contenido del Correo (.msg) y PDF en Pantalla", expanded=False):
+                        if not msg_att.empty:
+                            f_id_msg = msg_att.iloc[0]['id']
+                            fn_msg, _, b_msg = get_contenido_archivo_por_id(f_id_msg)
+                            if b_msg:
+                                from email_viewer import render_email_card
+                                render_email_card(b_msg, file_name=fn_msg, key_suffix=f"ficha360_{sel_po}")
+                        
+                        if not pdf_att.empty:
+                            st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
+                            st.markdown("##### 📄 Vista Previa de la Orden de Compra (PDF)")
+                            f_id_pdf = pdf_att.iloc[0]['id']
+                            fn_pdf, _, b_pdf = get_contenido_archivo_por_id(f_id_pdf)
+                            if b_pdf:
+                                from email_viewer import render_pdf_embed
+                                render_pdf_embed(b_pdf, height=600, key=f"ficha_pdf_{sel_po}")
+                st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
             tot_ent = float(rem_tracking.get('total_entarimado', tot_rem) or 0)
             pct_ent = (tot_ent / tot_req * 100.0) if tot_req > 0 else 0.0
             ofs_cnt = len(cd_tracking.get('ofs_asociadas', []))

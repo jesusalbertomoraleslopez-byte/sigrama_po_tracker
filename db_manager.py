@@ -502,7 +502,7 @@ def import_existing_pos_from_remisiones():
                 print(f'Error importing legacy POs: {e}')
     conn.close()
 
-def save_po(cabecera, partidas, usuario='Usuario'):
+def save_po(cabecera, partidas, usuario='Usuario', push_to_gh=True):
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -632,7 +632,8 @@ def save_po(cabecera, partidas, usuario='Usuario'):
         conn.close()
         
         export_sync_to_excel()
-        push_db_to_github()  # Auto-backup en GitHub para persistencia en Streamlit Cloud
+        if push_to_gh:
+            push_db_to_github()  # Auto-backup en GitHub para persistencia en Streamlit Cloud
         return True, f'Orden de Compra {po_folio} guardada exitosamente.'
     except Exception as e:
         conn.rollback()

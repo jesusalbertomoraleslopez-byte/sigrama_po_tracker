@@ -2577,7 +2577,77 @@ elif menu == "🛠️ Mantenimiento de la App":
         db_file = SQLITE_DB_PATH
         db_size_kb = (db_file.stat().st_size / 1024.0) if db_file.exists() else 0.0
         st.metric("Tamaño Base de Datos SQLite", f"{db_size_kb:.1f} KB")
+
+    st.write("---")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # PANEL DE SINCRONIZACIÓN CON GITHUB
+    # ─────────────────────────────────────────────────────────────────────────
+    st.subheader("☁️ Sincronización con GitHub (Persistencia en la Nube)")
+    st.caption("Respaldo automático de la base de datos y archivos de correos. Garantiza que los datos se conserven aunque el servidor de Streamlit Cloud se reinicie.")
+    
+    # Estado de la carpeta de correos
+    CORREOS_DIR = Path("data/correos")
+    CORREOS_DIR.mkdir(parents=True, exist_ok=True)
+    correos_files = [f for f in CORREOS_DIR.iterdir() if f.is_file() and f.suffix.lower() in ('.msg', '.pdf')] if CORREOS_DIR.exists() else []
+    msg_count  = sum(1 for f in correos_files if f.suffix.lower() == '.msg')
+    pdf_count  = sum(1 for f in correos_files if f.suffix.lower() == '.pdf')
+    total_size = sum(f.stat().st_size for f in correos_files) / 1024
+
+    gh_c1, gh_c2, gh_c3, gh_c4 = st.columns(4)
+    with gh_c1:
+        st.metric("📧 Correos .MSG guardados", msg_count)
+    with gh_c2:
+        st.metric("📄 PDFs guardados", pdf_count)
+    with gh_c3:
+        st.metric("💾 Tamaño Total Correos", f"{total_size:.1f} KB")
+    with gh_c4:
+        st.metric("🗄️ BD SQLite", f"{db_size_kb:.1f} KB")
+
+    # Tabla de auditoría de archivos en data/correos/
+    if correos_files:
+        st.markdown("##### 📂 Archivos en `data/correos/` (Respaldados en GitHub)")
+        rows = []
+        for f in sorted(correos_files):
+            rows.append({
+                'Archivo': f.name,
+                'Tipo': '📧 .MSG' if f.suffix.lower() == '.msg' else '📄 .PDF',
+                'Tamaño (KB)': round(f.stat().st_size / 1024, 1),
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("📭 No hay archivos de correo guardados en `data/correos/` todavía. Sube tus correos desde **Bandeja de Entrada OCR** para que queden respaldados.")
+
+    st.write("")
+    sync_c1, sync_c2 = st.columns([2, 1])
+    with sync_c1:
+        st.markdown("""
+        **¿Qué sincroniza este botón?**
+        - `data/po_tracker.db` — Base de datos completa de órdenes
+        - `data/BD_POs_Cabecera.xlsx` — Catálogo Excel de cabeceras
+        - `data/BD_Requerimientos_POs.xlsx` — Requerimientos por PO
+        - `data/BD_POs_Partidas_Detalladas.xlsx` — Detalle de partidas
+        - `data/correos/*.msg` y `*.pdf` — Todos los archivos de correo cargados
+        """)
+    with sync_c2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("☁️ SINCRONIZAR TODO CON GITHUB", type="primary", use_container_width=True, key="btn_full_sync_manten"):
+            with st.spinner("⏳ Subiendo base de datos y correos a GitHub..."):
+                push_db_to_github(background=False)
+            st.success("✅ ¡Sincronización completada! Todos los datos están respaldados en GitHub.")
+            st.balloons()
         
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("⬇️ Restaurar BD desde GitHub", use_container_width=True, key="btn_pull_gh_manten"):
+            with st.spinner("Descargando BD desde GitHub..."):
+                pulled = pull_db_from_github()
+            if pulled:
+                init_db()
+                st.success("✅ BD restaurada exitosamente desde GitHub.")
+                st.rerun()
+            else:
+                st.info("ℹ️ La BD local ya está actualizada (igual o mayor que la remota).")
+
     st.write("---")
     
     b_col1, b_col2, b_col3 = st.columns(3)
@@ -2602,6 +2672,7 @@ elif menu == "🛠️ Mantenimiento de la App":
         if st.button("⚡ Resincronizar Excel", use_container_width=True):
             export_sync_to_excel()
             st.success("✅ Archivos Excel actualizados.")
+
             
     with b_col3:
         st.subheader("🗑️ 3. Limpieza Total (0 POs)")

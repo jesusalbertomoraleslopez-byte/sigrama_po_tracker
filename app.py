@@ -318,7 +318,7 @@ with st.sidebar:
         [
             "📊 Dashboard Ejecutivo",
             "🔍 Ficha de Trazabilidad 360°",
-            "📋 Matriz de Órdenes",
+            "📋 Tabla de Todas las Órdenes",
             "📬 Bandeja de Entrada OCR",
             "📁 Repositorio de Correos y Archivos",
             "✏️ Ajuste de PO",
@@ -421,6 +421,178 @@ else:
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+
+def render_tabla_todas_las_ordenes(df_pos, df_part):
+    """Renderiza la tabla maestra con todas las órdenes y las 5 métricas de la cadena de suministro."""
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); border-radius: 10px; padding: 20px 24px; margin-bottom: 20px; border-left: 6px solid #EC2024; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+        <h2 style="color: #FFFFFF; font-family: 'Montserrat', sans-serif; font-size: 22px; font-weight: 800; margin: 0 0 6px 0; text-transform: uppercase; letter-spacing: 0.5px;">
+            📋 Tabla General de Todas las Órdenes de Compra
+        </h2>
+        <p style="color: #94A3B8; font-size: 13.5px; margin: 0; font-family: 'Questrial', sans-serif;">
+            Visión global consolidada: <b>Requerimientos</b>, avance en <b>Taller Planta</b> (Corte y Doblez), <b>Almacén PT</b> y <b>Remisiones</b> entregadas.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if df_pos.empty:
+        st.info("💡 No hay POs registradas. Cárgalas en **'📬 Bandeja de Entrada OCR'**.")
+        return
+        
+    df_summary = get_global_pos_tracking_summary(df_pos, df_part)
+    if df_summary.empty:
+        st.info("No se encontraron órdenes para mostrar.")
+        return
+
+    # Tarjetas de Totales Globales (Las 5 Métricas Clave de la Cadena de Suministro)
+    tot_req_g = float(df_summary['piezas_requeridas'].sum())
+    tot_fab_g = float(df_summary['piezas_fabricadas'].sum())
+    tot_ent_g = float(df_summary['piezas_entarimadas'].sum())
+    tot_rem_g = float(df_summary['piezas_remisionadas'].sum())
+    tot_pen_g = float(df_summary['piezas_pendientes'].sum())
+    tot_imp_g = float(df_summary['total'].sum())
+    pct_rem_g = (tot_rem_g / tot_req_g * 100.0) if tot_req_g > 0 else 0.0
+
+    k1, k2, k3, k4, k5 = st.columns(5)
+    with k1:
+        st.markdown(f"""
+        <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #0F172A; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:115px;">
+            <div style="font-size:11px; font-weight:800; color:#0F172A; text-transform:uppercase;">1. Requeridas</div>
+            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:6px 0 2px 0;">{tot_req_g:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">pzas</span></div>
+            <span style="background:#F1F5F9; color:#475569; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:12px;">{len(df_summary)} Órdenes</span>
+        </div>
+        """, unsafe_allow_html=True)
+    with k2:
+        st.markdown(f"""
+        <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #2563EB; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:115px;">
+            <div style="font-size:11px; font-weight:800; color:#2563EB; text-transform:uppercase;">2. Fabricadas</div>
+            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:6px 0 2px 0;">{tot_fab_g:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">pzas</span></div>
+            <span style="background:#EFF6FF; color:#1D4ED8; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:12px;">Planta / Taller</span>
+        </div>
+        """, unsafe_allow_html=True)
+    with k3:
+        st.markdown(f"""
+        <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #D97706; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:115px;">
+            <div style="font-size:11px; font-weight:800; color:#D97706; text-transform:uppercase;">3. Entarimadas</div>
+            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:6px 0 2px 0;">{tot_ent_g:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">pzas</span></div>
+            <span style="background:#FEF3C7; color:#B45309; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:12px;">Almacén PT</span>
+        </div>
+        """, unsafe_allow_html=True)
+    with k4:
+        st.markdown(f"""
+        <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #059669; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:115px;">
+            <div style="font-size:11px; font-weight:800; color:#059669; text-transform:uppercase;">4. Remisionadas</div>
+            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:6px 0 2px 0;">{tot_rem_g:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">pzas</span></div>
+            <span style="background:#ECFDF5; color:#047857; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:12px;">{pct_rem_g:.1f}% Enviado</span>
+        </div>
+        """, unsafe_allow_html=True)
+    with k5:
+        st.markdown(f"""
+        <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #DC2626; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:115px;">
+            <div style="font-size:11px; font-weight:800; color:#DC2626; text-transform:uppercase;">5. Pendientes</div>
+            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:6px 0 2px 0;">{tot_pen_g:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">pzas</span></div>
+            <span style="background:#FEF2F2; color:#B91C1C; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:12px;">Por Entregar</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
+    
+    # Filtros y búsqueda
+    f1, f2, f3 = st.columns([2.5, 1.2, 1.2])
+    with f1:
+        q_search = st.text_input("🔍 Búsqueda rápida en todas las órdenes:", placeholder="Escribe ID, Folio, Proyecto, Comprador...", key="search_tabla_general")
+    with f2:
+        estatus_opts = ["Todos"] + list(df_summary['estatus_remision'].unique())
+        sel_estatus = st.selectbox("Estatus de Entrega:", estatus_opts, key="sb_est_tabla_general")
+    with f3:
+        sort_opt = st.selectbox("Ordenar tabla por:", [
+            "🔢 ID Interno (INT-0001, INT-0002...)",
+            "📅 Fecha de Llegada (Más reciente)",
+            "📄 Folio PO",
+            "🎯 % Avance Cumplimiento",
+            "💰 Importe Total ($)"
+        ], key="sb_sort_tabla_general")
+        
+    df_f = df_summary.copy()
+    if q_search:
+        q = q_search.strip().lower()
+        df_f = df_f[
+            df_f['po'].astype(str).str.lower().str.contains(q) |
+            df_f.get('id_interno', pd.Series(['']*len(df_f))).astype(str).str.lower().str.contains(q) |
+            df_f['proyecto'].astype(str).str.lower().str.contains(q) |
+            df_f['solicitante'].astype(str).str.lower().str.contains(q) |
+            df_f['comprador'].astype(str).str.lower().str.contains(q)
+        ]
+    if sel_estatus != "Todos":
+        df_f = df_f[df_f['estatus_remision'] == sel_estatus]
+        
+    if "ID Interno" in sort_opt:
+        df_f['id_sort_key'] = df_f['id_interno'].apply(lambda x: str(x) if str(x).strip() else 'ZZZ')
+        df_f = df_f.sort_values(by=['id_sort_key', 'po'], ascending=[True, True]).drop(columns=['id_sort_key'])
+    elif "Fecha de Llegada" in sort_opt:
+        df_f = df_f.sort_values(by=['fecha_llegada', 'po'], ascending=[False, False])
+    elif "Folio PO" in sort_opt:
+        df_f = df_f.sort_values(by=['po'], ascending=[True])
+    elif "% Avance" in sort_opt:
+        df_f = df_f.sort_values(by=['pct_cumplimiento'], ascending=[False])
+    elif "Importe Total" in sort_opt:
+        df_f = df_f.sort_values(by=['total'], ascending=[False])
+        
+    # Columnas de visualización ordenadas
+    disp_cols = [
+        'id_interno', 'po', 'proyecto', 'fecha_llegada',
+        'articulos_count', 'piezas_requeridas', 'piezas_fabricadas',
+        'piezas_entarimadas', 'piezas_remisionadas', 'piezas_pendientes',
+        'pct_cumplimiento', 'estatus_remision', 'total', 'comprador', 'solicitante'
+    ]
+    df_table = df_f[[c for c in disp_cols if c in df_f.columns]].copy()
+    
+    st.dataframe(
+        df_table.rename(columns={
+            'id_interno': 'ID Interno',
+            'po': 'PO / Folio',
+            'proyecto': 'Proyecto',
+            'fecha_llegada': 'Llegada PO',
+            'articulos_count': 'Partidas #',
+            'piezas_requeridas': '1. Requeridas',
+            'piezas_fabricadas': '2. Fabricadas',
+            'piezas_entarimadas': '3. Entarimadas',
+            'piezas_remisionadas': '4. Remisionadas',
+            'piezas_pendientes': '5. Pendientes',
+            'pct_cumplimiento': '% Avance',
+            'estatus_remision': 'Estatus Entrega',
+            'total': 'Importe Total ($)',
+            'comprador': 'Comprador',
+            'solicitante': 'Solicitante'
+        }),
+        column_config={
+            "ID Interno": st.column_config.TextColumn("ID Interno", width="small"),
+            "PO / Folio": st.column_config.TextColumn("PO / Folio", width="small"),
+            "Proyecto": st.column_config.TextColumn("Proyecto", width="medium"),
+            "1. Requeridas": st.column_config.NumberColumn("1. Requeridas", format="%d pzas"),
+            "2. Fabricadas": st.column_config.NumberColumn("2. Fabricadas", format="%d pzas"),
+            "3. Entarimadas": st.column_config.NumberColumn("3. Entarimadas", format="%d pzas"),
+            "4. Remisionadas": st.column_config.NumberColumn("4. Remisionadas", format="%d pzas"),
+            "5. Pendientes": st.column_config.NumberColumn("5. Pendientes", format="%d pzas"),
+            "% Avance": st.column_config.ProgressColumn("% Avance", min_value=0, max_value=100, format="%.1f%%"),
+            "Importe Total ($)": st.column_config.NumberColumn("Importe Total ($)", format="$%,.2f"),
+        },
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    # Botón de Descarga Excel
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as w:
+        df_f.to_excel(w, sheet_name="Todas_Las_Ordenes", index=False)
+    st.download_button(
+        label="📥 Descargar Esta Tabla a Excel",
+        data=buf.getvalue(),
+        file_name=f"Tabla_General_Ordenes_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"dl_btn_tabla_general_{datetime.date.today().strftime('%Y%m%d')}"
+    )
 
 
 # ==============================================================================
@@ -1290,122 +1462,12 @@ elif menu == "✏️ Ajuste de PO":
 
 
 # ==============================================================================
-# SECCIÓN 4: MATRIZ DE ÓRDENES (CATÁLOGO MAESTRO ORDENADO)
+# SECCIÓN 4: TABLA DE TODAS LAS ÓRDENES (VISIÓN GLOBAL 360°)
 # ==============================================================================
-elif menu == "📋 Matriz de Órdenes":
-    st.title("📋 Matriz Maestra de Órdenes de Compra")
-    st.markdown("Consulta, búsqueda global y ordenamiento de todas las POs registradas con sus identificadores internos y estatus de remisión.")
-    
+elif menu == "📋 Tabla de Todas las Órdenes":
     df_pos = get_all_pos()
     df_part = get_all_partidas()
-    
-    if df_pos.empty:
-        st.info("💡 No hay POs registradas. Cárgalas en **'📬 Bandeja de Entrada OCR'**.")
-    else:
-        df_summary = get_global_pos_tracking_summary(df_pos, df_part)
-        
-        f1, f2, f3, f4 = st.columns([2, 1, 1, 1.5])
-        with f1:
-            q_search = st.text_input("🔍 Búsqueda rápida (ID Interno, Folio, Proyecto, Comprador):", "")
-        with f2:
-            estatus_opts = ["Todos"] + list(df_summary['estatus_remision'].unique())
-            sel_estatus = st.selectbox("Filtrar por Estatus:", estatus_opts)
-        with f3:
-            proy_opts = ["Todos"] + [p for p in df_summary['proyecto'].dropna().unique() if str(p).strip()]
-            sel_proy = st.selectbox("Filtrar por Proyecto:", proy_opts)
-        with f4:
-            sort_opt = st.selectbox("Ordenar Matriz por:", [
-                "🔢 ID Interno (INT-0001, INT-0002...)",
-                "📅 Fecha de Llegada (Más reciente)",
-                "📄 Folio PO",
-                "🎯 % Avance Cumplimiento",
-                "💰 Importe Total ($)"
-            ])
-            
-        df_filtered = df_summary.copy()
-        
-        if q_search:
-            q = q_search.strip().lower()
-            df_filtered = df_filtered[
-                df_filtered['po'].astype(str).str.lower().str.contains(q) |
-                df_filtered.get('id_interno', pd.Series(['']*len(df_filtered))).astype(str).str.lower().str.contains(q) |
-                df_filtered['proyecto'].astype(str).str.lower().str.contains(q) |
-                df_filtered['solicitante'].astype(str).str.lower().str.contains(q) |
-                df_filtered['comprador'].astype(str).str.lower().str.contains(q) |
-                df_filtered['observaciones'].astype(str).str.lower().str.contains(q)
-            ]
-            
-        if sel_estatus != "Todos":
-            df_filtered = df_filtered[df_filtered['estatus_remision'] == sel_estatus]
-            
-        if sel_proy != "Todos":
-            df_filtered = df_filtered[df_filtered['proyecto'] == sel_proy]
-            
-        # Aplicar ordenamiento
-        if "ID Interno" in sort_opt:
-            df_filtered['id_sort_key'] = df_filtered['id_interno'].apply(lambda x: str(x) if str(x).strip() else 'ZZZ')
-            df_filtered = df_filtered.sort_values(by=['id_sort_key', 'po'], ascending=[True, True]).drop(columns=['id_sort_key'])
-        elif "Fecha de Llegada" in sort_opt:
-            df_filtered = df_filtered.sort_values(by=['fecha_llegada', 'fecha_pedido', 'po'], ascending=[False, False, False])
-        elif "Folio PO" in sort_opt:
-            df_filtered = df_filtered.sort_values(by=['po'], ascending=[True])
-        elif "% Avance" in sort_opt:
-            df_filtered = df_filtered.sort_values(by=['pct_cumplimiento'], ascending=[False])
-        elif "Importe Total" in sort_opt:
-            df_filtered = df_filtered.sort_values(by=['total'], ascending=[False])
-            
-        st.write(f"Mostrando **{len(df_filtered)}** de **{len(df_summary)}** Órdenes de Compra ordenadas:")
-        
-        # Columnas a desplegar
-        cols_present = [c for c in [
-            'id_interno', 'po', 'fecha_llegada', 'fecha_solicitada', 'proyecto',
-            'articulos_count', 'piezas_requeridas', 'piezas_remisionadas', 'piezas_pendientes',
-            'pct_cumplimiento', 'archivo_correo', 'archivo_pdf', 'comprador',
-            'estatus_remision', 'total'
-        ] if c in df_filtered.columns]
-        
-        # Formatear indicadores de archivos
-        df_display = df_filtered[cols_present].copy()
-        if 'archivo_correo' in df_display.columns:
-            df_display['archivo_correo'] = df_display['archivo_correo'].apply(lambda x: '✅ .MSG' if str(x).strip() else '⚪ No')
-        if 'archivo_pdf' in df_display.columns:
-            df_display['archivo_pdf'] = df_display['archivo_pdf'].apply(lambda x: '✅ .PDF' if str(x).strip() else '⚪ No')
-            
-        st.dataframe(
-            df_display.rename(columns={
-                'id_interno': 'ID Interno',
-                'po': 'PO / Folio',
-                'fecha_llegada': 'Llegada PO',
-                'fecha_solicitada': 'Fecha Solicitada',
-                'proyecto': 'Proyecto',
-                'articulos_count': 'Artículos #',
-                'piezas_requeridas': 'Cant. Req.',
-                'piezas_remisionadas': 'Enviadas',
-                'piezas_pendientes': 'Pendientes',
-                'pct_cumplimiento': '% Avance',
-                'archivo_correo': 'Correo .MSG',
-                'archivo_pdf': 'Doc .PDF',
-                'comprador': 'Comprador',
-                'estatus_remision': 'Estatus Entrega',
-                'total': 'Importe Total'
-            }),
-            use_container_width=True,
-            hide_index=True
-        )
-        
-        # Botón para descargar reporte Excel
-        buf_exp = io.BytesIO()
-        with pd.ExcelWriter(buf_exp, engine='openpyxl') as writer:
-            df_filtered.to_excel(writer, sheet_name="Matriz_POs", index=False)
-            
-        st.download_button(
-            label="📥 Exportar Matriz Filtrada a Excel",
-            data=buf_exp.getvalue(),
-            file_name=f"Reporte_Matriz_POs_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary"
-        )
-
+    render_tabla_todas_las_ordenes(df_pos, df_part)
 
 # ==============================================================================
 # SECCIÓN 5: FICHA DE TRAZABILIDAD 360° (INVESTIGACIÓN & CRUCE)
@@ -1415,8 +1477,22 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
     st.markdown("Consulta en profundidad el detalle oficial de la PO, desglose de partidas vs envíos de remisiones y auditoría.")
     
     df_pos = get_all_pos()
+    df_part = get_all_partidas()
     
-    if df_pos.empty:
+    col_v1, col_v2 = st.columns([3, 1])
+    with col_v1:
+        vista_ficha_mode = st.radio(
+            "Seleccionar Vista:",
+            ["🔍 Ficha Detallada 360° por Orden", "📋 Ver Tabla de Todas las Órdenes"],
+            horizontal=True,
+            key="radio_vista_ficha_mode"
+        )
+    with col_v2:
+        st.write("")
+        
+    if vista_ficha_mode == "📋 Ver Tabla de Todas las Órdenes":
+        render_tabla_todas_las_ordenes(df_pos, df_part)
+    elif df_pos.empty:
         st.info("💡 No hay Órdenes de Compra registradas.")
     else:
         col_sel1, col_sel2 = st.columns([2.5, 1.5])

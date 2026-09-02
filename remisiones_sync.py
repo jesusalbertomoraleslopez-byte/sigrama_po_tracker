@@ -252,26 +252,70 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno=""):
     }
 
 def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
-    """Calcula el resumen de seguimiento para todas las POs."""
+    """Calcula el resumen de seguimiento para todas las POs incluyendo las 5 métricas clave de la cadena de suministro."""
     summary_list = []
     
     if df_all_pos.empty:
         return pd.DataFrame()
         
+    try:
+        from corte_doblez_sync import get_corte_doblez_tracking_for_po
+    except Exception:
+        get_corte_doblez_tracking_for_po = None
+        
     for _, po_row in df_all_pos.iterrows():
         po_folio = str(po_row.get('po', '')).strip()
+        id_int_val = str(po_row.get('id_interno', '')).strip()
         partidas_po = df_all_partidas[df_all_partidas['po'].astype(str).str.strip() == po_folio] if not df_all_partidas.empty else pd.DataFrame()
         
-        tracking = get_tracking_for_po(po_folio, partidas_po)
+        # 1. Seguimiento en Remisiones y Almacén PT
+        tracking = get_tracking_for_po(po_folio, partidas_po, id_interno=id_int_val)
         
+        # 2. Seguimiento en Taller Planta (Corte y Doblez)
+        tot_fab = 0.0
+        pct_fab = 0.0
+        ofs_str = "Sin OF"
+        if get_corte_doblez_tracking_for_po:
+            try:
+                cd_trk = get_corte_doblez_tracking_for_po(po_folio, partidas_po, id_interno=id_int_val)
+                tot_fab = float(cd_trk.get('total_fabricado', cd_trk.get('total_terminado_planta', 0.0)) or 0.0)
+                pct_fab = float(cd_trk.get('porcentaje_fabricacion', 0.0) or 0.0)
+                ofs_list = cd_trk.get('ofs_asociadas', [])
+                if ofs_list:
+                    ofs_str = f"{len(ofs_list)} OF(s)"
+            except Exception:
+                pass
+                
+        tot_req = float(tracking.get('total_requerido', 0.0) or 0.0)
+        tot_ent = float(tracking.get('total_entarimado', 0.0) or 0.0)
+        tot_rem = float(tracking.get('total_remisionado', 0.0) or 0.0)
+        tot_pend = max(0.0, tot_req - tot_rem)
+        pct_cumpl = round((tot_rem / tot_req * 100.0) if tot_req > 0 else 0.0, 1)
+        
+        # Estatus 360 enriquecido
+        if tot_rem >= tot_req and tot_req > 0:
+            st_360 = "🟢 Remisionada Total (100%)"
+        elif tot_rem > 0:
+            st_360 = f"🔵 Parcial Enviada ({pct_cumpl:.1f}%)"
+        elif tot_fab >= tot_req and tot_req > 0:
+            st_360 = "🟣 Lista para Envío (100% Fab)"
+        elif tot_fab > 0:
+            st_360 = f"🟠 En Fabricación ({pct_fab:.1f}%)"
+        else:
+            st_360 = "⚪ Registrada (En Espera)"
+            
         row_summary = dict(po_row)
         row_summary['articulos_count'] = len(partidas_po) if not partidas_po.empty else 0
-        row_summary['piezas_requeridas'] = tracking['total_requerido']
-        row_summary['piezas_remisionadas'] = tracking['total_remisionado']
-        row_summary['piezas_pendientes'] = tracking['total_pendiente']
-        row_summary['pct_cumplimiento'] = tracking['porcentaje_global']
-        row_summary['estatus_remision'] = tracking['estatus_global']
-        row_summary['remisiones_asociadas'] = ', '.join(tracking['remisiones_asociadas']) if tracking['remisiones_asociadas'] else 'Sin remisión'
+        row_summary['piezas_requeridas'] = tot_req
+        row_summary['piezas_fabricadas'] = tot_fab
+        row_summary['piezas_entarimadas'] = tot_ent
+        row_summary['piezas_remisionadas'] = tot_rem
+        row_summary['piezas_pendientes'] = tot_pend
+        row_summary['pct_cumplimiento'] = pct_cumpl
+        row_summary['pct_fabricacion'] = pct_fab
+        row_summary['estatus_remision'] = st_360
+        row_summary['ofs_resumen'] = ofs_str
+        row_summary['remisiones_asociadas'] = ', '.join(tracking['remisiones_asociadas']) if tracking.get('remisiones_asociadas') else 'Sin remisión'
         
         summary_list.append(row_summary)
         

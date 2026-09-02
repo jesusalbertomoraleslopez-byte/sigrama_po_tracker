@@ -553,60 +553,211 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
     elif "Importe Total" in sort_opt:
         df_f = df_f.sort_values(by=['total'], ascending=[False])
         
-    # Columnas de visualización ordenadas
-    disp_cols = [
-        'id_interno', 'po', 'proyecto', 'fecha_llegada',
-        'articulos_count', 'piezas_requeridas', 'piezas_fabricadas',
-        'piezas_entarimadas', 'piezas_remisionadas', 'piezas_pendientes',
-        'pct_cumplimiento', 'estatus_remision', 'total', 'comprador', 'solicitante'
-    ]
-    df_table = df_f[[c for c in disp_cols if c in df_f.columns]].copy()
-    
-    st.dataframe(
-        df_table.rename(columns={
-            'id_interno': 'ID Interno',
-            'po': 'PO / Folio',
-            'proyecto': 'Proyecto',
-            'fecha_llegada': 'Llegada PO',
-            'articulos_count': 'Partidas #',
-            'piezas_requeridas': '1. Requeridas',
-            'piezas_fabricadas': '2. Fabricadas',
-            'piezas_entarimadas': '3. Entarimadas',
-            'piezas_remisionadas': '4. Remisionadas',
-            'piezas_pendientes': '5. Pendientes',
-            'pct_cumplimiento': '% Avance',
-            'estatus_remision': 'Estatus Entrega',
-            'total': 'Importe Total ($)',
-            'comprador': 'Comprador',
-            'solicitante': 'Solicitante'
-        }),
-        column_config={
-            "ID Interno": st.column_config.TextColumn("ID Interno", width="small"),
-            "PO / Folio": st.column_config.TextColumn("PO / Folio", width="small"),
-            "Proyecto": st.column_config.TextColumn("Proyecto", width="medium"),
-            "1. Requeridas": st.column_config.NumberColumn("1. Requeridas", format="%d pzas"),
-            "2. Fabricadas": st.column_config.NumberColumn("2. Fabricadas", format="%d pzas"),
-            "3. Entarimadas": st.column_config.NumberColumn("3. Entarimadas", format="%d pzas"),
-            "4. Remisionadas": st.column_config.NumberColumn("4. Remisionadas", format="%d pzas"),
-            "5. Pendientes": st.column_config.NumberColumn("5. Pendientes", format="%d pzas"),
-            "% Avance": st.column_config.ProgressColumn("% Avance", min_value=0, max_value=100, format="%.1f%%"),
-            "Importe Total ($)": st.column_config.NumberColumn("Importe Total ($)", format="$%,.2f"),
-        },
-        use_container_width=True,
-        hide_index=True
-    )
-    
-    # Botón de Descarga Excel
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine='openpyxl') as w:
-        df_f.to_excel(w, sheet_name="Todas_Las_Ordenes", index=False)
-    st.download_button(
-        label="📥 Descargar Esta Tabla a Excel",
-        data=buf.getvalue(),
-        file_name=f"Tabla_General_Ordenes_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key=f"dl_btn_tabla_general_{datetime.date.today().strftime('%Y%m%d')}"
-    )
+    c_v1, c_v2 = st.columns([3, 1])
+    with c_v1:
+        modo_vista_general = st.radio(
+            "Visualización de la Tabla:",
+            ["📊 Vista con Barras de Avance por Área (Tipo Excel)", "📋 Vista de Tabla Estándar"],
+            horizontal=True,
+            key="radio_modo_vista_general"
+        )
+    with c_v2:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        # Botón de Descarga Excel
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine='openpyxl') as w:
+            df_f.to_excel(w, sheet_name="Todas_Las_Ordenes", index=False)
+        st.download_button(
+            label="📥 Descargar a Excel",
+            data=buf.getvalue(),
+            file_name=f"Tabla_General_Ordenes_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"dl_btn_tabla_general_{datetime.date.today().strftime('%Y%m%d')}"
+        )
+
+    if modo_vista_general == "📊 Vista con Barras de Avance por Área (Tipo Excel)":
+        import streamlit.components.v1 as components
+        
+        html_table = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta charset="utf-8">
+        <style>
+            body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 12px; background: transparent; }
+            .table-container { overflow-x: auto; max-height: 650px; border: 1px solid #CBD5E1; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            thead th { position: sticky; top: 0; background-color: #0F172A; color: #FFFFFF; z-index: 10; padding: 10px 8px; font-weight: 700; text-align: center; }
+            tbody tr { border-bottom: 1px solid #E2E8F0; background-color: #FFFFFF; }
+            tbody tr:hover { background-color: #F8FAFC !important; }
+            td { padding: 6px 8px; }
+            .badge { font-size: 10px; padding: 2px 7px; border-radius: 12px; font-weight: bold; display: inline-block; white-space: nowrap; }
+        </style>
+        </head>
+        <body>
+        <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th style="border-bottom:2px solid #EC2024; width:85px; text-align:left;">ID Interno</th>
+                    <th style="border-bottom:2px solid #EC2024; width:90px; text-align:left;">PO / Folio</th>
+                    <th style="border-bottom:2px solid #EC2024; min-width:90px; text-align:left;">Proyecto</th>
+                    <th style="border-bottom:2px solid #EC2024; width:85px; text-align:center;">Llegada</th>
+                    <th style="border-bottom:2px solid #EC2024; width:55px; text-align:center;">Part. #</th>
+                    <th style="border-bottom:2px solid #EC2024; text-align:right; width:80px; background-color:#1E293B;">1. Req. (PO)</th>
+                    <th style="border-bottom:2px solid #3B82F6; min-width:115px; background-color:#1E3A8A;">🔵 2. Fabricadas</th>
+                    <th style="border-bottom:2px solid #F59E0B; min-width:115px; background-color:#78350F;">📦 3. Entarimadas</th>
+                    <th style="border-bottom:2px solid #10B981; min-width:115px; background-color:#064E3B;">🟢 4. Remisionadas</th>
+                    <th style="border-bottom:2px solid #EF4444; min-width:110px; background-color:#7C2D12;">⏳ 5. Pendientes</th>
+                    <th style="border-bottom:2px solid #EC2024; min-width:125px;">Estatus Entrega</th>
+                    <th style="border-bottom:2px solid #EC2024; text-align:right; min-width:95px;">Total ($)</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+        
+        for _, r_bar in df_f.iterrows():
+            id_i = str(r_bar.get('id_interno', '')).strip()
+            po_f = str(r_bar.get('po', '')).strip()
+            proy = str(r_bar.get('proyecto', '')).strip()
+            f_lleg = str(r_bar.get('fecha_llegada', '')).strip()
+            c_arts = int(r_bar.get('articulos_count', 0) or 0)
+            
+            c_req = float(r_bar.get('piezas_requeridas', 0) or 0)
+            base_div = c_req if c_req > 0 else 1.0
+            
+            c_fab = float(r_bar.get('piezas_fabricadas', 0) or 0)
+            c_ent = float(r_bar.get('piezas_entarimadas', 0) or 0)
+            c_rem = float(r_bar.get('piezas_remisionadas', 0) or 0)
+            c_pen = float(r_bar.get('piezas_pendientes', max(0.0, c_req - c_rem)) or 0)
+            
+            pct_f = min(100.0, max(0.0, (c_fab / base_div * 100.0)))
+            pct_e = min(100.0, max(0.0, (c_ent / base_div * 100.0)))
+            pct_r = min(100.0, max(0.0, (c_rem / base_div * 100.0)))
+            pct_p = min(100.0, max(0.0, (c_pen / base_div * 100.0)))
+            
+            tot_val = float(r_bar.get('total', 0) or 0)
+            
+            st_txt = str(r_bar.get('estatus_remision', '⚪ Registrada'))
+            if "Total" in st_txt or "100%" in st_txt:
+                b_bg, b_fg = "#DCFCE7", "#15803D"
+            elif "Parcial" in st_txt:
+                b_bg, b_fg = "#DBEAFE", "#1D4ED8"
+            elif "Lista" in st_txt:
+                b_bg, b_fg = "#F3E8FF", "#6B21A8"
+            elif "Fabricación" in st_txt:
+                b_bg, b_fg = "#FEF3C7", "#B45309"
+            else:
+                b_bg, b_fg = "#F1F5F9", "#64748B"
+                
+            html_table += f"""
+            <tr>
+                <td style="font-weight:700; color:#0F172A;">{id_i}</td>
+                <td style="font-weight:700; color:#EC2024;">{po_f}</td>
+                <td style="font-weight:600; color:#334155;">{proy}</td>
+                <td style="text-align:center; color:#64748B; font-size:11px;">{f_lleg}</td>
+                <td style="text-align:center; color:#475569; font-weight:600;">{c_arts}</td>
+                <td style="text-align:right; font-weight:800; color:#0F172A; background-color:#F8FAFC;">{c_req:,.0f}</td>
+                
+                <!-- BARRA FABRICADAS (AZUL) -->
+                <td style="background:linear-gradient(90deg, rgba(59,130,246,0.38) {pct_f:.1f}%, transparent {pct_f:.1f}%); border-left:1px solid #E2E8F0; border-right:1px solid #E2E8F0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <b style="color:#1D4ED8; font-size:12px;">{c_fab:,.0f}</b>
+                        <span style="font-size:10.5px; color:#2563EB; font-weight:bold;">{pct_f:.1f}%</span>
+                    </div>
+                </td>
+                
+                <!-- BARRA ENTARIMADAS (ÁMBAR) -->
+                <td style="background:linear-gradient(90deg, rgba(245,158,11,0.38) {pct_e:.1f}%, transparent {pct_e:.1f}%); border-right:1px solid #E2E8F0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <b style="color:#B45309; font-size:12px;">{c_ent:,.0f}</b>
+                        <span style="font-size:10.5px; color:#D97706; font-weight:bold;">{pct_e:.1f}%</span>
+                    </div>
+                </td>
+                
+                <!-- BARRA REMISIONADAS (VERDE) -->
+                <td style="background:linear-gradient(90deg, rgba(16,185,129,0.40) {pct_r:.1f}%, transparent {pct_r:.1f}%); border-right:1px solid #E2E8F0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <b style="color:#15803D; font-size:12px;">{c_rem:,.0f}</b>
+                        <span style="font-size:10.5px; color:#16A34A; font-weight:bold;">{pct_r:.1f}%</span>
+                    </div>
+                </td>
+                
+                <!-- BARRA PENDIENTES (ROJO) -->
+                <td style="background:linear-gradient(90deg, rgba(239,68,68,0.22) {pct_p:.1f}%, transparent {pct_p:.1f}%); border-right:1px solid #E2E8F0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <b style="color:#B91C1C; font-size:12px;">{c_pen:,.0f}</b>
+                        <span style="font-size:10.5px; color:#DC2626; font-weight:bold;">{pct_p:.1f}%</span>
+                    </div>
+                </td>
+                
+                <!-- ESTATUS PILL -->
+                <td style="text-align:center;">
+                    <span class="badge" style="background-color:{b_bg}; color:{b_fg};">
+                        {st_txt}
+                    </span>
+                </td>
+                
+                <!-- TOTAL $ -->
+                <td style="text-align:right; font-weight:600; color:#0F172A;">
+                    ${tot_val:,.2f}
+                </td>
+            </tr>
+            """
+            
+        html_table += """
+            </tbody>
+        </table>
+        </div>
+        </body>
+        </html>
+        """
+        calc_h = min(850, max(300, 95 + len(df_f) * 39))
+        components.html(html_table, height=calc_h, scrolling=True)
+
+    else:
+        # Columnas de visualización ordenadas para tabla estándar
+        disp_cols = [
+            'id_interno', 'po', 'proyecto', 'fecha_llegada',
+            'articulos_count', 'piezas_requeridas', 'piezas_fabricadas',
+            'piezas_entarimadas', 'piezas_remisionadas', 'piezas_pendientes',
+            'pct_cumplimiento', 'estatus_remision', 'total', 'comprador', 'solicitante'
+        ]
+        df_table = df_f[[c for c in disp_cols if c in df_f.columns]].copy()
+        
+        st.dataframe(
+            df_table.rename(columns={
+                'id_interno': 'ID Interno',
+                'po': 'PO / Folio',
+                'proyecto': 'Proyecto',
+                'fecha_llegada': 'Llegada PO',
+                'articulos_count': 'Partidas #',
+                'piezas_requeridas': '1. Requeridas',
+                'piezas_fabricadas': '2. Fabricadas',
+                'piezas_entarimadas': '3. Entarimadas',
+                'piezas_remisionadas': '4. Remisionadas',
+                'piezas_pendientes': '5. Pendientes',
+                'pct_cumplimiento': '% Avance',
+                'estatus_remision': 'Estatus Entrega',
+                'total': 'Importe Total ($)',
+                'comprador': 'Comprador',
+                'solicitante': 'Solicitante'
+            }),
+            column_config={
+                "ID Interno": st.column_config.TextColumn("ID Interno", width="small"),
+                "PO / Folio": st.column_config.TextColumn("PO / Folio", width="small"),
+                "Proyecto": st.column_config.TextColumn("Proyecto", width="medium"),
+                "1. Requeridas": st.column_config.NumberColumn("1. Requeridas", format="%d pzas"),
+                "2. Fabricadas": st.column_config.NumberColumn("2. Fabricadas", format="%d pzas"),
+                "3. Entarimadas": st.column_config.NumberColumn("3. Entarimadas", format="%d pzas"),
+                "4. Remisionadas": st.column_config.NumberColumn("4. Remisionadas", format="%d pzas"),
+                "5. Pendientes": st.column_config.NumberColumn("5. Pendientes", format="%d pzas"),
+                "% Avance": st.column_config.ProgressColumn("% Avance", min_value=0, max_value=100, format="%.1f%%"),
+                "Importe Total ($)": st.column_config.NumberColumn("Importe Total ($)", format="$%,.2f"),
+            },
+            use_container_width=True,
+            hide_index=True
+        )
 
 
 # ==============================================================================

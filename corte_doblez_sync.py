@@ -56,9 +56,12 @@ def load_corte_doblez_databases():
         print(f'Error loading Corte y Doblez DB: {e}')
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno=""):
+def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
     """Calcula el avance de manufactura en planta (Corte, Doblez, Liberado) para una PO."""
-    df_ord, df_pie, df_ava, df_tar, df_nid = load_corte_doblez_databases()
+    if dbs is not None:
+        df_ord, df_pie, df_ava, df_tar, df_nid = dbs
+    else:
+        df_ord, df_pie, df_ava, df_tar, df_nid = load_corte_doblez_databases()
     
     po_str = str(po_folio).strip()
     po_norm = normalize_po(po_str)

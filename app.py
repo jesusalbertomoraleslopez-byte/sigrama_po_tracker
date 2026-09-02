@@ -423,26 +423,40 @@ else:
     """, unsafe_allow_html=True)
 
 
-def render_tabla_todas_las_ordenes(df_pos, df_part):
+@st.cache_data(ttl=120)
+def get_cached_global_pos_summary():
+    """Cachea el cálculo de la matriz de todas las órdenes por 2 minutos para carga instantánea."""
+    df_p = get_all_pos()
+    df_pt = get_all_partidas()
+    return get_global_pos_tracking_summary(df_p, df_pt)
+
+def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
     """Renderiza la tabla maestra con todas las órdenes y las 5 métricas de la cadena de suministro."""
-    st.markdown("""
-    <div style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); border-radius: 10px; padding: 20px 24px; margin-bottom: 20px; border-left: 6px solid #EC2024; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-        <h2 style="color: #FFFFFF; font-family: 'Montserrat', sans-serif; font-size: 22px; font-weight: 800; margin: 0 0 6px 0; text-transform: uppercase; letter-spacing: 0.5px;">
-            📋 Tabla General de Todas las Órdenes de Compra
-        </h2>
-        <p style="color: #94A3B8; font-size: 13.5px; margin: 0; font-family: 'Questrial', sans-serif;">
-            Visión global consolidada: <b>Requerimientos</b>, avance en <b>Taller Planta</b> (Corte y Doblez), <b>Almacén PT</b> y <b>Remisiones</b> entregadas.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    col_head1, col_head2 = st.columns([3.4, 1.3])
+    with col_head1:
+        st.markdown("""
+        <div style="background: #FFFFFF; border: 1px solid #CBD5E1; border-left: 6px solid #EC2024; border-radius: 10px; padding: 18px 24px; margin-bottom: 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+            <h2 style="color: #0F172A !important; font-family: 'Montserrat', sans-serif; font-size: 22px; font-weight: 800; margin: 0 0 4px 0; letter-spacing: 0.5px;">
+                📋 Tabla General de Todas las Órdenes de Compra
+            </h2>
+            <p style="color: #475569 !important; font-size: 13.5px; margin: 0; font-family: 'Questrial', sans-serif;">
+                Visión consolidada 360°: <b style="color:#0F172A;">1. Requerimientos</b>, avance en <b style="color:#2563EB;">2. Taller Planta</b> (Corte y Doblez), <b style="color:#D97706;">3. Almacén PT</b> y <b style="color:#059669;">4. Remisiones</b> entregadas.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_head2:
+        st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Sincronizar en Vivo", type="primary", use_container_width=True, key="btn_sync_tabla_general", help="Actualiza avances de taller, tarimas y remisiones en tiempo real"):
+            with st.spinner("Sincronizando con Planta y Remisiones..."):
+                from remisiones_sync import sync_live_remisiones_from_github
+                sync_live_remisiones_from_github()
+                st.cache_data.clear()
+            st.toast("✅ ¡Datos de Planta y Remisiones sincronizados con éxito!")
+            st.rerun()
     
-    if df_pos.empty:
-        st.info("💡 No hay POs registradas. Cárgalas en **'📬 Bandeja de Entrada OCR'**.")
-        return
-        
-    df_summary = get_global_pos_tracking_summary(df_pos, df_part)
+    df_summary = get_cached_global_pos_summary()
     if df_summary.empty:
-        st.info("No se encontraron órdenes para mostrar.")
+        st.info("💡 No hay POs registradas. Cárgalas en **'📬 Bandeja de Entrada OCR'**.")
         return
 
     # Tarjetas de Totales Globales (Las 5 Métricas Clave de la Cadena de Suministro)

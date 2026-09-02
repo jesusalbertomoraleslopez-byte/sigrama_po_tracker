@@ -90,9 +90,12 @@ def sku_matches(target_sku, candidate_piece):
         return True
     return False
 
-def get_tracking_for_po(po_folio, df_partidas, id_interno=""):
+def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
     """Calcula el estatus de remisión/envío para cada partida y global de una PO dada."""
-    df_rem, df_det, df_tar = load_remisiones_databases()
+    if dbs is not None:
+        df_rem, df_det, df_tar = dbs
+    else:
+        df_rem, df_det, df_tar = load_remisiones_databases()
     
     po_str = str(po_folio).strip()
     po_norm = normalize_po(po_str)
@@ -258,10 +261,16 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
     if df_all_pos.empty:
         return pd.DataFrame()
         
+    # Pre-cargar bases de datos una sola vez para máxima velocidad (evita leer archivos 75 veces)
+    dbs_rem = load_remisiones_databases()
+    
+    dbs_cd = None
+    get_corte_doblez_tracking_for_po = None
     try:
-        from corte_doblez_sync import get_corte_doblez_tracking_for_po
+        from corte_doblez_sync import get_corte_doblez_tracking_for_po, load_corte_doblez_databases
+        dbs_cd = load_corte_doblez_databases()
     except Exception:
-        get_corte_doblez_tracking_for_po = None
+        pass
         
     for _, po_row in df_all_pos.iterrows():
         po_folio = str(po_row.get('po', '')).strip()
@@ -269,15 +278,15 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
         partidas_po = df_all_partidas[df_all_partidas['po'].astype(str).str.strip() == po_folio] if not df_all_partidas.empty else pd.DataFrame()
         
         # 1. Seguimiento en Remisiones y Almacén PT
-        tracking = get_tracking_for_po(po_folio, partidas_po, id_interno=id_int_val)
+        tracking = get_tracking_for_po(po_folio, partidas_po, id_interno=id_int_val, dbs=dbs_rem)
         
         # 2. Seguimiento en Taller Planta (Corte y Doblez)
         tot_fab = 0.0
         pct_fab = 0.0
         ofs_str = "Sin OF"
-        if get_corte_doblez_tracking_for_po:
+        if get_corte_doblez_tracking_for_po and dbs_cd is not None:
             try:
-                cd_trk = get_corte_doblez_tracking_for_po(po_folio, partidas_po, id_interno=id_int_val)
+                cd_trk = get_corte_doblez_tracking_for_po(po_folio, partidas_po, id_interno=id_int_val, dbs=dbs_cd)
                 tot_fab = float(cd_trk.get('total_fabricado', cd_trk.get('total_terminado_planta', 0.0)) or 0.0)
                 pct_fab = float(cd_trk.get('porcentaje_fabricacion', 0.0) or 0.0)
                 ofs_list = cd_trk.get('ofs_asociadas', [])

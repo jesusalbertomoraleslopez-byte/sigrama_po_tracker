@@ -56,8 +56,13 @@ def load_corte_doblez_databases():
         print(f'Error loading Corte y Doblez DB: {e}')
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
-    """Calcula el avance de manufactura en planta (Corte, Doblez, Liberado) para una PO."""
+def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None, skip_sku_fallback=False, rem_dbs=None):
+    """Calcula el avance de manufactura en planta (Corte, Doblez, Liberado) para una PO.
+    
+    Args:
+        skip_sku_fallback: Si True, omite el fallback lento de búsqueda por SKU (usar en resúmenes globales).
+        rem_dbs: Bases de datos de remisiones pre-cargadas (para evitar releer archivos en el fallback).
+    """
     if dbs is not None:
         df_ord, df_pie, df_ava, df_tar, df_nid = dbs
     else:
@@ -92,10 +97,11 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
             if m_by_po or m_by_id:
                 matched_ofs.add(of_num)
                 
-    # 1.1 Si no hubo coincidencia por PO, rastreo por SKU SOLO si la PO tiene remisiones despachadas
-    if not matched_ofs and not df_partidas.empty and not df_pie.empty:
+    # 1.1 Si no hubo coincidencia por PO, rastreo por SKU (solo cuando no viene de resumen global)
+    # Este fallback es caro (~0.5s/PO) – solo activarlo en llamadas individuales desde Ficha 360°
+    if not matched_ofs and not df_partidas.empty and not df_pie.empty and not skip_sku_fallback:
         from remisiones_sync import get_tracking_for_po as get_rem_tracking
-        rem_trk_chk = get_rem_tracking(po_str, df_partidas, id_interno=id_interno)
+        rem_trk_chk = get_rem_tracking(po_str, df_partidas, id_interno=id_interno, dbs=rem_dbs)
         has_remisiones = float(rem_trk_chk.get('total_remisionado', 0) or 0) > 0 or len(rem_trk_chk.get('remisiones_asociadas', [])) > 0
         
         # Solo vincular OFs por SKU si la PO ya fue enviada o si el proyecto coincide
@@ -162,7 +168,7 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
             
     # Consulta cruzada con Remisiones para inferencia causal inteligente
     from remisiones_sync import get_tracking_for_po as get_rem_tracking
-    rem_trk_info = get_rem_tracking(po_str, df_partidas, id_interno=id_interno)
+    rem_trk_info = get_rem_tracking(po_str, df_partidas, id_interno=id_interno, dbs=rem_dbs)
     df_partidas_rem = rem_trk_info.get('df_partidas', pd.DataFrame())
     remisiones_asoc = rem_trk_info.get('remisiones_asociadas', [])
     
@@ -183,6 +189,18 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
     total_doblado = 0.0
     total_terminado = 0.0
     
+    # Pre-normalizar columnas para matching vectorizado (evitar O(partidas × filas) con apply)
+    if not df_pie_po.empty and 'no_pieza' in df_pie_po.columns:
+        df_pie_po = df_pie_po.copy()
+        df_pie_po['_norm_pieza'] = df_pie_po['no_pieza'].apply(normalize_sku)
+    if not df_ava_po.empty and 'no_pieza' in df_ava_po.columns:
+        df_ava_po = df_ava_po.copy()
+        df_ava_po['_norm_pieza'] = df_ava_po['no_pieza'].apply(normalize_sku)
+        df_ava_po['_area_lc'] = df_ava_po['area'].astype(str).str.lower()
+    if not df_tar_po.empty and 'no_pieza' in df_tar_po.columns:
+        df_tar_po = df_tar_po.copy()
+        df_tar_po['_norm_pieza'] = df_tar_po['no_pieza'].apply(normalize_sku)
+    
     if not df_partidas.empty:
         for _, part in df_partidas.iterrows():
             sku = str(part.get('clave_sku', '')).strip().upper()
@@ -190,28 +208,35 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
             cant_req = float(part.get('cantidad_requerida', 0) or 0)
             total_req_cd += cant_req
             
+            # Normalizar SKUs para matching rápido
+            sku_norm = normalize_sku(sku)
+            sku_cli_norm = normalize_sku(sku_cli)
+            sku_clean1 = normalize_sku(clean_pronest_piece_name(sku))
+            sku_clean2 = normalize_sku(clean_pronest_piece_name(sku_cli))
+            valid_norms = {n for n in [sku_norm, sku_cli_norm, sku_clean1, sku_clean2] if n}
+            
             c_prog = 0.0
             c_corte = 0.0
             c_doblez = 0.0
             c_rebabeo = 0.0
             c_liberado = 0.0
             
-            # Buscar en piezas programadas con matching flexible de SKU
-            if not df_pie_po.empty:
-                m_pie = df_pie_po[df_pie_po['no_pieza'].apply(lambda p: sku_matches(sku, p) or (sku_cli and sku_matches(sku_cli, p)))]
+            # Buscar en piezas programadas (vectorizado)
+            if not df_pie_po.empty and '_norm_pieza' in df_pie_po.columns:
+                m_pie = df_pie_po[df_pie_po['_norm_pieza'].isin(valid_norms)]
                 c_prog = float(m_pie['cantidad'].sum()) if not m_pie.empty else 0.0
                 
-            # Buscar en avances por área
-            if not df_ava_po.empty:
-                m_ava = df_ava_po[df_ava_po['no_pieza'].apply(lambda p: sku_matches(sku, p) or (sku_cli and sku_matches(sku_cli, p)))]
+            # Buscar en avances por área (vectorizado)
+            if not df_ava_po.empty and '_norm_pieza' in df_ava_po.columns:
+                m_ava = df_ava_po[df_ava_po['_norm_pieza'].isin(valid_norms)]
                 if not m_ava.empty:
-                    c_corte = float(m_ava[m_ava['area'].astype(str).str.lower() == 'corte']['cantidad'].sum())
-                    c_doblez = float(m_ava[m_ava['area'].astype(str).str.lower() == 'doblez']['cantidad'].sum())
-                    c_rebabeo = float(m_ava[m_ava['area'].astype(str).str.lower() == 'rebabeo']['cantidad'].sum())
-                    c_liberado = float(m_ava[m_ava['area'].astype(str).str.lower().isin(['liberado', 'empaque'])]['cantidad'].sum())
+                    c_corte = float(m_ava[m_ava['_area_lc'] == 'corte']['cantidad'].sum())
+                    c_doblez = float(m_ava[m_ava['_area_lc'] == 'doblez']['cantidad'].sum())
+                    c_rebabeo = float(m_ava[m_ava['_area_lc'] == 'rebabeo']['cantidad'].sum())
+                    c_liberado = float(m_ava[m_ava['_area_lc'].isin(['liberado', 'empaque'])]['cantidad'].sum())
                     
-            if c_liberado == 0.0 and not df_tar_po.empty:
-                m_tar = df_tar_po[df_tar_po['no_pieza'].apply(lambda p: sku_matches(sku, p) or (sku_cli and sku_matches(sku_cli, p)))]
+            if c_liberado == 0.0 and not df_tar_po.empty and '_norm_pieza' in df_tar_po.columns:
+                m_tar = df_tar_po[df_tar_po['_norm_pieza'].isin(valid_norms)]
                 c_liberado = float(m_tar['cantidad'].sum()) if not m_tar.empty else 0.0
                 
             # REGLA DE INTELIGENCIA OPERATIVA: Si ya está remisionada, estuvo fabricada al 100%

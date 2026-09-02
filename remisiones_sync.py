@@ -286,7 +286,11 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
         ofs_str = "Sin OF"
         if get_corte_doblez_tracking_for_po and dbs_cd is not None:
             try:
-                cd_trk = get_corte_doblez_tracking_for_po(po_folio, partidas_po, id_interno=id_int_val, dbs=dbs_cd)
+                # skip_sku_fallback=True evita la búsqueda cara por SKU (solo necesaria en Ficha 360°)
+                cd_trk = get_corte_doblez_tracking_for_po(
+                    po_folio, partidas_po, id_interno=id_int_val,
+                    dbs=dbs_cd, skip_sku_fallback=True, rem_dbs=dbs_rem
+                )
                 tot_fab = float(cd_trk.get('total_fabricado', cd_trk.get('total_terminado_planta', 0.0)) or 0.0)
                 pct_fab = float(cd_trk.get('porcentaje_fabricacion', 0.0) or 0.0)
                 ofs_list = cd_trk.get('ofs_asociadas', [])

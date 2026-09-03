@@ -562,17 +562,18 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             key="radio_modo_vista_general"
         )
     with c_v2:
-        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-        # Botón de Descarga Excel
-        buf = io.BytesIO()
-        with pd.ExcelWriter(buf, engine='openpyxl') as w:
-            df_f.to_excel(w, sheet_name="Todas_Las_Ordenes", index=False)
+        # Botón de Descarga Excel Formateado Profesional (.xlsx)
+        from excel_export_styler import build_executive_excel
+        df_partidas_all = get_all_partidas()
+        excel_bytes = build_executive_excel(df_f, df_partidas=df_partidas_all)
+        
         st.download_button(
-            label="📥 Descargar a Excel",
-            data=buf.getvalue(),
-            file_name=f"Tabla_General_Ordenes_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
+            label="📥 Descargar a Excel (.xlsx)",
+            data=excel_bytes,
+            file_name=f"Matriz_General_Ordenes_SIGRAMA_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key=f"dl_btn_tabla_general_{datetime.date.today().strftime('%Y%m%d')}"
+            key=f"dl_btn_tabla_general_{datetime.date.today().strftime('%Y%m%d')}",
+            help="Descargar archivo .xlsx formateado con estilos corporativos SIGRAMA, KPIs, barras de datos de Excel en celdas y desglose de partidas."
         )
 
     if modo_vista_general == "📊 Vista con Barras de Avance por Área (Tipo Excel)":

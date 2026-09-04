@@ -639,8 +639,8 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             
             tot_val = float(r_bar.get('total', 0) or 0)
             
-            st_txt = str(r_bar.get('estatus_remision', '⚪ Registrada'))
-            if "Cancelada" in st_txt:
+            is_canc = ("cancelad" in st_txt.lower())
+            if is_canc:
                 b_bg, b_fg = "#FEE2E2", "#B91C1C"
             elif "Total" in st_txt or "100%" in st_txt:
                 b_bg, b_fg = "#DCFCE7", "#15803D"
@@ -653,8 +653,28 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             else:
                 b_bg, b_fg = "#F1F5F9", "#64748B"
                 
+            tr_bg_style = ' style="background-color:#FFF5F5;"' if is_canc else ''
+            
+            if is_canc:
+                td_pen_html = """
+                <!-- CANCELADO PENDIENTES -->
+                <td style="background-color:#FEF2F2; text-align:center; border-right:1px solid #E2E8F0;">
+                    <span style="color:#B91C1C; font-size:11px; font-weight:800; text-transform:uppercase;">0 (Cancelado)</span>
+                </td>
+                """
+            else:
+                td_pen_html = f"""
+                <!-- BARRA PENDIENTES (ROJO) -->
+                <td style="background:linear-gradient(90deg, rgba(239,68,68,0.22) {pct_p:.1f}%, transparent {pct_p:.1f}%); border-right:1px solid #E2E8F0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <b style="color:#B91C1C; font-size:12px;">{c_pen:,.0f}</b>
+                        <span style="font-size:10.5px; color:#DC2626; font-weight:bold;">{pct_p:.1f}%</span>
+                    </div>
+                </td>
+                """
+                
             html_table += f"""
-            <tr>
+            <tr{tr_bg_style}>
                 <td style="font-weight:700; color:#0F172A;">{id_i}</td>
                 <td style="font-weight:700; color:#EC2024;">{po_f}</td>
                 <td style="font-weight:600; color:#334155;">{proy}</td>
@@ -686,17 +706,11 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
                     </div>
                 </td>
                 
-                <!-- BARRA PENDIENTES (ROJO) -->
-                <td style="background:linear-gradient(90deg, rgba(239,68,68,0.22) {pct_p:.1f}%, transparent {pct_p:.1f}%); border-right:1px solid #E2E8F0;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <b style="color:#B91C1C; font-size:12px;">{c_pen:,.0f}</b>
-                        <span style="font-size:10.5px; color:#DC2626; font-weight:bold;">{pct_p:.1f}%</span>
-                    </div>
-                </td>
+                {td_pen_html}
                 
                 <!-- ESTATUS PILL -->
                 <td style="text-align:center;">
-                    <span class="badge" style="background-color:{b_bg}; color:{b_fg};">
+                    <span class="badge" style="background-color:{b_bg}; color:{b_fg}; font-weight:800; border:1px solid #FECACA;">
                         {st_txt}
                     </span>
                 </td>

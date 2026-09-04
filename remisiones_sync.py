@@ -308,7 +308,7 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
         # Estatus 360 enriquecido
         est_gen = str(po_row.get('estatus_general', '')).strip()
         if est_gen.lower() in ('cancelada', 'cancelado'):
-            st_360 = "🚫 Cancelada"
+            st_360 = "🚫 Cancelado"
             tot_pend = 0.0
         elif tot_rem >= tot_req and tot_req > 0:
             st_360 = "🟢 Remisionada Total (100%)"

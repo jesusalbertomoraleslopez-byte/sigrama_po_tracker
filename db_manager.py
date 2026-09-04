@@ -832,8 +832,12 @@ def get_all_pos():
 
 def get_po_by_folio(po_folio):
     conn = get_connection()
-    df_cab = pd.read_sql_query('SELECT * FROM po_cabecera WHERE po = ?', conn, params=[str(po_folio)])
-    df_part = pd.read_sql_query('SELECT * FROM po_partidas WHERE po = ? ORDER BY item_no ASC', conn, params=[str(po_folio)])
+    po_str = str(po_folio).strip()
+    po_nodash = po_str.replace('-', '')
+    po_dash = f"{po_nodash[:4]}-{po_nodash[4:]}" if len(po_nodash) == 8 else po_str
+    
+    df_cab = pd.read_sql_query('SELECT * FROM po_cabecera WHERE po = ? OR po = ? OR po = ?', conn, params=[po_str, po_nodash, po_dash])
+    df_part = pd.read_sql_query('SELECT * FROM po_partidas WHERE po = ? OR po = ? OR po = ? ORDER BY item_no ASC', conn, params=[po_str, po_nodash, po_dash])
     conn.close()
     
     if not df_part.empty:

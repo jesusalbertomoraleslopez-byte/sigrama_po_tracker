@@ -110,6 +110,7 @@ def _ensure_partidas_skus(po, df_partidas):
     """
     po_str = str(po).strip()
     po_nodash = po_str.replace('-', '')
+    po_dash = f"{po_nodash[:4]}-{po_nodash[4:]}" if len(po_nodash) == 8 else po_str
     
     conn = db_manager.get_connection()
     df_db_parts = pd.read_sql_query(
@@ -117,9 +118,9 @@ def _ensure_partidas_skus(po, df_partidas):
                   cantidad_requerida, unidad, precio_unitario, precio_total, 
                   fecha_entrega, parcialidad, observaciones_partida 
            FROM po_partidas 
-           WHERE po = ? OR po = ? 
+           WHERE po = ? OR po = ? OR po = ?
            ORDER BY item_no ASC""",
-        conn, params=[po_str, po_nodash]
+        conn, params=[po_str, po_nodash, po_dash]
     )
     conn.close()
 
@@ -362,9 +363,11 @@ def generate_apertura_piezas_excel(po, id_interno, cab_info, df_partidas):
 def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None, msg_name=None, pdf_bytes=None, pdf_name=None, excel_bytes=None):
     """
     Genera el correo formal de Apertura de Proyecto Interno en formato RFC 822 (.eml)
-    listo para abrirse en Outlook o Thunderbird, con el encabezado idéntico a la Ficha de Trazabilidad 360°,
-    codificación base64 libre de errores de salto de línea Quoted-Printable (sin '=O' o '=ER'),
-    y los archivos adjuntos embebidos: Lista de Piezas (.xlsx), Correo Original (.msg) y PDF de la PO.
+    100% COMPATIBLE CON MICROSOFT OUTLOOK (Word Engine):
+    - Usa tablas HTML puras con bgcolor="#18181B" para que Outlook jamás deje el fondo en blanco.
+    - Encabezado con banner idéntico a la Ficha de Trazabilidad 360° (segunda imagen).
+    - Codificación Content-Transfer-Encoding en base64 para evitar saltos suaves de línea con '='.
+    - Adjuntos embebidos: Lista de Piezas (.xlsx), Correo Original (.msg) y PDF de la PO.
     """
     df_partidas = _ensure_partidas_skus(po, df_partidas)
 
@@ -417,8 +420,8 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
 
     # Filas de la tabla de partidas
     filas_html = ""
-    for idx, (_, r) in enumerate(df_partidas.head(40).iterrows(), start=1):
-        bg = "#FFFFFF" if idx % 2 != 0 else "#F8FAFC"
+    for idx, (_, r) in enumerate(df_partidas.head(150).iterrows(), start=1):
+        bg_col = "#FFFFFF" if idx % 2 != 0 else "#F8FAFC"
         i_no = _extract_val(r, ['item_no'], str(idx))
         sk_c = _extract_val(r, ['sku_cliente', 'SKU Cliente', 'sku_cli', 'SKU_Cliente', 'SKU'])
         sk_p = _extract_val(r, ['clave_sku', 'SKU Planta', 'clave', 'SKU_Planta', 'Clave SKU'])
@@ -428,23 +431,23 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
         fe   = _extract_val(r, ['fecha_entrega', 'Fecha_Entrega', 'Fecha Entrega'])
 
         filas_html += f"""
-        <tr style="background-color: {bg}; border-bottom: 1px solid #E2E8F0;">
-            <td style="padding: 7px 8px; text-align: center; font-weight: bold; color: #475569;">{i_no}</td>
-            <td style="padding: 7px 8px; font-weight: 700; color: #0F172A; white-space: nowrap;">{sk_c}</td>
-            <td style="padding: 7px 8px; color: #2563EB; font-weight: 700; white-space: nowrap;">{sk_p}</td>
-            <td style="padding: 7px 8px; color: #334155; text-align: left;">{desc}</td>
-            <td style="padding: 7px 8px; text-align: right; font-weight: 800; color: #0F172A;">{cant:,.0f}</td>
-            <td style="padding: 7px 8px; text-align: center; color: #64748B;">{unid}</td>
-            <td style="padding: 7px 8px; text-align: center; color: #059669; font-weight: 600;">{fe}</td>
+        <tr bgcolor="{bg_col}" style="background-color: {bg_col}; border-bottom: 1px solid #E2E8F0;">
+            <td align="center" style="padding: 8px 6px; font-family: Arial, sans-serif; font-size: 11.5px; font-weight: bold; color: #475569; border-bottom: 1px solid #E2E8F0;">{i_no}</td>
+            <td align="left" style="padding: 8px 8px; font-family: Arial, sans-serif; font-size: 12px; font-weight: bold; color: #0F172A; white-space: nowrap; border-bottom: 1px solid #E2E8F0;">{sk_c}</td>
+            <td align="left" style="padding: 8px 8px; font-family: Arial, sans-serif; font-size: 12px; font-weight: bold; color: #2563EB; white-space: nowrap; border-bottom: 1px solid #E2E8F0;">{sk_p}</td>
+            <td align="left" style="padding: 8px 8px; font-family: Arial, sans-serif; font-size: 11.5px; color: #334155; border-bottom: 1px solid #E2E8F0;">{desc}</td>
+            <td align="right" style="padding: 8px 8px; font-family: Arial, sans-serif; font-size: 12px; font-weight: bold; color: #0F172A; border-bottom: 1px solid #E2E8F0;">{cant:,.0f}</td>
+            <td align="center" style="padding: 8px 6px; font-family: Arial, sans-serif; font-size: 11.5px; color: #64748B; border-bottom: 1px solid #E2E8F0;">{unid}</td>
+            <td align="center" style="padding: 8px 8px; font-family: Arial, sans-serif; font-size: 11.5px; font-weight: bold; color: #059669; border-bottom: 1px solid #E2E8F0;">{fe}</td>
         </tr>
         """
 
     mas_filas_nota = ""
-    if len(df_partidas) > 40:
+    if len(df_partidas) > 150:
         mas_filas_nota = f"""
         <tr>
-            <td colspan="7" style="padding: 12px; text-align: center; background-color: #FEF3C7; color: #B45309; font-weight: bold; font-size: 11.5px;">
-                ⚠️ Mostrando 40 de {len(df_partidas)} partidas. Consulte la lista completa en el archivo Excel adjunto: Lista_Piezas_Despiece_{id_clean}_{po_clean}.xlsx
+            <td colspan="7" bgcolor="#FEF3C7" style="padding: 12px; text-align: center; background-color: #FEF3C7; color: #B45309; font-weight: bold; font-size: 11.5px; font-family: Arial, sans-serif;">
+                ⚠️ Mostrando 150 de {len(df_partidas)} partidas. Consulte la lista completa en el archivo Excel adjunto: Lista_Piezas_Despiece_{id_clean}_{po_clean}.xlsx
             </td>
         </tr>
         """
@@ -457,7 +460,7 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
         adjuntos_html.append(f"<li>📄 <b>Orden de Compra Oficial (PDF):</b> <code>{pdf_name}</code></li>")
     adjuntos_str = "".join(adjuntos_html)
 
-    # HTML Oficial con diseño Banner Oscuro idéntico a la segunda imagen
+    # HTML 100% COMPATIBLE CON OUTLOOK (Tablas anidadas con bgcolor en TD)
     html_content = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -465,111 +468,170 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Apertura Oficial de Proyecto Interno</title>
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #F1F5F9; margin: 0; padding: 20px;">
-<div style="max-width: 860px; margin: 0 auto; background-color: #FFFFFF; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.12); border: 1px solid #CBD5E1;">
+<body bgcolor="#F1F5F9" style="background-color: #F1F5F9; margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif;">
 
-    <!-- ── ENCABEZADO IDÉNTICO A LA FICHA 360° (IMAGEN 2) ────────────────────────── -->
-    <div style="background-color: #18181B; border-left: 8px solid #EC2024; padding: 22px 28px; box-shadow: 0 4px 10px rgba(0,0,0,0.25);">
-        <!-- Subtítulo institucional superior -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <span style="color: #EC2024; font-size: 11.5px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;">
-                INDUSTRIA SIGRAMA S.A. DE C.V. &nbsp;—&nbsp; APERTURA OFICIAL DE PROYECTO INTERNO
-            </span>
-        </div>
-
-        <!-- Fila Principal: Badge INT + ORDEN DE COMPRA + Estatus -->
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px;">
-            <tr>
-                <td style="vertical-align: middle;">
-                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                        <span style="background-color: #EC2024; color: #FFFFFF; font-size: 26px; font-weight: 900; padding: 6px 18px; border-radius: 8px; letter-spacing: 1px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.3); vertical-align: middle;">
-                            {id_clean}
-                        </span>
-                        <span style="font-size: 30px; font-weight: 900; color: #FFFFFF; letter-spacing: -0.5px; vertical-align: middle; margin-left: 10px;">
-                            ORDEN DE COMPRA: <span style="color: #EC2024;">{po_clean}</span>
-                        </span>
-                    </div>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#F1F5F9" style="background-color: #F1F5F9; padding: 25px 0;">
+  <tr>
+    <td align="center" style="padding: 0 10px;">
+      
+      <!-- CONTENEDOR PRINCIPAL (Ancho fijo compatible con Outlook) -->
+      <table width="820" cellpadding="0" cellspacing="0" border="0" bgcolor="#FFFFFF" style="width: 820px; max-width: 820px; background-color: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 10px; overflow: hidden;">
+        
+        <!-- ── BANNER OSCURO SUPERIOR IDÉNTICO A LA FICHA 360° (IMAGEN 2) ────────────────── -->
+        <tr>
+          <td bgcolor="#18181B" style="background-color: #18181B; border-left: 8px solid #EC2024; padding: 22px 28px;">
+            
+            <!-- Fila superior de membrete -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 8px;">
+              <tr>
+                <td align="left">
+                  <span style="color: #EC2024; font-size: 11.5px; font-weight: bold; letter-spacing: 1.5px; text-transform: uppercase; font-family: Arial, sans-serif;">
+                    INDUSTRIA SIGRAMA S.A. DE C.V. &nbsp;—&nbsp; APERTURA OFICIAL DE PROYECTO INTERNO
+                  </span>
                 </td>
-                <td style="text-align: right; vertical-align: middle;">
-                    <span style="background-color: {est_bg}; color: #FFFFFF; padding: 8px 18px; border-radius: 20px; font-weight: bold; font-size: 13.5px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.3); white-space: nowrap;">
-                        {est_badge}
-                    </span>
+              </tr>
+            </table>
+
+            <!-- Fila central: Badge Rojo + ORDEN DE COMPRA + Estatus -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 14px;">
+              <tr>
+                <td align="left" style="vertical-align: middle;">
+                  <table cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td bgcolor="#EC2024" style="background-color: #EC2024; border-radius: 6px; padding: 6px 16px; text-align: center;">
+                        <span style="color: #FFFFFF; font-size: 24px; font-weight: 900; letter-spacing: 1px; font-family: Arial, sans-serif; display: inline-block;">
+                          {id_clean}
+                        </span>
+                      </td>
+                      <td style="padding-left: 14px; vertical-align: middle;">
+                        <span style="color: #FFFFFF; font-size: 26px; font-weight: 900; letter-spacing: -0.5px; font-family: Arial, sans-serif;">
+                          ORDEN DE COMPRA: <span style="color: #EC2024;">{po_clean}</span>
+                        </span>
+                      </td>
+                    </tr>
+                  </table>
                 </td>
-            </tr>
-        </table>
+                <td align="right" style="vertical-align: middle;">
+                  <table cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td bgcolor="{est_bg}" style="background-color: {est_bg}; border-radius: 20px; padding: 7px 18px; text-align: center;">
+                        <span style="color: #FFFFFF; font-size: 13px; font-weight: bold; font-family: Arial, sans-serif; white-space: nowrap;">
+                          {est_badge}
+                        </span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
 
-        <!-- Fila Inferior: Subtítulo con iconos idéntico a la Ficha 360° -->
-        <div style="padding-top: 10px; border-top: 1px solid #334155; font-size: 14px; color: #E5E7EB; line-height: 1.6;">
-            <span style="margin-right: 14px;">🏗️ Proyecto: <b style="color: #FFFFFF; font-size: 15px;">{prj_clean}</b></span>
-            <span style="color: #64748B; margin-right: 14px;">|</span>
-            <span style="margin-right: 14px;">👤 Solicitante: <b style="color: #FFFFFF;">{sol_clean}</b></span>
-            <span style="color: #64748B; margin-right: 14px;">|</span>
-            <span>💼 Comprador: <b style="color: #FFFFFF;">{cmp_clean}</b></span>
-        </div>
-        <div style="margin-top: 6px; font-size: 12px; color: #94A3B8;">
-            <span style="margin-right: 12px;">📅 Llegada: <b style="color: #E2E8F0;">{f_lleg}</b></span>
-            <span style="color: #64748B; margin-right: 12px;">|</span>
-            <span style="margin-right: 12px;">🎯 Entrega Req: <b style="color: #F87171;">{f_sol}</b></span>
-            <span style="color: #64748B; margin-right: 12px;">|</span>
-            <span style="margin-right: 12px;">📦 Piezas: <b style="color: #FFFFFF;">{tot_pzas:,.0f} pzas</b></span>
-            <span style="color: #64748B; margin-right: 12px;">|</span>
-            <span>💰 Importe: <b style="color: #34D399;">${tot_imp:,.2f} MXN</b></span>
-        </div>
-    </div>
+            <!-- Fila inferior: Metadatos con iconos idéntico a la segunda imagen -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top: 1px solid #334155; padding-top: 10px;">
+              <tr>
+                <td style="padding-top: 10px; font-family: Arial, sans-serif; font-size: 13.5px; color: #E5E7EB; line-height: 1.5;">
+                  <span style="margin-right: 12px;">🏗️ Proyecto: <b style="color: #FFFFFF; font-size: 14.5px;">{prj_clean}</b></span>
+                  <span style="color: #64748B; margin-right: 12px;">|</span>
+                  <span style="margin-right: 12px;">👤 Solicitante: <b style="color: #FFFFFF;">{sol_clean}</b></span>
+                  <span style="color: #64748B; margin-right: 12px;">|</span>
+                  <span>💼 Comprador: <b style="color: #FFFFFF;">{cmp_clean}</b></span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding-top: 6px; font-family: Arial, sans-serif; font-size: 12px; color: #94A3B8;">
+                  <span style="margin-right: 12px;">📅 Llegada PO: <b style="color: #E2E8F0;">{f_lleg}</b></span>
+                  <span style="color: #64748B; margin-right: 12px;">|</span>
+                  <span style="margin-right: 12px;">🎯 Entrega Solicitada: <b style="color: #F87171;">{f_sol}</b></span>
+                  <span style="color: #64748B; margin-right: 12px;">|</span>
+                  <span style="margin-right: 12px;">📦 Total Piezas: <b style="color: #FFFFFF;">{tot_pzas:,.0f} pzas</b></span>
+                  <span style="color: #64748B; margin-right: 12px;">|</span>
+                  <span>💰 Importe Total: <b style="color: #34D399;">${tot_imp:,.2f} MXN</b></span>
+                </td>
+              </tr>
+            </table>
 
-    <!-- ── CUERPO PRINCIPAL ──────────────────────────────────────────────────────── -->
-    <div style="padding: 24px 28px;">
-        <p style="font-size: 13.5px; color: #334155; line-height: 1.5; margin-top: 0;">
-            Estimado equipo de Operaciones, Compras y Planta:<br>
-            Se formaliza la <b>Apertura Oficial de Proyecto Interno</b> para la Orden de Compra <b>{po_clean}</b>. A continuación se detalla la lista de despiece por SKU de cliente y SKU de planta para la programación inmediata de nidos de corte, ensamble y almacén.
-        </p>
+          </td>
+        </tr>
 
-        <!-- ── TABLA DE PARTIDAS Y DESPIECE ────────────────────────────────────── -->
-        <h3 style="color: #0F172A; font-size: 14px; font-weight: 800; margin: 20px 0 10px 0; text-transform: uppercase; letter-spacing: 0.5px;">
-            📑 Resumen de Piezas / Partidas Requeridas ({len(df_partidas)} partidas)
-        </h3>
-        <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px; border: 1px solid #CBD5E1;">
-            <thead>
-                <tr style="background-color: #0F172A; color: #FFFFFF;">
-                    <th style="padding: 9px 8px; text-align: center; width: 40px; border-bottom: 2px solid #EC2024;">#</th>
-                    <th style="padding: 9px 10px; text-align: left; width: 110px; border-bottom: 2px solid #EC2024;">SKU Cliente</th>
-                    <th style="padding: 9px 10px; text-align: left; width: 125px; border-bottom: 2px solid #EC2024;">SKU Planta</th>
-                    <th style="padding: 9px 10px; text-align: left; border-bottom: 2px solid #EC2024;">Descripción</th>
-                    <th style="padding: 9px 10px; text-align: right; width: 80px; border-bottom: 2px solid #EC2024;">Cant. Req.</th>
-                    <th style="padding: 9px 8px; text-align: center; width: 55px; border-bottom: 2px solid #EC2024;">Unidad</th>
-                    <th style="padding: 9px 10px; text-align: center; width: 85px; border-bottom: 2px solid #EC2024;">F. Entrega</th>
+        <!-- ── CUERPO DEL CORREO ──────────────────────────────────────────────────────────── -->
+        <tr>
+          <td style="padding: 24px 28px;">
+            <p style="font-family: Arial, sans-serif; font-size: 13.5px; color: #334155; line-height: 1.6; margin-top: 0;">
+              Estimado equipo operativo, compras y jefatura de planta:<br>
+              Se ha formalizado la <b>Apertura de Proyecto Interno</b> para la Orden de Compra <b>{po_clean}</b>. A continuación se detallan las especificaciones, fechas solicitadas y despiece de piezas para el arranque inmediato en talleres y almacén.
+            </p>
+
+            <!-- TITULO TABLA PARTIDAS -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 20px 0 10px 0;">
+              <tr>
+                <td>
+                  <span style="color: #0F172A; font-family: Arial, sans-serif; font-size: 13.5px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">
+                    📑 RESUMEN DE PIEZAS / PARTIDAS REQUERIDAS ({len(df_partidas)} PARTIDAS)
+                  </span>
+                </td>
+              </tr>
+            </table>
+
+            <!-- TABLA DE PARTIDAS -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; border: 1px solid #CBD5E1; margin-bottom: 22px;">
+              <thead>
+                <tr bgcolor="#0F172A" style="background-color: #0F172A; color: #FFFFFF;">
+                  <th bgcolor="#0F172A" width="40" align="center" style="padding: 9px 6px; font-family: Arial, sans-serif; font-size: 11.5px; font-weight: bold; color: #FFFFFF; border-bottom: 2px solid #EC2024;">#</th>
+                  <th bgcolor="#0F172A" width="115" align="left" style="padding: 9px 8px; font-family: Arial, sans-serif; font-size: 11.5px; font-weight: bold; color: #FFFFFF; border-bottom: 2px solid #EC2024;">SKU Cliente</th>
+                  <th bgcolor="#0F172A" width="125" align="left" style="padding: 9px 8px; font-family: Arial, sans-serif; font-size: 11.5px; font-weight: bold; color: #FFFFFF; border-bottom: 2px solid #EC2024;">SKU Planta</th>
+                  <th bgcolor="#0F172A" align="left" style="padding: 9px 8px; font-family: Arial, sans-serif; font-size: 11.5px; font-weight: bold; color: #FFFFFF; border-bottom: 2px solid #EC2024;">Descripción</th>
+                  <th bgcolor="#0F172A" width="85" align="right" style="padding: 9px 8px; font-family: Arial, sans-serif; font-size: 11.5px; font-weight: bold; color: #FFFFFF; border-bottom: 2px solid #EC2024;">Cant. Req.</th>
+                  <th bgcolor="#0F172A" width="55" align="center" style="padding: 9px 6px; font-family: Arial, sans-serif; font-size: 11.5px; font-weight: bold; color: #FFFFFF; border-bottom: 2px solid #EC2024;">Unidad</th>
+                  <th bgcolor="#0F172A" width="85" align="center" style="padding: 9px 8px; font-family: Arial, sans-serif; font-size: 11.5px; font-weight: bold; color: #FFFFFF; border-bottom: 2px solid #EC2024;">F. Entrega</th>
                 </tr>
-            </thead>
-            <tbody>
+              </thead>
+              <tbody>
                 {filas_html}
                 {mas_filas_nota}
-            </tbody>
-        </table>
+              </tbody>
+            </table>
 
-        <!-- ── INSTRUCCIONES OPERATIVAS ──────────────────────────────────────── -->
-        <div style="background-color: #EFF6FF; border-left: 4px solid #3B82F6; padding: 14px 18px; border-radius: 6px; margin-bottom: 20px;">
-            <b style="color: #1E40AF; font-size: 12.5px; display: block; margin-bottom: 6px;">⚙️ Plan de Acción Operativo Inmediato:</b>
-            <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #1E3A8A; line-height: 1.6;">
-                <li><b>Corte y Doblez (Nesting):</b> Generar nidos Pronest y programar Órdenes de Fabricación (OFs) conforme al despiece adjunto.</li>
-                <li><b>Ensamble & Soldadura:</b> Coordinar ensambles y soldadura cumpliendo con fechas prometidas por parcialidad.</li>
-                <li><b>Almacén & Embarques:</b> Identificación clara por tarima y generación oportuna de Remisiones.</li>
-            </ul>
-        </div>
+            <!-- CAJA DE PLAN DE ACCION OPERATIVO -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#EFF6FF" style="background-color: #EFF6FF; border-left: 4px solid #3B82F6; border-radius: 6px; margin-bottom: 20px;">
+              <tr>
+                <td style="padding: 14px 18px; font-family: Arial, sans-serif;">
+                  <b style="color: #1E40AF; font-size: 12.5px; display: block; margin-bottom: 6px;">⚙️ Plan de Acción Operativo Inmediato:</b>
+                  <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #1E3A8A; line-height: 1.6;">
+                    <li><b>Corte y Doblez (Nesting):</b> Generar nidos Pronest y programar Órdenes de Fabricación (OFs) conforme al despiece adjunto.</li>
+                    <li><b>Ensamble & Soldadura:</b> Coordinar ensambles y soldadura cumpliendo con fechas prometidas por parcialidad.</li>
+                    <li><b>Almacén & Embarques:</b> Identificación clara por tarima y generación oportuna de Remisiones.</li>
+                  </ul>
+                </td>
+              </tr>
+            </table>
 
-        <!-- ── ADJUNTOS EMBEBIDOS ────────────────────────────────────────────── -->
-        <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; padding: 14px 18px; border-radius: 6px;">
-            <b style="color: #0F172A; font-size: 12.5px; display: block; margin-bottom: 6px;">📎 Documentos Oficiales Embebidos en este Correo:</b>
-            <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #334155; line-height: 1.6;">
-                {adjuntos_str}
-            </ul>
-        </div>
-    </div>
+            <!-- CAJA DE ADJUNTOS EMBEBIDOS -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#F8FAFC" style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 6px;">
+              <tr>
+                <td style="padding: 14px 18px; font-family: Arial, sans-serif;">
+                  <b style="color: #0F172A; font-size: 12.5px; display: block; margin-bottom: 6px;">📎 Documentos Oficiales Embebidos en este Correo:</b>
+                  <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #334155; line-height: 1.6;">
+                    {adjuntos_str}
+                  </ul>
+                </td>
+              </tr>
+            </table>
 
-    <!-- ── FOOTER CORPORATIVO ────────────────────────────────────────────────── -->
-    <div style="background-color: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 14px 28px; text-align: center; font-size: 11px; color: #94A3B8;">
-        Industria Sigrama S.A. de C.V. | Sistema Integral de Seguimiento y Trazabilidad 360° | Torreón, Coahuila
-    </div>
-</div>
+          </td>
+        </tr>
+
+        <!-- ── PIE DE PÁGINA ────────────────────────────────────────────────────────────── -->
+        <tr>
+          <td bgcolor="#F8FAFC" style="background-color: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 14px 28px; text-align: center; font-family: Arial, sans-serif; font-size: 11px; color: #94A3B8;">
+            Industria Sigrama S.A. de C.V. | Sistema Integral de Seguimiento y Trazabilidad 360° | Torreón, Coahuila
+          </td>
+        </tr>
+
+      </table>
+
+    </td>
+  </tr>
+</table>
+
 </body>
 </html>
 """

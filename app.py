@@ -523,6 +523,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
         sort_opt = st.selectbox("Ordenar tabla por:", [
             "🔢 ID Interno (INT-0001, INT-0002...)",
             "📅 Fecha de Llegada (Más reciente)",
+            "🎯 Fecha de Entrega (Próximas primero)",
             "📄 Folio PO",
             "🎯 % Avance Cumplimiento",
             "💰 Importe Total ($)"
@@ -546,6 +547,9 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
         df_f = df_f.sort_values(by=['id_sort_key', 'po'], ascending=[True, True]).drop(columns=['id_sort_key'])
     elif "Fecha de Llegada" in sort_opt:
         df_f = df_f.sort_values(by=['fecha_llegada', 'po'], ascending=[False, False])
+    elif "Fecha de Entrega" in sort_opt:
+        df_f['ent_sort_key'] = df_f['fecha_solicitada'].apply(lambda x: str(x) if str(x).strip() else 'ZZZZ-ZZ-ZZ')
+        df_f = df_f.sort_values(by=['ent_sort_key', 'po'], ascending=[True, True]).drop(columns=['ent_sort_key'])
     elif "Folio PO" in sort_opt:
         df_f = df_f.sort_values(by=['po'], ascending=[True])
     elif "% Avance" in sort_opt:
@@ -604,6 +608,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
                     <th style="border-bottom:2px solid #EC2024; width:90px; text-align:left;">PO / Folio</th>
                     <th style="border-bottom:2px solid #EC2024; min-width:90px; text-align:left;">Proyecto</th>
                     <th style="border-bottom:2px solid #EC2024; width:85px; text-align:center;">Llegada</th>
+                    <th style="border-bottom:2px solid #EC2024; width:88px; text-align:center; color:#FCA5A5;">F. Entrega</th>
                     <th style="border-bottom:2px solid #EC2024; width:55px; text-align:center;">Part. #</th>
                     <th style="border-bottom:2px solid #EC2024; text-align:right; width:80px; background-color:#1E293B;">1. Req. (PO)</th>
                     <th style="border-bottom:2px solid #3B82F6; min-width:115px; background-color:#1E3A8A;">🔵 2. Fabricadas</th>
@@ -622,6 +627,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             po_f = str(r_bar.get('po', '')).strip()
             proy = str(r_bar.get('proyecto', '')).strip()
             f_lleg = str(r_bar.get('fecha_llegada', '')).strip()
+            f_ent = str(r_bar.get('fecha_solicitada', '')).strip()
             c_arts = int(r_bar.get('articulos_count', 0) or 0)
             
             c_req = float(r_bar.get('piezas_requeridas', 0) or 0)
@@ -680,6 +686,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
                 <td style="font-weight:700; color:#EC2024;">{po_f}</td>
                 <td style="font-weight:600; color:#334155;">{proy}</td>
                 <td style="text-align:center; color:#64748B; font-size:11px;">{f_lleg}</td>
+                <td style="text-align:center; color:#DC2626; font-size:11px; font-weight:700;">{f_ent}</td>
                 <td style="text-align:center; color:#475569; font-weight:600;">{c_arts}</td>
                 <td style="text-align:right; font-weight:800; color:#0F172A; background-color:#F8FAFC;">{c_req:,.0f}</td>
                 
@@ -736,7 +743,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
     else:
         # Columnas de visualización ordenadas para tabla estándar
         disp_cols = [
-            'id_interno', 'po', 'proyecto', 'fecha_llegada',
+            'id_interno', 'po', 'proyecto', 'fecha_llegada', 'fecha_solicitada',
             'articulos_count', 'piezas_requeridas', 'piezas_fabricadas',
             'piezas_entarimadas', 'piezas_remisionadas', 'piezas_pendientes',
             'pct_cumplimiento', 'estatus_remision', 'total', 'comprador', 'solicitante'
@@ -749,6 +756,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
                 'po': 'PO / Folio',
                 'proyecto': 'Proyecto',
                 'fecha_llegada': 'Llegada PO',
+                'fecha_solicitada': 'Fecha Entrega',
                 'articulos_count': 'Partidas #',
                 'piezas_requeridas': '1. Requeridas',
                 'piezas_fabricadas': '2. Fabricadas',
@@ -765,6 +773,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
                 "ID Interno": st.column_config.TextColumn("ID Interno", width="small"),
                 "PO / Folio": st.column_config.TextColumn("PO / Folio", width="small"),
                 "Proyecto": st.column_config.TextColumn("Proyecto", width="medium"),
+                "Fecha Entrega": st.column_config.TextColumn("Fecha Entrega", width="small"),
                 "1. Requeridas": st.column_config.NumberColumn("1. Requeridas", format="%d pzas"),
                 "2. Fabricadas": st.column_config.NumberColumn("2. Fabricadas", format="%d pzas"),
                 "3. Entarimadas": st.column_config.NumberColumn("3. Entarimadas", format="%d pzas"),

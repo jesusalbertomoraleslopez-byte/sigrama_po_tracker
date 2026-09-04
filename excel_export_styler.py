@@ -27,7 +27,7 @@ def build_executive_excel(df_data, df_partidas=None):
     C_RED_PEN    = "7C2D12"
     
     # ── 1. Banner Principal (Fila 1 y 2) ──────────────────────────────────────
-    ws.merge_cells("A1:O1")
+    ws.merge_cells("A1:P1")
     cell_t1 = ws["A1"]
     cell_t1.value = "INDUSTRIA SIGRAMA S.A. DE C.V.  —  MATRIZ DE CONTROL 360° DE ÓRDENES DE COMPRA"
     cell_t1.font = Font(name="Calibri", size=13, bold=True, color="FFFFFF")
@@ -46,7 +46,7 @@ def build_executive_excel(df_data, df_partidas=None):
     tot_imp = float(df_data['total'].sum()) if 'total' in df_data.columns else 0
     pct_glob = (tot_rem / tot_req * 100.0) if tot_req > 0 else 0.0
     
-    ws.merge_cells("A2:O2")
+    ws.merge_cells("A2:P2")
     cell_t2 = ws["A2"]
     cell_t2.value = f"Reporte Oficial de Cadena de Suministro | Emisión: {now_str} | {tot_pos} Órdenes Activas | Cumplimiento Global: {pct_glob:.1f}% | Importe Total: ${tot_imp:,.2f} MXN"
     cell_t2.font = Font(name="Calibri", size=9.5, italic=True, color="94A3B8")
@@ -62,7 +62,7 @@ def build_executive_excel(df_data, df_partidas=None):
         ("D4:F4", f"2. FABRICADAS: {tot_fab:,.0f} pzas", "1D4ED8", "EFF6FF", "3B82F6"),
         ("G4:I4", f"3. ENTARIMADAS: {tot_ent:,.0f} pzas", "B45309", "FEF3C7", "F59E0B"),
         ("J4:L4", f"4. REMISIONADAS: {tot_rem:,.0f} pzas", "15803D", "DCFCE7", "10B981"),
-        ("M4:O4", f"5. PENDIENTES: {tot_pen:,.0f} pzas", "B91C1C", "FEE2E2", "EF4444"),
+        ("M4:P4", f"5. PENDIENTES: {tot_pen:,.0f} pzas", "B91C1C", "FEE2E2", "EF4444"),
     ]
     for rng, text, fg, bg, border_c in kpis:
         ws.merge_cells(rng)
@@ -86,6 +86,7 @@ def build_executive_excel(df_data, df_partidas=None):
         ("PO / Folio", C_SLATE_DARK, "center", 14),
         ("Proyecto", C_SLATE_DARK, "left", 16),
         ("Fecha Llegada", C_SLATE_DARK, "center", 14),
+        ("Fecha Entrega", C_SLATE_DARK, "center", 14),
         ("Part. #", C_SLATE_DARK, "center", 10),
         ("1. Req. (PO)", "1E293B", "right", 15),
         ("🔵 2. Fabricadas", C_BLUE_FAB, "right", 16),
@@ -136,6 +137,7 @@ def build_executive_excel(df_data, df_partidas=None):
         c_po   = str(r.get('po', '')).strip()
         c_proy = str(r.get('proyecto', '')).strip()
         c_fec  = str(r.get('fecha_llegada', '')).strip()
+        c_fent = str(r.get('fecha_solicitada', '')).strip()
         c_arts = int(r.get('articulos_count', 0) or 0)
         c_req  = float(r.get('piezas_requeridas', 0) or 0)
         c_fab  = float(r.get('piezas_fabricadas', 0) or 0)
@@ -153,6 +155,7 @@ def build_executive_excel(df_data, df_partidas=None):
             (c_po,   "center", "@", Font(name="Calibri", size=9.5, bold=True, color="EC2024"), fill_zebra),
             (c_proy, "left",   "@", Font(name="Calibri", size=9.5, bold=True, color="334155"), fill_zebra),
             (c_fec,  "center", "yyyy-mm-dd", Font(name="Calibri", size=9, color="64748B"), fill_zebra),
+            (c_fent, "center", "yyyy-mm-dd", Font(name="Calibri", size=9, bold=True, color="DC2626"), fill_zebra),
             (c_arts, "center", "#,##0", Font(name="Calibri", size=9.5, color="475569"), fill_zebra),
             (c_req,  "right",  '#,##0 "pzas"', Font(name="Calibri", size=9.5, bold=True, color="0F172A"), PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")),
             (c_fab,  "right",  '#,##0 "pzas"', Font(name="Calibri", size=9.5, bold=True, color="1D4ED8"), fill_zebra),
@@ -175,8 +178,8 @@ def build_executive_excel(df_data, df_partidas=None):
             if fnt: c_cell.font = fnt
             if fll: c_cell.fill = fll
             
-        # Coloreo especial de badge para Estatus Entrega (Col 12)
-        c_st = ws.cell(row=curr_row, column=12)
+        # Coloreo especial de badge para Estatus Entrega (Col 13)
+        c_st = ws.cell(row=curr_row, column=13)
         if "Cancelada" in st_txt:
             c_st.fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
             c_st.font = Font(name="Calibri", size=9, bold=True, color="B91C1C")
@@ -201,25 +204,25 @@ def build_executive_excel(df_data, df_partidas=None):
     # ── 5. Barras de Datos Nativas de Excel (Data Bars) ───────────────────────
     if end_data_row >= start_row:
         rule_fab = DataBarRule(start_type="num", start_value=0, end_type="max", color="5B9BD5", showValue=None)
-        ws.conditional_formatting.add(f"G{start_row}:G{end_data_row}", rule_fab)
+        ws.conditional_formatting.add(f"H{start_row}:H{end_data_row}", rule_fab)
         
         rule_ent = DataBarRule(start_type="num", start_value=0, end_type="max", color="F59E0B", showValue=None)
-        ws.conditional_formatting.add(f"H{start_row}:H{end_data_row}", rule_ent)
+        ws.conditional_formatting.add(f"I{start_row}:I{end_data_row}", rule_ent)
         
         rule_rem = DataBarRule(start_type="num", start_value=0, end_type="max", color="70AD47", showValue=None)
-        ws.conditional_formatting.add(f"I{start_row}:I{end_data_row}", rule_rem)
+        ws.conditional_formatting.add(f"J{start_row}:J{end_data_row}", rule_rem)
         
         rule_pen = DataBarRule(start_type="num", start_value=0, end_type="max", color="FFC000", showValue=None)
-        ws.conditional_formatting.add(f"J{start_row}:J{end_data_row}", rule_pen)
+        ws.conditional_formatting.add(f"K{start_row}:K{end_data_row}", rule_pen)
         
         rule_pct = DataBarRule(start_type="num", start_value=0, end_type="num", end_value=1.0, color="6366F1", showValue=None)
-        ws.conditional_formatting.add(f"K{start_row}:K{end_data_row}", rule_pct)
+        ws.conditional_formatting.add(f"L{start_row}:L{end_data_row}", rule_pct)
 
     # ── 6. Fila de Totales Generales ──────────────────────────────────────────
     tot_row = end_data_row + 1
     ws.row_dimensions[tot_row].height = 24
     
-    ws.merge_cells(f"A{tot_row}:E{tot_row}")
+    ws.merge_cells(f"A{tot_row}:F{tot_row}")
     c_tot_lbl = ws[f"A{tot_row}"]
     c_tot_lbl.value = "TOTALES GENERALES CONSOLIDADOS"
     c_tot_lbl.font = Font(name="Calibri", size=10, bold=True, color=C_SLATE_DARK)
@@ -227,16 +230,16 @@ def build_executive_excel(df_data, df_partidas=None):
     
     # Fórmulas de suma nativas de Excel
     tot_cols = [
-        (6,  f"=SUM(F{start_row}:F{end_data_row})", '#,##0 "pzas"', "0F172A", "F1F5F9"),
-        (7,  f"=SUM(G{start_row}:G{end_data_row})", '#,##0 "pzas"', "1D4ED8", "EFF6FF"),
-        (8,  f"=SUM(H{start_row}:H{end_data_row})", '#,##0 "pzas"', "B45309", "FEF3C7"),
-        (9,  f"=SUM(I{start_row}:I{end_data_row})", '#,##0 "pzas"', "15803D", "DCFCE7"),
-        (10, f"=SUM(J{start_row}:J{end_data_row})", '#,##0 "pzas"', "B91C1C", "FEE2E2"),
-        (11, f"=I{tot_row}/F{tot_row}",            "0.0%",          "0F172A", "F1F5F9"),
-        (12, "",                                    "@",             "0F172A", "F1F5F9"),
-        (13, f"=SUM(M{start_row}:M{end_data_row})", '"$"#,##0.00',  "0F172A", "F1F5F9"),
-        (14, "",                                    "@",             "0F172A", "F1F5F9"),
+        (7,  f"=SUM(G{start_row}:G{end_data_row})", '#,##0 "pzas"', "0F172A", "F1F5F9"),
+        (8,  f"=SUM(H{start_row}:H{end_data_row})", '#,##0 "pzas"', "1D4ED8", "EFF6FF"),
+        (9,  f"=SUM(I{start_row}:I{end_data_row})", '#,##0 "pzas"', "B45309", "FEF3C7"),
+        (10, f"=SUM(J{start_row}:J{end_data_row})", '#,##0 "pzas"', "15803D", "DCFCE7"),
+        (11, f"=SUM(K{start_row}:K{end_data_row})", '#,##0 "pzas"', "B91C1C", "FEE2E2"),
+        (12, f"=J{tot_row}/G{tot_row}",            "0.0%",          "0F172A", "F1F5F9"),
+        (13, "",                                    "@",             "0F172A", "F1F5F9"),
+        (14, f"=SUM(N{start_row}:N{end_data_row})", '"$"#,##0.00',  "0F172A", "F1F5F9"),
         (15, "",                                    "@",             "0F172A", "F1F5F9"),
+        (16, "",                                    "@",             "0F172A", "F1F5F9"),
     ]
     
     border_total = Border(
@@ -246,8 +249,8 @@ def build_executive_excel(df_data, df_partidas=None):
         right=Side(border_style="thin", color="CBD5E1")
     )
     
-    # Aplicar borde a A..E
-    for col_i in range(1, 6):
+    # Aplicar borde a A..F
+    for col_i in range(1, 7):
         c = ws.cell(row=tot_row, column=col_i)
         c.fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
         c.border = border_total

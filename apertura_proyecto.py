@@ -92,11 +92,83 @@ def find_original_order_files(po, id_interno):
 
     return msg_bytes, msg_name, pdf_bytes, pdf_name
 
+def _extract_val(row, keys, default=""):
+    for k in keys:
+        if k in row:
+            val = row.get(k)
+            if val is not None and not pd.isna(val):
+                s_val = str(val).strip()
+                if s_val and s_val.lower() not in ('nan', 'none', 'null'):
+                    return s_val
+    return default
+
+def _ensure_partidas_skus(po, df_partidas):
+    """
+    Garantiza que el DataFrame de partidas contenga siempre los campos sku_cliente
+    y clave_sku completos, consultando directamente la base de datos po_partidas de SQLite
+    en caso de que vengan vacíos o nulos.
+    """
+    po_str = str(po).strip()
+    po_nodash = po_str.replace('-', '')
+    
+    conn = db_manager.get_connection()
+    df_db_parts = pd.read_sql_query(
+        """SELECT item_no, sku_cliente, clave_sku, descripcion_producto, 
+                  cantidad_requerida, unidad, precio_unitario, precio_total, 
+                  fecha_entrega, parcialidad, observaciones_partida 
+           FROM po_partidas 
+           WHERE po = ? OR po = ? 
+           ORDER BY item_no ASC""",
+        conn, params=[po_str, po_nodash]
+    )
+    conn.close()
+
+    if df_partidas is None or df_partidas.empty:
+        return df_db_parts.copy()
+
+    df_out = df_partidas.copy()
+    if not df_db_parts.empty:
+        # Mapas directos por item_no
+        map_cli = {}
+        map_planta = {}
+        for _, r_db in df_db_parts.iterrows():
+            it_key = str(r_db['item_no']).strip()
+            map_cli[it_key] = str(r_db['sku_cliente'] or '').strip()
+            map_planta[it_key] = str(r_db['clave_sku'] or '').strip()
+
+        # Enriquecer o rellenar sku_cliente
+        if 'sku_cliente' not in df_out.columns:
+            df_out['sku_cliente'] = df_out['item_no'].astype(str).str.strip().map(map_cli).fillna('')
+        else:
+            def _fill_c(row):
+                v = str(row.get('sku_cliente', '') or '').strip()
+                if not v or v.lower() in ('nan', 'none', 'null'):
+                    it = str(row.get('item_no', '')).strip()
+                    return map_cli.get(it, '')
+                return v
+            df_out['sku_cliente'] = df_out.apply(_fill_c, axis=1)
+
+        # Enriquecer o rellenar clave_sku
+        if 'clave_sku' not in df_out.columns:
+            df_out['clave_sku'] = df_out['item_no'].astype(str).str.strip().map(map_planta).fillna('')
+        else:
+            def _fill_p(row):
+                v = str(row.get('clave_sku', '') or '').strip()
+                if not v or v.lower() in ('nan', 'none', 'null'):
+                    it = str(row.get('item_no', '')).strip()
+                    return map_planta.get(it, '')
+                return v
+            df_out['clave_sku'] = df_out.apply(_fill_p, axis=1)
+
+    return df_out
+
 def generate_apertura_piezas_excel(po, id_interno, cab_info, df_partidas):
     """
     Genera el archivo oficial de Apertura de Proyecto / Lista de Piezas en formato .xlsx
     con diseño corporativo formal SIGRAMA, datos de cabecera y desglose completo de despiece.
     """
+    df_partidas = _ensure_partidas_skus(po, df_partidas)
+
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Lista_de_Piezas"
@@ -203,17 +275,17 @@ def generate_apertura_piezas_excel(po, id_interno, cab_info, df_partidas):
         bg_color = "FFFFFF" if curr_row % 2 == 0 else "F8FAFC"
         row_fill = PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid")
 
-        i_no = row.get('item_no', curr_row - 7)
-        sk_c = str(row.get('sku_cliente', '') or '')
-        sk_p = str(row.get('clave_sku', '') or '')
-        desc = str(row.get('descripcion_producto', '') or '')
-        cant = float(row.get('cantidad_requerida', 0) or 0)
-        unid = str(row.get('unidad', 'PZA') or 'PZA').upper()
-        pu   = float(row.get('precio_unitario', 0) or 0)
-        pt   = float(row.get('precio_total', 0) or (cant * pu))
-        fe   = str(row.get('fecha_entrega', '') or '')
-        parc = str(row.get('parcialidad', 'P1') or 'P1')
-        obs  = str(row.get('observaciones_partida', row.get('estatus_partida_360', '')) or '')
+        i_no = _extract_val(row, ['item_no'], str(curr_row - 7))
+        sk_c = _extract_val(row, ['sku_cliente', 'SKU Cliente', 'sku_cli', 'SKU_Cliente', 'SKU'])
+        sk_p = _extract_val(row, ['clave_sku', 'SKU Planta', 'clave', 'SKU_Planta', 'Clave SKU'])
+        desc = _extract_val(row, ['descripcion_producto', 'Descripcion', 'descripcion', 'Descripción'])
+        cant = float(_extract_val(row, ['cantidad_requerida', 'Cantidad', 'cant'], 0) or 0)
+        unid = _extract_val(row, ['unidad', 'Unidad'], 'PZA').upper()
+        pu   = float(_extract_val(row, ['precio_unitario', 'P. Unitario'], 0) or 0)
+        pt   = float(_extract_val(row, ['precio_total', 'Importe Total'], cant * pu) or (cant * pu))
+        fe   = _extract_val(row, ['fecha_entrega', 'Fecha_Entrega', 'Fecha Entrega'])
+        parc = _extract_val(row, ['parcialidad', 'Parcialidad'], 'P1')
+        obs  = _extract_val(row, ['observaciones_partida', 'estatus_partida_360', 'Observaciones'])
 
         values = [
             (i_no, "center", "@"),
@@ -290,9 +362,12 @@ def generate_apertura_piezas_excel(po, id_interno, cab_info, df_partidas):
 def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None, msg_name=None, pdf_bytes=None, pdf_name=None, excel_bytes=None):
     """
     Genera el correo formal de Apertura de Proyecto Interno en formato RFC 822 (.eml)
-    listo para abrirse en Outlook o Thunderbird, con el cuerpo HTML institucional
+    listo para abrirse en Outlook o Thunderbird, con el encabezado idéntico a la Ficha de Trazabilidad 360°,
+    codificación base64 libre de errores de salto de línea Quoted-Printable (sin '=O' o '=ER'),
     y los archivos adjuntos embebidos: Lista de Piezas (.xlsx), Correo Original (.msg) y PDF de la PO.
     """
+    df_partidas = _ensure_partidas_skus(po, df_partidas)
+
     msg = email.message.EmailMessage()
 
     def _clean(v, d=""):
@@ -309,7 +384,25 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
     sol_clean = _clean(cab_info.get('solicitante', 'Solicitante'), 'Solicitante')
     f_lleg = _clean(cab_info.get('fecha_llegada', 'N/A'), 'N/A')
     f_sol = _clean(cab_info.get('fecha_solicitada', 'N/A'), 'N/A')
-    est_gen = _clean(cab_info.get('estatus_general', 'Registrada'), 'Registrada')
+    est_gen = _clean(cab_info.get('estatus_general', 'Registrada (En Espera)'), 'Registrada (En Espera)')
+
+    # Determinar color de estatus
+    est_low = est_gen.lower()
+    if 'cancel' in est_low:
+        est_bg = "#EF4444"
+        est_badge = "🚫 CANCELADA"
+    elif 'total' in est_low or '100' in est_low:
+        est_bg = "#10B981"
+        est_badge = "● Remisionada Total"
+    elif 'parcial' in est_low:
+        est_bg = "#3B82F6"
+        est_badge = "● Remisión Parcial"
+    elif 'fab' in est_low or 'proceso' in est_low:
+        est_bg = "#F59E0B"
+        est_badge = "● En Fabricación"
+    else:
+        est_bg = "#475569"
+        est_badge = "● Registrada (En Espera)"
 
     tot_pzas = float(df_partidas['cantidad_requerida'].sum()) if 'cantidad_requerida' in df_partidas.columns else 0.0
     tot_imp = float(cab_info.get('total', 0) or 0)
@@ -322,34 +415,36 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
     msg['Cc'] = 'operaciones@sigrama.com.mx, produccion@sigrama.com.mx, calidad@sigrama.com.mx, almacen@sigrama.com.mx'
     msg['Date'] = email.utils.formatdate(localtime=True)
 
-    # HTML Body
+    # Filas de la tabla de partidas
     filas_html = ""
-    for idx, (_, r) in enumerate(df_partidas.head(35).iterrows(), start=1):
+    for idx, (_, r) in enumerate(df_partidas.head(40).iterrows(), start=1):
         bg = "#FFFFFF" if idx % 2 != 0 else "#F8FAFC"
-        sk_c = str(r.get('sku_cliente', '') or '')
-        sk_p = str(r.get('clave_sku', '') or '')
-        desc = str(r.get('descripcion_producto', '') or '')
-        cant = float(r.get('cantidad_requerida', 0) or 0)
-        unid = str(r.get('unidad', 'PZA') or 'PZA').upper()
-        fe   = str(r.get('fecha_entrega', '') or '')
+        i_no = _extract_val(r, ['item_no'], str(idx))
+        sk_c = _extract_val(r, ['sku_cliente', 'SKU Cliente', 'sku_cli', 'SKU_Cliente', 'SKU'])
+        sk_p = _extract_val(r, ['clave_sku', 'SKU Planta', 'clave', 'SKU_Planta', 'Clave SKU'])
+        desc = _extract_val(r, ['descripcion_producto', 'Descripcion', 'descripcion', 'Descripción'])
+        cant = float(_extract_val(r, ['cantidad_requerida', 'Cantidad', 'cant'], 0) or 0)
+        unid = _extract_val(r, ['unidad', 'Unidad'], 'PZA').upper()
+        fe   = _extract_val(r, ['fecha_entrega', 'Fecha_Entrega', 'Fecha Entrega'])
+
         filas_html += f"""
         <tr style="background-color: {bg}; border-bottom: 1px solid #E2E8F0;">
-            <td style="padding: 6px 8px; text-align: center; font-weight: bold; color: #475569;">{r.get('item_no', idx)}</td>
-            <td style="padding: 6px 8px; font-weight: 600; color: #0F172A;">{sk_c}</td>
-            <td style="padding: 6px 8px; color: #2563EB; font-weight: 600;">{sk_p}</td>
-            <td style="padding: 6px 8px; color: #334155;">{desc}</td>
-            <td style="padding: 6px 8px; text-align: right; font-weight: bold; color: #0F172A;">{cant:,.0f}</td>
-            <td style="padding: 6px 8px; text-align: center; color: #64748B;">{unid}</td>
-            <td style="padding: 6px 8px; text-align: center; color: #059669; font-weight: 600;">{fe}</td>
+            <td style="padding: 7px 8px; text-align: center; font-weight: bold; color: #475569;">{i_no}</td>
+            <td style="padding: 7px 8px; font-weight: 700; color: #0F172A; white-space: nowrap;">{sk_c}</td>
+            <td style="padding: 7px 8px; color: #2563EB; font-weight: 700; white-space: nowrap;">{sk_p}</td>
+            <td style="padding: 7px 8px; color: #334155; text-align: left;">{desc}</td>
+            <td style="padding: 7px 8px; text-align: right; font-weight: 800; color: #0F172A;">{cant:,.0f}</td>
+            <td style="padding: 7px 8px; text-align: center; color: #64748B;">{unid}</td>
+            <td style="padding: 7px 8px; text-align: center; color: #059669; font-weight: 600;">{fe}</td>
         </tr>
         """
 
     mas_filas_nota = ""
-    if len(df_partidas) > 35:
+    if len(df_partidas) > 40:
         mas_filas_nota = f"""
         <tr>
-            <td colspan="7" style="padding: 10px; text-align: center; background-color: #FEF3C7; color: #B45309; font-weight: bold; font-size: 11px;">
-                Mostrando 35 de {len(df_partidas)} partidas. Consulte la lista completa en el archivo Excel adjunto: Lista_Piezas_Despiece_{id_clean}_{po_clean}.xlsx
+            <td colspan="7" style="padding: 12px; text-align: center; background-color: #FEF3C7; color: #B45309; font-weight: bold; font-size: 11.5px;">
+                ⚠️ Mostrando 40 de {len(df_partidas)} partidas. Consulte la lista completa en el archivo Excel adjunto: Lista_Piezas_Despiece_{id_clean}_{po_clean}.xlsx
             </td>
         </tr>
         """
@@ -362,84 +457,87 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
         adjuntos_html.append(f"<li>📄 <b>Orden de Compra Oficial (PDF):</b> <code>{pdf_name}</code></li>")
     adjuntos_str = "".join(adjuntos_html)
 
+    # HTML Oficial con diseño Banner Oscuro idéntico a la segunda imagen
     html_content = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apertura Oficial de Proyecto Interno</title>
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #F1F5F9; margin: 0; padding: 20px;">
-<div style="max-width: 820px; margin: 0 auto; background-color: #FFFFFF; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); border: 1px solid #CBD5E1;">
+<div style="max-width: 860px; margin: 0 auto; background-color: #FFFFFF; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.12); border: 1px solid #CBD5E1;">
 
-    <!-- HEADER CORPORATIVO -->
-    <div style="background-color: #0F172A; padding: 22px 28px; border-bottom: 4px solid #EC2024;">
-        <table style="width: 100%; border-collapse: collapse;">
+    <!-- ── ENCABEZADO IDÉNTICO A LA FICHA 360° (IMAGEN 2) ────────────────────────── -->
+    <div style="background-color: #18181B; border-left: 8px solid #EC2024; padding: 22px 28px; box-shadow: 0 4px 10px rgba(0,0,0,0.25);">
+        <!-- Subtítulo institucional superior -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="color: #EC2024; font-size: 11.5px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;">
+                INDUSTRIA SIGRAMA S.A. DE C.V. &nbsp;—&nbsp; APERTURA OFICIAL DE PROYECTO INTERNO
+            </span>
+        </div>
+
+        <!-- Fila Principal: Badge INT + ORDEN DE COMPRA + Estatus -->
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px;">
             <tr>
-                <td>
-                    <div style="color: #EC2024; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;">INDUSTRIA SIGRAMA S.A. DE C.V.</div>
-                    <h1 style="color: #FFFFFF; margin: 4px 0 0 0; font-size: 20px; font-weight: 900; letter-spacing: -0.5px;">APERTURA OFICIAL DE PROYECTO INTERNO</h1>
+                <td style="vertical-align: middle;">
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <span style="background-color: #EC2024; color: #FFFFFF; font-size: 26px; font-weight: 900; padding: 6px 18px; border-radius: 8px; letter-spacing: 1px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.3); vertical-align: middle;">
+                            {id_clean}
+                        </span>
+                        <span style="font-size: 30px; font-weight: 900; color: #FFFFFF; letter-spacing: -0.5px; vertical-align: middle; margin-left: 10px;">
+                            ORDEN DE COMPRA: <span style="color: #EC2024;">{po_clean}</span>
+                        </span>
+                    </div>
                 </td>
-                <td style="text-align: right;">
-                    <span style="background-color: #EC2024; color: #FFFFFF; font-size: 15px; font-weight: 900; padding: 6px 14px; border-radius: 6px; letter-spacing: 0.5px;">{id_clean}</span>
+                <td style="text-align: right; vertical-align: middle;">
+                    <span style="background-color: {est_bg}; color: #FFFFFF; padding: 8px 18px; border-radius: 20px; font-weight: bold; font-size: 13.5px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.3); white-space: nowrap;">
+                        {est_badge}
+                    </span>
                 </td>
             </tr>
         </table>
+
+        <!-- Fila Inferior: Subtítulo con iconos idéntico a la Ficha 360° -->
+        <div style="padding-top: 10px; border-top: 1px solid #334155; font-size: 14px; color: #E5E7EB; line-height: 1.6;">
+            <span style="margin-right: 14px;">🏗️ Proyecto: <b style="color: #FFFFFF; font-size: 15px;">{prj_clean}</b></span>
+            <span style="color: #64748B; margin-right: 14px;">|</span>
+            <span style="margin-right: 14px;">👤 Solicitante: <b style="color: #FFFFFF;">{sol_clean}</b></span>
+            <span style="color: #64748B; margin-right: 14px;">|</span>
+            <span>💼 Comprador: <b style="color: #FFFFFF;">{cmp_clean}</b></span>
+        </div>
+        <div style="margin-top: 6px; font-size: 12px; color: #94A3B8;">
+            <span style="margin-right: 12px;">📅 Llegada: <b style="color: #E2E8F0;">{f_lleg}</b></span>
+            <span style="color: #64748B; margin-right: 12px;">|</span>
+            <span style="margin-right: 12px;">🎯 Entrega Req: <b style="color: #F87171;">{f_sol}</b></span>
+            <span style="color: #64748B; margin-right: 12px;">|</span>
+            <span style="margin-right: 12px;">📦 Piezas: <b style="color: #FFFFFF;">{tot_pzas:,.0f} pzas</b></span>
+            <span style="color: #64748B; margin-right: 12px;">|</span>
+            <span>💰 Importe: <b style="color: #34D399;">${tot_imp:,.2f} MXN</b></span>
+        </div>
     </div>
 
-    <!-- CUERPO PRINCIPAL -->
+    <!-- ── CUERPO PRINCIPAL ──────────────────────────────────────────────────────── -->
     <div style="padding: 24px 28px;">
         <p style="font-size: 13.5px; color: #334155; line-height: 1.5; margin-top: 0;">
-            Estimado equipo operativo, compras y jefatura de planta:<br>
-            Se ha formalizado la <b>Apertura de Proyecto Interno</b> para la siguiente Orden de Compra. A continuación se detallan las especificaciones, fechas solicitadas y despiece de piezas para el arranque inmediato en talleres y almacén.
+            Estimado equipo de Operaciones, Compras y Planta:<br>
+            Se formaliza la <b>Apertura Oficial de Proyecto Interno</b> para la Orden de Compra <b>{po_clean}</b>. A continuación se detalla la lista de despiece por SKU de cliente y SKU de planta para la programación inmediata de nidos de corte, ensamble y almacén.
         </p>
 
-        <!-- FICHA TÉCNICA DEL PROYECTO -->
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px;">
-            <tr>
-                <td style="padding: 9px 14px; font-size: 12px; color: #64748B; width: 25%;">No. Proyecto Interno:</td>
-                <td style="padding: 9px 14px; font-size: 13px; font-weight: bold; color: #EC2024; width: 25%;">{id_clean}</td>
-                <td style="padding: 9px 14px; font-size: 12px; color: #64748B; width: 25%;">Orden de Compra (PO):</td>
-                <td style="padding: 9px 14px; font-size: 13px; font-weight: bold; color: #0F172A; width: 25%;">{po_clean}</td>
-            </tr>
-            <tr style="background-color: #F1F5F9;">
-                <td style="padding: 9px 14px; font-size: 12px; color: #64748B;">Proyecto:</td>
-                <td style="padding: 9px 14px; font-size: 13px; font-weight: bold; color: #0F172A;">{prj_clean}</td>
-                <td style="padding: 9px 14px; font-size: 12px; color: #64748B;">Estatus:</td>
-                <td style="padding: 9px 14px; font-size: 12px; font-weight: bold; color: #059669;">{est_gen}</td>
-            </tr>
-            <tr>
-                <td style="padding: 9px 14px; font-size: 12px; color: #64748B;">Comprador:</td>
-                <td style="padding: 9px 14px; font-size: 12.5px; font-weight: 600; color: #1E293B;">{cmp_clean}</td>
-                <td style="padding: 9px 14px; font-size: 12px; color: #64748B;">Solicitante:</td>
-                <td style="padding: 9px 14px; font-size: 12.5px; font-weight: 600; color: #1E293B;">{sol_clean}</td>
-            </tr>
-            <tr style="background-color: #F1F5F9;">
-                <td style="padding: 9px 14px; font-size: 12px; color: #64748B;">Fecha Llegada PO:</td>
-                <td style="padding: 9px 14px; font-size: 12.5px; font-weight: 600; color: #1E293B;">{f_lleg}</td>
-                <td style="padding: 9px 14px; font-size: 12px; color: #64748B;">Fecha Solicitada Entrega:</td>
-                <td style="padding: 9px 14px; font-size: 12.5px; font-weight: bold; color: #DC2626;">{f_sol}</td>
-            </tr>
-            <tr>
-                <td style="padding: 9px 14px; font-size: 12px; color: #64748B;">Total Piezas:</td>
-                <td style="padding: 9px 14px; font-size: 14px; font-weight: 900; color: #0F172A;">{tot_pzas:,.0f} pzas</td>
-                <td style="padding: 9px 14px; font-size: 12px; color: #64748B;">Importe Total:</td>
-                <td style="padding: 9px 14px; font-size: 14px; font-weight: 900; color: #059669;">${tot_imp:,.2f} MXN</td>
-            </tr>
-        </table>
-
-        <!-- RESUMEN DE PARTIDAS -->
+        <!-- ── TABLA DE PARTIDAS Y DESPIECE ────────────────────────────────────── -->
         <h3 style="color: #0F172A; font-size: 14px; font-weight: 800; margin: 20px 0 10px 0; text-transform: uppercase; letter-spacing: 0.5px;">
             📑 Resumen de Piezas / Partidas Requeridas ({len(df_partidas)} partidas)
         </h3>
-        <table style="width: 100%; border-collapse: collapse; font-size: 11.5px; margin-bottom: 20px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px; border: 1px solid #CBD5E1;">
             <thead>
                 <tr style="background-color: #0F172A; color: #FFFFFF;">
-                    <th style="padding: 8px; text-align: center; width: 40px; border-bottom: 2px solid #EC2024;">#</th>
-                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #EC2024;">SKU Cliente</th>
-                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #EC2024;">SKU Planta</th>
-                    <th style="padding: 8px; text-align: left; border-bottom: 2px solid #EC2024;">Descripción</th>
-                    <th style="padding: 8px; text-align: right; width: 75px; border-bottom: 2px solid #EC2024;">Cant. Req.</th>
-                    <th style="padding: 8px; text-align: center; width: 50px; border-bottom: 2px solid #EC2024;">Unidad</th>
-                    <th style="padding: 8px; text-align: center; width: 85px; border-bottom: 2px solid #EC2024;">F. Entrega</th>
+                    <th style="padding: 9px 8px; text-align: center; width: 40px; border-bottom: 2px solid #EC2024;">#</th>
+                    <th style="padding: 9px 10px; text-align: left; width: 110px; border-bottom: 2px solid #EC2024;">SKU Cliente</th>
+                    <th style="padding: 9px 10px; text-align: left; width: 125px; border-bottom: 2px solid #EC2024;">SKU Planta</th>
+                    <th style="padding: 9px 10px; text-align: left; border-bottom: 2px solid #EC2024;">Descripción</th>
+                    <th style="padding: 9px 10px; text-align: right; width: 80px; border-bottom: 2px solid #EC2024;">Cant. Req.</th>
+                    <th style="padding: 9px 8px; text-align: center; width: 55px; border-bottom: 2px solid #EC2024;">Unidad</th>
+                    <th style="padding: 9px 10px; text-align: center; width: 85px; border-bottom: 2px solid #EC2024;">F. Entrega</th>
                 </tr>
             </thead>
             <tbody>
@@ -448,17 +546,17 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
             </tbody>
         </table>
 
-        <!-- INSTRUCCIONES OPERATIVAS -->
+        <!-- ── INSTRUCCIONES OPERATIVAS ──────────────────────────────────────── -->
         <div style="background-color: #EFF6FF; border-left: 4px solid #3B82F6; padding: 14px 18px; border-radius: 6px; margin-bottom: 20px;">
-            <b style="color: #1E40AF; font-size: 12.5px; display: block; margin-bottom: 6px;">⚙️ Plan de Acción Operativo:</b>
+            <b style="color: #1E40AF; font-size: 12.5px; display: block; margin-bottom: 6px;">⚙️ Plan de Acción Operativo Inmediato:</b>
             <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #1E3A8A; line-height: 1.6;">
-                <li><b>Corte y Doblez (Nesting):</b> Generar nidos Pronest y programar Órdenes de Fabricación (OFs) conforme al listado de piezas.</li>
-                <li><b>Ensamble & Soldadura:</b> Coordinar ensamble y soldadura conforme a las fechas prometidas por parcialidad.</li>
-                <li><b>Almacén & Embarques:</b> Verificar empaque, tarimas e identificación para generación de Remisiones.</li>
+                <li><b>Corte y Doblez (Nesting):</b> Generar nidos Pronest y programar Órdenes de Fabricación (OFs) conforme al despiece adjunto.</li>
+                <li><b>Ensamble & Soldadura:</b> Coordinar ensambles y soldadura cumpliendo con fechas prometidas por parcialidad.</li>
+                <li><b>Almacén & Embarques:</b> Identificación clara por tarima y generación oportuna de Remisiones.</li>
             </ul>
         </div>
 
-        <!-- ADJUNTOS EMBEBIDOS -->
+        <!-- ── ADJUNTOS EMBEBIDOS ────────────────────────────────────────────── -->
         <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; padding: 14px 18px; border-radius: 6px;">
             <b style="color: #0F172A; font-size: 12.5px; display: block; margin-bottom: 6px;">📎 Documentos Oficiales Embebidos en este Correo:</b>
             <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #334155; line-height: 1.6;">
@@ -467,7 +565,7 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
         </div>
     </div>
 
-    <!-- FOOTER -->
+    <!-- ── FOOTER CORPORATIVO ────────────────────────────────────────────────── -->
     <div style="background-color: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 14px 28px; text-align: center; font-size: 11px; color: #94A3B8;">
         Industria Sigrama S.A. de C.V. | Sistema Integral de Seguimiento y Trazabilidad 360° | Torreón, Coahuila
     </div>
@@ -475,8 +573,10 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
 </body>
 </html>
 """
+
     msg.set_content(f"Apertura de Proyecto Interno {id_clean} - OC {po_clean}. Consulte la versión HTML y los archivos adjuntos.")
-    msg.add_alternative(html_content, subtype='html')
+    # Usar CTE base64 para evitar saltos de línea Quoted-Printable que corrompen palabras con '='
+    msg.add_alternative(html_content, subtype='html', cte='base64')
 
     # Adjuntos
     if excel_bytes:

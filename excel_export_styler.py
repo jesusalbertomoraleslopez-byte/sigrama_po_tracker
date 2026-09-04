@@ -177,7 +177,10 @@ def build_executive_excel(df_data, df_partidas=None):
             
         # Coloreo especial de badge para Estatus Entrega (Col 12)
         c_st = ws.cell(row=curr_row, column=12)
-        if "Total" in st_txt or "100%" in st_txt:
+        if "Cancelada" in st_txt:
+            c_st.fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+            c_st.font = Font(name="Calibri", size=9, bold=True, color="B91C1C")
+        elif "Total" in st_txt or "100%" in st_txt:
             c_st.fill = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
             c_st.font = Font(name="Calibri", size=9, bold=True, color="15803D")
         elif "Parcial" in st_txt:

@@ -183,9 +183,10 @@ def render_modulo_repositorio():
     df_archivos = get_todos_archivos_adjuntos()
     df_pos = get_all_pos()
     
-    t_msg, t_pdf, t_gh = st.tabs([
+    t_msg, t_pdf, t_canc, t_gh = st.tabs([
         "✉️ Visor de Correos (.msg)",
         "📄 Visor de PDFs de Órdenes de Compra",
+        "🚫 Evidencias de Cancelación",
         "☁️ Inventario de Archivos en Nube"
     ])
     
@@ -271,7 +272,51 @@ def render_modulo_repositorio():
                 if pdf_bytes:
                     render_pdf_embed(pdf_bytes, height=720, key=f"embed_{sel_pdf_id}")
                     
-    # ── PESTAÑA 3: INVENTARIO DE ARCHIVOS EN NUBE ──
+    # ── PESTAÑA 3: EVIDENCIAS DE CANCELACIÓN ──
+    with t_canc:
+        df_canc = df_archivos[df_archivos['tipo'] == 'cancelacion'].copy() if not df_archivos.empty else pd.DataFrame()
+        if df_canc.empty:
+            st.info("ℹ️ No hay evidencias de cancelación registradas en el sistema.")
+        else:
+            opts_canc = []
+            opt_to_canc_id = {}
+            for _, r in df_canc.iterrows():
+                lbl = f"[{r.get('id_interno', 'N/A')}] PO {r.get('po', 'N/A')} ➔ {r.get('nombre_archivo', '')}"
+                opts_canc.append(lbl)
+                opt_to_canc_id[lbl] = r['id']
+                
+            c_sel_c, c_dl_c = st.columns([4, 1.2])
+            with c_sel_c:
+                sel_canc_opt = st.selectbox(
+                    "Selecciona el Documento / Evidencia de Cancelación:",
+                    opts_canc,
+                    key="sb_canc_explorer"
+                )
+                
+            if sel_canc_opt:
+                sel_c_id = opt_to_canc_id[sel_canc_opt]
+                c_name, _, c_bytes = get_contenido_archivo_por_id(sel_c_id)
+                with c_dl_c:
+                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                    if c_bytes:
+                        st.download_button(
+                            label="📥 Descargar Evidencia",
+                            data=c_bytes,
+                            file_name=c_name,
+                            use_container_width=True,
+                            key=f"dl_btn_canc_view_{sel_c_id}"
+                        )
+                if c_bytes:
+                    if c_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                        st.image(c_bytes, caption=f"Evidencia de Cancelación: {c_name}", use_container_width=True)
+                    elif c_name.lower().endswith('.pdf'):
+                        render_pdf_embed(c_bytes, height=720, key=f"embed_canc_{sel_c_id}")
+                    elif c_name.lower().endswith('.msg'):
+                        render_email_card(c_bytes, file_name=c_name, key_suffix=f"tab_canc_{sel_c_id}")
+                    else:
+                        st.info(f"Archivo adjunto: {c_name}")
+
+    # ── PESTAÑA 4: INVENTARIO DE ARCHIVOS EN NUBE ──
     with t_gh:
         st.markdown("""
         <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px 20px; margin-bottom: 18px;">

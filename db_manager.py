@@ -414,6 +414,108 @@ def get_contenido_archivo_por_id(id_archivo):
         return row[0], row[1], row[2]
     return None, None, None
 
+def cancelar_po(po, motivo="Cancelada por cliente", archivo_bytes=None, archivo_nombre=None, usuario="Usuario", push_to_gh=True):
+    """
+    Cancela formalmente una PO sin eliminarla:
+    1. Actualiza estatus_general = 'Cancelada' en po_cabecera.
+    2. Establece texto_etiqueta = 'CANCELADA', color_fondo = '#EF4444', color_texto = '#FFFFFF'.
+    3. Añade el motivo y fecha a las observaciones.
+    4. Guarda el archivo de evidencia (.msg, .pdf, imagen) en po_archivos_adjuntos como tipo 'cancelacion'.
+    5. Registra el evento en po_historial para auditoría.
+    6. Sincroniza archivos Excel y GitHub.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    
+    cur.execute("SELECT id_interno, observaciones FROM po_cabecera WHERE po = ?", (str(po),))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return False, f"PO {po} no encontrada."
+        
+    id_int, obs_actual = row[0], row[1] or ""
+    today_str = datetime.date.today().strftime('%Y-%m-%d')
+    nota_canc = f"[CANCELADA FORMALMENTE {today_str}]: {motivo}"
+    obs_updated = f"{nota_canc}\n{obs_actual}".strip() if obs_actual else nota_canc
+    
+    cur.execute("""
+        UPDATE po_cabecera
+        SET estatus_general = 'Cancelada',
+            texto_etiqueta = 'CANCELADA',
+            color_fondo = '#EF4444',
+            color_texto = '#FFFFFF',
+            observaciones = ?
+        WHERE po = ?
+    """, (obs_updated, str(po)))
+    
+    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cur.execute('''
+        INSERT INTO po_historial (po, fecha_hora, usuario, accion, detalle)
+        VALUES (?, ?, ?, 'CANCELACION_FORMAL', ?)
+    ''', (str(po), now_str, usuario, f"Orden cancelada formalmente: {motivo}"))
+    
+    conn.commit()
+    conn.close()
+    
+    if archivo_bytes and archivo_nombre:
+        safe_name = f"CANCELACION_OC_{po}_{archivo_nombre}"
+        save_archivo_adjunto(po, id_int, safe_name, 'cancelacion', archivo_bytes)
+        
+    export_sync_to_excel()
+    if push_to_gh:
+        push_db_to_github(background=True)
+        
+    return True, f"PO {po} cancelada formalmente con éxito."
+
+def cancelar_pos_lote(lista_pos, motivo="Cancelada por cliente", archivo_bytes=None, archivo_nombre=None, usuario="Usuario", push_to_gh=True):
+    """
+    Cancela un lote de múltiples POs simultáneamente vinculando la misma evidencia formal.
+    """
+    results = []
+    for p in lista_pos:
+        ok, msg = cancelar_po(p, motivo, archivo_bytes, archivo_nombre, usuario=usuario, push_to_gh=False)
+        results.append((p, ok, msg))
+    export_sync_to_excel()
+    if push_to_gh:
+        push_db_to_github(background=True)
+    return results
+
+def reactivar_po(po, motivo="Reactivada por usuario", usuario="Usuario", push_to_gh=True):
+    """
+    Reactiva una orden previamente cancelada devolviéndola al estado 'Registrada'.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    today_str = datetime.date.today().strftime('%Y-%m-%d')
+    nota_react = f"[REACTIVADA {today_str}]: {motivo}"
+    cur.execute("SELECT observaciones FROM po_cabecera WHERE po = ?", (str(po),))
+    row = cur.fetchone()
+    obs_actual = row[0] or "" if row else ""
+    obs_updated = f"{nota_react}\n{obs_actual}".strip()
+    
+    cur.execute("""
+        UPDATE po_cabecera
+        SET estatus_general = 'Registrada',
+            texto_etiqueta = 'REGISTRADA',
+            color_fondo = '#64748B',
+            color_texto = '#FFFFFF',
+            observaciones = ?
+        WHERE po = ?
+    """, (obs_updated, str(po)))
+    
+    now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cur.execute('''
+        INSERT INTO po_historial (po, fecha_hora, usuario, accion, detalle)
+        VALUES (?, ?, ?, 'REACTIVACION', ?)
+    ''', (str(po), now_str, usuario, f"Orden reactivada a Registrada: {motivo}"))
+    
+    conn.commit()
+    conn.close()
+    export_sync_to_excel()
+    if push_to_gh:
+        push_db_to_github(background=True)
+    return True, f"PO {po} reactivada con éxito."
+
 def clear_all_pos_db(usuario='Usuario'):
     """Limpia completamente todas las tablas de POs en SQLite y vacía los archivos Excel."""
     conn = get_connection()

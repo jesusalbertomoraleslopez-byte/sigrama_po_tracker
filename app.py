@@ -640,7 +640,9 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             tot_val = float(r_bar.get('total', 0) or 0)
             
             st_txt = str(r_bar.get('estatus_remision', '⚪ Registrada'))
-            if "Total" in st_txt or "100%" in st_txt:
+            if "Cancelada" in st_txt:
+                b_bg, b_fg = "#FEE2E2", "#B91C1C"
+            elif "Total" in st_txt or "100%" in st_txt:
                 b_bg, b_fg = "#DCFCE7", "#15803D"
             elif "Parcial" in st_txt:
                 b_bg, b_fg = "#DBEAFE", "#1D4ED8"
@@ -1499,132 +1501,345 @@ elif menu == "✏️ Ajuste de PO":
             s = str(v).strip()
             return d if s.lower() in ('nan', 'none', 'null') else s
 
-        # 1° Bloque: Ajuste de Datos Generales
-        st.markdown("#### 1️⃣ Datos Generales de la PO:")
-        with st.container(border=True):
-            f_col1, f_col2 = st.columns(2)
-            with f_col1:
-                val_id_int = _clean_str(cab_row.get('id_interno'))
-                new_id_interno = st.text_input(
-                    "2. Nombre Interno (ej. INT-0001, INT-0059):",
-                    value=val_id_int if val_id_int else f"INT-{(cur_idx+1):04d}",
-                    key=f"edit_id_int_{selected_po}"
-                )
+        tab_ajuste, tab_canc = st.tabs([
+            "✏️ Ajuste de Datos y Partidas",
+            "🚫 Gestión y Cancelación Formal de POs"
+        ])
+
+        with tab_ajuste:
+                # 1° Bloque: Ajuste de Datos Generales
+            st.markdown("#### 1️⃣ Datos Generales de la PO:")
+            with st.container(border=True):
+                f_col1, f_col2 = st.columns(2)
+                with f_col1:
+                    val_id_int = _clean_str(cab_row.get('id_interno'))
+                    new_id_interno = st.text_input(
+                        "2. Nombre Interno (ej. INT-0001, INT-0059):",
+                        value=val_id_int if val_id_int else f"INT-{(cur_idx+1):04d}",
+                        key=f"edit_id_int_{selected_po}"
+                    )
                 
-                val_f_llegada = _clean_str(cab_row.get('fecha_llegada'))
-                try:
-                    default_f_llegada = datetime.datetime.strptime(val_f_llegada, "%Y-%m-%d").date() if val_f_llegada else datetime.date.today()
-                except Exception:
-                    default_f_llegada = datetime.date.today()
-                new_fecha_llegada = st.date_input("1. Fecha de Llegada de la PO (Recepción de Correo):", value=default_f_llegada, key=f"edit_flleg_{selected_po}")
+                    val_f_llegada = _clean_str(cab_row.get('fecha_llegada'))
+                    try:
+                        default_f_llegada = datetime.datetime.strptime(val_f_llegada, "%Y-%m-%d").date() if val_f_llegada else datetime.date.today()
+                    except Exception:
+                        default_f_llegada = datetime.date.today()
+                    new_fecha_llegada = st.date_input("1. Fecha de Llegada de la PO (Recepción de Correo):", value=default_f_llegada, key=f"edit_flleg_{selected_po}")
                 
-                val_f_solic = _clean_str(cab_row.get('fecha_solicitada'))
-                try:
-                    default_f_solic = datetime.datetime.strptime(val_f_solic, "%Y-%m-%d").date() if val_f_solic else (default_f_llegada + datetime.timedelta(days=14))
-                except Exception:
-                    default_f_solic = default_f_llegada + datetime.timedelta(days=14)
-                new_fecha_solicitada = st.date_input("6. Fecha Solicitada (Compromiso Entrega):", value=default_f_solic, key=f"edit_fsolic_{selected_po}")
+                    val_f_solic = _clean_str(cab_row.get('fecha_solicitada'))
+                    try:
+                        default_f_solic = datetime.datetime.strptime(val_f_solic, "%Y-%m-%d").date() if val_f_solic else (default_f_llegada + datetime.timedelta(days=14))
+                    except Exception:
+                        default_f_solic = default_f_llegada + datetime.timedelta(days=14)
+                    new_fecha_solicitada = st.date_input("6. Fecha Solicitada (Compromiso Entrega):", value=default_f_solic, key=f"edit_fsolic_{selected_po}")
                 
-                val_comp = _clean_str(cab_row.get('comprador'))
-                new_comprador = st.text_input("7. Comprador / Contacto de Compras:", value=val_comp, key=f"edit_comp_{selected_po}")
+                    val_comp = _clean_str(cab_row.get('comprador'))
+                    new_comprador = st.text_input("7. Comprador / Contacto de Compras:", value=val_comp, key=f"edit_comp_{selected_po}")
                 
-            with f_col2:
-                val_mail = _clean_str(cab_row.get('archivo_correo'))
-                new_archivo_correo = st.text_input(
-                    "4. Archivo de Correo (.MSG):",
-                    value=val_mail if val_mail else f"INT {(cur_idx+1):04d} - OC {selected_po} SIGRAMA METALES.msg",
-                    key=f"edit_mail_{selected_po}"
-                )
+                with f_col2:
+                    val_mail = _clean_str(cab_row.get('archivo_correo'))
+                    new_archivo_correo = st.text_input(
+                        "4. Archivo de Correo (.MSG):",
+                        value=val_mail if val_mail else f"INT {(cur_idx+1):04d} - OC {selected_po} SIGRAMA METALES.msg",
+                        key=f"edit_mail_{selected_po}"
+                    )
                 
-                val_pdf = _clean_str(cab_row.get('archivo_pdf'))
-                new_archivo_pdf = st.text_input(
-                    "5. Documento de PO (.PDF):",
-                    value=val_pdf if val_pdf else f"{selected_po} SIGRAMA METALES JMC.PDF",
-                    key=f"edit_pdf_{selected_po}"
-                )
+                    val_pdf = _clean_str(cab_row.get('archivo_pdf'))
+                    new_archivo_pdf = st.text_input(
+                        "5. Documento de PO (.PDF):",
+                        value=val_pdf if val_pdf else f"{selected_po} SIGRAMA METALES JMC.PDF",
+                        key=f"edit_pdf_{selected_po}"
+                    )
                 
-                val_proy = _clean_str(cab_row.get('proyecto'))
-                val_solic = _clean_str(cab_row.get('solicitante'))
-                new_proyecto = st.text_input("Proyecto / Uso:", value=val_proy, key=f"edit_proy_{selected_po}")
-                new_solicitante = st.text_input("Solicitante / Requisición:", value=val_solic, key=f"edit_sol_{selected_po}")
+                    val_proy = _clean_str(cab_row.get('proyecto'))
+                    val_solic = _clean_str(cab_row.get('solicitante'))
+                    new_proyecto = st.text_input("Proyecto / Uso:", value=val_proy, key=f"edit_proy_{selected_po}")
+                    new_solicitante = st.text_input("Solicitante / Requisición:", value=val_solic, key=f"edit_sol_{selected_po}")
                 
-            val_obs = _clean_str(cab_row.get('observaciones'))
-            new_observaciones = st.text_area("Observaciones y Notas de Control:", value=val_obs, height=60, key=f"edit_obs_{selected_po}")
+                val_obs = _clean_str(cab_row.get('observaciones'))
+                new_observaciones = st.text_area("Observaciones y Notas de Control:", value=val_obs, height=60, key=f"edit_obs_{selected_po}")
             
-        # 2° Bloque: Ajuste de la Tabla de Artículos
-        st.markdown("#### 2️⃣ Tabla de Artículos / Partidas (Editable):")
-        st.caption("Puedes modificar cualquier celda directamente (SKU Cliente, SKU Planta, Cantidades, Precios o Fechas) o agregar nuevos renglones.")
+            # 2° Bloque: Ajuste de la Tabla de Artículos
+            st.markdown("#### 2️⃣ Tabla de Artículos / Partidas (Editable):")
+            st.caption("Puedes modificar cualquier celda directamente (SKU Cliente, SKU Planta, Cantidades, Precios o Fechas) o agregar nuevos renglones.")
         
-        if not partidas_po.empty:
-            cols_edit_order = ['item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto', 'cantidad_requerida', 'unidad', 'precio_unitario', 'precio_total', 'fecha_entrega']
-            df_for_editor = partidas_po[[c for c in cols_edit_order if c in partidas_po.columns]].copy()
+            if not partidas_po.empty:
+                cols_edit_order = ['item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto', 'cantidad_requerida', 'unidad', 'precio_unitario', 'precio_total', 'fecha_entrega']
+                df_for_editor = partidas_po[[c for c in cols_edit_order if c in partidas_po.columns]].copy()
             
-            edited_df_partidas = st.data_editor(
-                df_for_editor,
-                column_config={
-                    'item_no': st.column_config.NumberColumn("Item #", disabled=True),
-                    'sku_cliente': st.column_config.TextColumn("SKU Cliente (Clave)"),
-                    'clave_sku': st.column_config.TextColumn("SKU Nuestro (Planta)"),
-                    'descripcion_producto': st.column_config.TextColumn("Descripción del Producto", width="large"),
-                    'cantidad_requerida': st.column_config.NumberColumn("Cantidad", min_value=1.0, format="%.2f"),
-                    'unidad': st.column_config.SelectboxColumn("Unidad", options=["PIEZA", "PZA", "KG", "METRO", "JGO", "LOTE", "SER"]),
-                    'precio_unitario': st.column_config.NumberColumn("P. Unitario ($)", format="$%.2f"),
-                    'precio_total': st.column_config.NumberColumn("P. Total ($)", format="$%.2f"),
-                    'fecha_entrega': st.column_config.TextColumn("Fecha Entrega")
-                },
-                use_container_width=True,
-                num_rows="dynamic",
-                key=f"data_editor_partidas_{selected_po}"
-            )
-        else:
-            edited_df_partidas = pd.DataFrame()
-            st.info("No hay partidas registradas para esta PO.")
-            
-        # Botones de Guardado
-        st.write("")
-        btn_col1, btn_col2 = st.columns(2)
-        with btn_col1:
-            save_clicked = st.button("💾 Guardar Cambios de la PO (Generales + Artículos)", type="primary", use_container_width=True, key=f"btn_save_po_{selected_po}")
-        with btn_col2:
-            save_next_clicked = st.button("💾 Guardar y Pasar al Siguiente ➡️", use_container_width=True, key=f"btn_save_next_po_{selected_po}")
-            
-        if save_clicked or save_next_clicked:
-            # Construir cabecera actualizada
-            updated_cab = dict(cab_row)
-            updated_cab['id_interno'] = str(new_id_interno).strip().upper()
-            updated_cab['fecha_llegada'] = str(new_fecha_llegada)
-            updated_cab['fecha_solicitada'] = str(new_fecha_solicitada)
-            updated_cab['archivo_correo'] = str(new_archivo_correo).strip()
-            updated_cab['archivo_pdf'] = str(new_archivo_pdf).strip()
-            updated_cab['comprador'] = str(new_comprador).strip()
-            updated_cab['proyecto'] = str(new_proyecto).strip()
-            updated_cab['solicitante'] = str(new_solicitante).strip()
-            updated_cab['observaciones'] = str(new_observaciones).strip()
-            
-            # Recalcular totales según tabla editada (Precio x Cantidad)
-            partidas_list = edited_df_partidas.to_dict('records') if not edited_df_partidas.empty else []
-            for p_item in partidas_list:
-                c_q = float(p_item.get('cantidad_requerida', 0) or 0)
-                p_u = float(p_item.get('precio_unitario', 0) or 0)
-                p_t = float(p_item.get('precio_total', 0) or 0)
-                if p_t == 0.0 and p_u > 0:
-                    p_item['precio_total'] = round(c_q * p_u, 2)
-                elif p_u > 0:
-                    p_item['precio_total'] = round(c_q * p_u, 2)
-                    
-            sub_calc = sum(float(r.get('precio_total', 0) or (float(r.get('cantidad_requerida', 0) or 0) * float(r.get('precio_unitario', 0) or 0))) for r in partidas_list)
-            updated_cab['total'] = round(sub_calc, 2)
-            updated_cab['subtotal'] = round(sub_calc / 1.16, 2) if updated_cab.get('subtotal', 0) == 0 else updated_cab['subtotal']
-            updated_cab['iva'] = round(updated_cab['total'] - updated_cab['subtotal'], 2)
-            
-            ok_save, msg_save = save_po(updated_cab, partidas_list)
-            if ok_save:
-                st.success(f"✅ ¡PO {selected_po} actualizada con éxito!")
-                if save_next_clicked and cur_idx < total_pos - 1:
-                    st.session_state['current_po_edit_idx'] = cur_idx + 1
-                st.rerun()
+                edited_df_partidas = st.data_editor(
+                    df_for_editor,
+                    column_config={
+                        'item_no': st.column_config.NumberColumn("Item #", disabled=True),
+                        'sku_cliente': st.column_config.TextColumn("SKU Cliente (Clave)"),
+                        'clave_sku': st.column_config.TextColumn("SKU Nuestro (Planta)"),
+                        'descripcion_producto': st.column_config.TextColumn("Descripción del Producto", width="large"),
+                        'cantidad_requerida': st.column_config.NumberColumn("Cantidad", min_value=1.0, format="%.2f"),
+                        'unidad': st.column_config.SelectboxColumn("Unidad", options=["PIEZA", "PZA", "KG", "METRO", "JGO", "LOTE", "SER"]),
+                        'precio_unitario': st.column_config.NumberColumn("P. Unitario ($)", format="$%.2f"),
+                        'precio_total': st.column_config.NumberColumn("P. Total ($)", format="$%.2f"),
+                        'fecha_entrega': st.column_config.TextColumn("Fecha Entrega")
+                    },
+                    use_container_width=True,
+                    num_rows="dynamic",
+                    key=f"data_editor_partidas_{selected_po}"
+                )
             else:
-                st.error(f"❌ {msg_save}")
+                edited_df_partidas = pd.DataFrame()
+                st.info("No hay partidas registradas para esta PO.")
+            
+            # Botones de Guardado
+            st.write("")
+            btn_col1, btn_col2 = st.columns(2)
+            with btn_col1:
+                save_clicked = st.button("💾 Guardar Cambios de la PO (Generales + Artículos)", type="primary", use_container_width=True, key=f"btn_save_po_{selected_po}")
+            with btn_col2:
+                save_next_clicked = st.button("💾 Guardar y Pasar al Siguiente ➡️", use_container_width=True, key=f"btn_save_next_po_{selected_po}")
+            
+            if save_clicked or save_next_clicked:
+                # Construir cabecera actualizada
+                updated_cab = dict(cab_row)
+                updated_cab['id_interno'] = str(new_id_interno).strip().upper()
+                updated_cab['fecha_llegada'] = str(new_fecha_llegada)
+                updated_cab['fecha_solicitada'] = str(new_fecha_solicitada)
+                updated_cab['archivo_correo'] = str(new_archivo_correo).strip()
+                updated_cab['archivo_pdf'] = str(new_archivo_pdf).strip()
+                updated_cab['comprador'] = str(new_comprador).strip()
+                updated_cab['proyecto'] = str(new_proyecto).strip()
+                updated_cab['solicitante'] = str(new_solicitante).strip()
+                updated_cab['observaciones'] = str(new_observaciones).strip()
+            
+                # Recalcular totales según tabla editada (Precio x Cantidad)
+                partidas_list = edited_df_partidas.to_dict('records') if not edited_df_partidas.empty else []
+                for p_item in partidas_list:
+                    c_q = float(p_item.get('cantidad_requerida', 0) or 0)
+                    p_u = float(p_item.get('precio_unitario', 0) or 0)
+                    p_t = float(p_item.get('precio_total', 0) or 0)
+                    if p_t == 0.0 and p_u > 0:
+                        p_item['precio_total'] = round(c_q * p_u, 2)
+                    elif p_u > 0:
+                        p_item['precio_total'] = round(c_q * p_u, 2)
+                    
+                sub_calc = sum(float(r.get('precio_total', 0) or (float(r.get('cantidad_requerida', 0) or 0) * float(r.get('precio_unitario', 0) or 0))) for r in partidas_list)
+                updated_cab['total'] = round(sub_calc, 2)
+                updated_cab['subtotal'] = round(sub_calc / 1.16, 2) if updated_cab.get('subtotal', 0) == 0 else updated_cab['subtotal']
+                updated_cab['iva'] = round(updated_cab['total'] - updated_cab['subtotal'], 2)
+            
+                ok_save, msg_save = save_po(updated_cab, partidas_list)
+                if ok_save:
+                    st.success(f"✅ ¡PO {selected_po} actualizada con éxito!")
+                    if save_next_clicked and cur_idx < total_pos - 1:
+                        st.session_state['current_po_edit_idx'] = cur_idx + 1
+                    st.rerun()
+                else:
+                    st.error(f"❌ {msg_save}")
+
+        with tab_canc:
+            st.markdown("### 🚫 Gestión y Registro de Cancelación Formal")
+            st.markdown(
+                "Permite registrar la cancelación formal de Órdenes de Compra por solicitud del cliente **sin borrarlas del sistema**. "
+                "Al cancelar una orden, se preserva todo su desglose de piezas, montos e historial, y se adjunta el correo formal "
+                "o documento de cancelación como evidencia digital vinculada para auditoría y trazabilidad 360°."
+            )
+            
+            sub_modo_canc = st.radio(
+                "Selecciona una Acción de Cancelación:",
+                [
+                    f"🎯 Cancelar la Orden Actual ({selected_po})",
+                    "⚡ Cancelación por Lote (Múltiples Órdenes al mismo tiempo)",
+                    "🔄 Reactivar una Orden Previamente Cancelada"
+                ],
+                horizontal=True,
+                key=f"radio_canc_mode_{selected_po}"
+            )
+            
+            # --- 1. Cancelar Orden Actual ---
+            if sub_modo_canc.startswith("🎯"):
+                is_currently_canc = (str(cab_row.get('estatus_general', '')).lower() in ('cancelada', 'cancelado'))
+                if is_currently_canc:
+                    st.warning(f"⚠️ La orden **PO {selected_po}** ya se encuentra registrada como **CANCELADA**.")
+                    st.info(f"**Observaciones:** {cab_row.get('observaciones', 'Sin notas registradas')}")
+                    
+                    from db_manager import get_archivos_adjuntos_por_po, get_contenido_archivo_por_id
+                    df_adj_cur = get_archivos_adjuntos_por_po(selected_po)
+                    df_canc_files = df_adj_cur[df_adj_cur['tipo'] == 'cancelacion'] if not df_adj_cur.empty else pd.DataFrame()
+                    if not df_canc_files.empty:
+                        st.markdown("#### 📎 Evidencia(s) de Cancelación Registrada(s):")
+                        for _, r_canc in df_canc_files.iterrows():
+                            c_id_att = r_canc['id']
+                            c_fn = r_canc['nombre_archivo']
+                            f_n, f_t, f_b = get_contenido_archivo_por_id(c_id_att)
+                            if f_b:
+                                col_f1, col_f2 = st.columns([3, 1])
+                                with col_f1:
+                                    st.write(f"📄 **{c_fn}** ({len(f_b)/1024:.1f} KB - Subido el {r_canc.get('fecha_subida', '')})")
+                                with col_f2:
+                                    st.download_button(
+                                        "📥 Descargar Evidencia",
+                                        data=f_b,
+                                        file_name=c_fn,
+                                        key=f"dl_canc_cur_{c_id_att}"
+                                    )
+                                if c_fn.lower().endswith(('.png', '.jpg', '.jpeg')):
+                                    st.image(f_b, caption=f"Evidencia Formal: {c_fn}", use_container_width=True)
+                else:
+                    st.markdown(f"#### Formulario de Cancelación Formal para: **[{cab_row.get('id_interno', '')}] PO {selected_po}**")
+                    with st.container(border=True):
+                        col_c1, col_c2 = st.columns([2, 1])
+                        with col_c1:
+                            motivo_in = st.text_area(
+                                "Motivo o Justificación Formal de la Cancelación:",
+                                value="Cancelada formalmente por el cliente vía correo electrónico. Sustituida por nuevas órdenes de compra.",
+                                height=85,
+                                key=f"txt_motivo_canc_{selected_po}"
+                            )
+                        with col_c2:
+                            fecha_notif = st.date_input(
+                                "Fecha de Notificación:",
+                                value=datetime.date.today(),
+                                key=f"date_notif_canc_{selected_po}"
+                            )
+                            st.caption("Esta fecha quedará registrada en el historial y bitácora de auditoría.")
+                            
+                        file_evidencia = st.file_uploader(
+                            "Adjuntar Correo o Evidencia Formal de Cancelación (.msg, .pdf, .png, .jpg, .eml):",
+                            type=['msg', 'pdf', 'png', 'jpg', 'jpeg', 'eml'],
+                            key=f"file_uploader_canc_{selected_po}"
+                        )
+                        
+                        st.write("")
+                        if st.button(f"🚫 Confirmar y Ejecutar Cancelación de PO {selected_po}", type="primary", use_container_width=True, key=f"btn_exec_canc_{selected_po}"):
+                            from db_manager import cancelar_po
+                            f_bytes = file_evidencia.getvalue() if file_evidencia else None
+                            f_name = file_evidencia.name if file_evidencia else None
+                            motivo_full = f"{motivo_in.strip()} (Notificado: {fecha_notif})"
+                            
+                            ok_c, msg_c = cancelar_po(
+                                selected_po,
+                                motivo=motivo_full,
+                                archivo_bytes=f_bytes,
+                                archivo_nombre=f_name,
+                                push_to_gh=True
+                            )
+                            if ok_c:
+                                st.success(f"✅ ¡{msg_c}!")
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {msg_c}")
+
+            # --- 2. Cancelar por Lote (Múltiples POs) ---
+            elif sub_modo_canc.startswith("⚡"):
+                st.markdown("#### ⚡ Cancelación Masiva / Por Lote de Órdenes")
+                st.caption("Aplica una cancelación simultánea a varias órdenes adjuntando un solo correo o documento formal de respaldo.")
+                
+                pos_activas = []
+                for p_val in pos_list:
+                    r_p = df_pos[df_pos['po'].astype(str) == p_val].iloc[0]
+                    if str(r_p.get('estatus_general', '')).lower() not in ('cancelada', 'cancelado'):
+                        pos_activas.append(p_val)
+                        
+                if not pos_activas:
+                    st.info("ℹ️ No hay órdenes activas pendientes de cancelación (todas las órdenes están canceladas o no hay datos).")
+                else:
+                    def _format_lote_opt(p):
+                        r_p = df_pos[df_pos['po'].astype(str) == p].iloc[0]
+                        return f"[{r_p.get('id_interno', '')}] PO {p} • {r_p.get('proyecto', '')} (${float(r_p.get('total', 0) or 0):,.2f})"
+                        
+                    sel_pos_lote = st.multiselect(
+                        "Selecciona las Órdenes de Compra a Cancelar en Grupo:",
+                        options=pos_activas,
+                        format_func=_format_lote_opt,
+                        key="ms_pos_cancelar_lote"
+                    )
+                    
+                    if sel_pos_lote:
+                        sub_df_lote = df_pos[df_pos['po'].astype(str).isin(sel_pos_lote)]
+                        monto_lote = float(sub_df_lote['total'].sum())
+                        st.info(f"📊 **Resumen del Lote:** {len(sel_pos_lote)} Órdenes seleccionadas | Importe total combinado: **${monto_lote:,.2f} MXN**")
+                        
+                    with st.container(border=True):
+                        col_l1, col_l2 = st.columns([2, 1])
+                        with col_l1:
+                            motivo_lote = st.text_area(
+                                "Motivo Formal de la Cancelación para el Lote:",
+                                value="Canceladas formalmente por cliente vía correo electrónico. Serán sustituidas por nuevas órdenes de compra.",
+                                height=85,
+                                key="txt_motivo_canc_lote"
+                            )
+                        with col_l2:
+                            fecha_lote = st.date_input("Fecha de Notificación:", value=datetime.date.today(), key="date_canc_lote")
+                            
+                        file_lote = st.file_uploader(
+                            "Adjuntar Correo o Documento Formal de Cancelación para todo el Lote (.msg, .pdf, .png, .jpg):",
+                            type=['msg', 'pdf', 'png', 'jpg', 'jpeg', 'eml'],
+                            key="file_uploader_canc_lote"
+                        )
+                        
+                        st.write("")
+                        btn_lote_exec = st.button(
+                            f"🚫 Ejecutar Cancelación Formal de las {len(sel_pos_lote)} Órdenes Seleccionadas",
+                            type="primary",
+                            use_container_width=True,
+                            disabled=(len(sel_pos_lote) == 0),
+                            key="btn_exec_canc_lote"
+                        )
+                        if btn_lote_exec:
+                            from db_manager import cancelar_pos_lote
+                            f_b_lote = file_lote.getvalue() if file_lote else None
+                            f_n_lote = file_lote.name if file_lote else None
+                            motivo_full_lote = f"{motivo_lote.strip()} (Notificado: {fecha_lote})"
+                            
+                            with st.spinner(f"Cancelando {len(sel_pos_lote)} órdenes y respaldando evidencia..."):
+                                res_lote = cancelar_pos_lote(
+                                    sel_pos_lote,
+                                    motivo=motivo_full_lote,
+                                    archivo_bytes=f_b_lote,
+                                    archivo_nombre=f_n_lote,
+                                    push_to_gh=True
+                                )
+                            st.success(f"✅ ¡Se cancelaron exitosamente {len(sel_pos_lote)} órdenes de compra!")
+                            st.rerun()
+
+            # --- 3. Reactivar Orden Cancelada ---
+            else:
+                st.markdown("#### 🔄 Reactivación de Órdenes de Compra Canceladas")
+                st.caption("Si una orden fue cancelada por error o el cliente decidió reactivarla, puedes regresarla a su estatus activo.")
+                
+                pos_canceladas = []
+                for p_val in pos_list:
+                    r_p = df_pos[df_pos['po'].astype(str) == p_val].iloc[0]
+                    if str(r_p.get('estatus_general', '')).lower() in ('cancelada', 'cancelado'):
+                        pos_canceladas.append(p_val)
+                        
+                if not pos_canceladas:
+                    st.info("ℹ️ No hay órdenes canceladas en el sistema.")
+                else:
+                    def _format_react_opt(p):
+                        r_p = df_pos[df_pos['po'].astype(str) == p].iloc[0]
+                        return f"[{r_p.get('id_interno', '')}] PO {p} • {r_p.get('proyecto', '')} (${float(r_p.get('total', 0) or 0):,.2f})"
+                        
+                    sel_po_react = st.selectbox(
+                        "Selecciona la Orden a Reactivar:",
+                        options=pos_canceladas,
+                        format_func=_format_react_opt,
+                        key="sb_po_reactivar"
+                    )
+                    
+                    motivo_react = st.text_input(
+                        "Motivo de la Reactivación:",
+                        value="Reactivada por confirmación del cliente / error de cancelación",
+                        key="txt_motivo_react"
+                    )
+                    
+                    st.write("")
+                    if st.button(f"🔄 Confirmar Reactivación de PO {sel_po_react}", type="primary", key="btn_confirm_react"):
+                        from db_manager import reactivar_po
+                        ok_r, msg_r = reactivar_po(sel_po_react, motivo=motivo_react, push_to_gh=True)
+                        if ok_r:
+                            st.success(f"✅ ¡{msg_r}!")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {msg_r}")
 
 
 # ==============================================================================
@@ -1711,7 +1926,12 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
             pct_rem = float(rem_tracking.get('porcentaje_global', (tot_rem / tot_req * 100.0) if tot_req > 0 else 0.0))
             
             # Determinar Estatus 360 Global
-            if tot_rem >= tot_req and tot_req > 0:
+            est_gen_360 = str(cab_info.get('estatus_general', '')).strip()
+            if est_gen_360.lower() in ('cancelada', 'cancelado'):
+                estatus_360 = "🚫 Cancelada Formalmente"
+                estatus_color = "#EF4444"
+                tot_pend_env = 0.0
+            elif tot_rem >= tot_req and tot_req > 0:
                 estatus_360 = "Remisionada Total (100%)"
                 estatus_color = "#10B981"
             elif tot_rem > 0:
@@ -1729,6 +1949,31 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
             
             id_int_txt = str(cab_info.get('id_interno', '')).strip()
             id_int_badge = f'<span style="background-color:#EC2024; color:#FFFFFF; padding:6px 20px; border-radius:8px; font-weight:900; font-size:28px; margin-right:12px; display:inline-block; letter-spacing:1px; box-shadow:0 2px 4px rgba(0,0,0,0.3);">{id_int_txt}</span>' if id_int_txt else '<span style="background-color:#555; color:#FFF; padding:6px 16px; border-radius:8px; font-size:20px; margin-right:12px;">SIN ID</span>'
+            
+            if est_gen_360.lower() in ('cancelada', 'cancelado'):
+                from db_manager import get_archivos_adjuntos_por_po, get_contenido_archivo_por_id
+                df_adj_360 = get_archivos_adjuntos_por_po(sel_po)
+                df_canc_ev = df_adj_360[df_adj_360['tipo'] == 'cancelacion'] if not df_adj_360.empty else pd.DataFrame()
+                
+                with st.container(border=True):
+                    st.error(f"🚨 **ORDEN DE COMPRA CANCELADA FORMALMENTE**\n\n"
+                             f"Esta orden de compra fue cancelada formalmente por solicitud del cliente. Las piezas pendientes quedan desprogramadas de planta.\n\n"
+                             f"**Observaciones y Registro:** {cab_info.get('observaciones', 'Sin notas')}")
+                    
+                    if not df_canc_ev.empty:
+                        st.markdown("##### 📎 Evidencia Formal de Cancelación Vinculada:")
+                        for _, r_ev in df_canc_ev.iterrows():
+                            ev_id = r_ev['id']
+                            ev_name = r_ev['nombre_archivo']
+                            _, _, ev_bytes = get_contenido_archivo_por_id(ev_id)
+                            if ev_bytes:
+                                c_ev1, c_ev2 = st.columns([3, 1])
+                                with c_ev1:
+                                    st.write(f"📄 **{ev_name}** ({len(ev_bytes)/1024:.1f} KB)")
+                                with c_ev2:
+                                    st.download_button("📥 Descargar Evidencia", data=ev_bytes, file_name=ev_name, key=f"dl_ev_360_{ev_id}")
+                                if ev_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                                    st.image(ev_bytes, caption=f"Evidencia de Cancelación: {ev_name}", use_container_width=True)
             
             with col_sel2:
                 c_s1, c_s2 = st.columns(2)

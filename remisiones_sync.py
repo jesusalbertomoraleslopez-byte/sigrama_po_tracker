@@ -306,7 +306,11 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
         pct_cumpl = round((tot_rem / tot_req * 100.0) if tot_req > 0 else 0.0, 1)
         
         # Estatus 360 enriquecido
-        if tot_rem >= tot_req and tot_req > 0:
+        est_gen = str(po_row.get('estatus_general', '')).strip()
+        if est_gen.lower() in ('cancelada', 'cancelado'):
+            st_360 = "🚫 Cancelada"
+            tot_pend = 0.0
+        elif tot_rem >= tot_req and tot_req > 0:
             st_360 = "🟢 Remisionada Total (100%)"
         elif tot_rem > 0:
             st_360 = f"🔵 Parcial Enviada ({pct_cumpl:.1f}%)"

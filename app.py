@@ -2263,24 +2263,20 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     from apertura_proyecto import (
                         find_original_order_files,
                         generate_apertura_piezas_excel,
-                        generate_apertura_eml
+                        generate_apertura_eml,
+                        obtener_emails_config,
+                        guardar_emails_config
                     )
                     
-                    msg_b, msg_n, pdf_b, pdf_n = find_original_order_files(sel_po, id_int_txt)
-                    excel_piezas_bytes = generate_apertura_piezas_excel(sel_po, id_int_txt, cab_info, df_merged_360)
-                    eml_apertura_bytes = generate_apertura_eml(
-                        sel_po, id_int_txt, cab_info, df_merged_360,
-                        msg_bytes=msg_b, msg_name=msg_n,
-                        pdf_bytes=pdf_b, pdf_name=pdf_n,
-                        excel_bytes=excel_piezas_bytes
-                    )
+                    cfg_to, cfg_cc = obtener_emails_config()
                     
                     with st.container(border=True):
                         c_ap_h1, c_ap_h2 = st.columns([2.2, 1.3])
                         with c_ap_h1:
                             st.markdown(f"#### 🚀 Apertura del Proyecto INTERNO: `{id_int_txt}` — PO `{sel_po}`")
-                            st.caption("Genere el paquete oficial de arranque: Correo **`.eml`** (Outlook) con el **correo original (.msg)** embebido y lista oficial de piezas en **Excel (.xlsx)**.")
+                            st.caption("Genere el paquete oficial de arranque: Correo **`.eml`** (Outlook Borrador listo para Enviar con 1 clic) con **correo original (.msg)** embebido y lista de piezas en **Excel (.xlsx)**.")
                         with c_ap_h2:
+                            msg_b, msg_n, pdf_b, pdf_n = find_original_order_files(sel_po, id_int_txt)
                             eml_orig_label = f"📎 Correo original: `{msg_n}`" if msg_n else "⚠️ Sin correo .msg previo"
                             pdf_orig_label = f"📄 PDF oficial: `{pdf_n}`" if pdf_n else "⚠️ Sin PDF oficial"
                             st.markdown(f"""
@@ -2289,15 +2285,39 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 <div>{pdf_orig_label}</div>
                             </div>
                             """, unsafe_allow_html=True)
+
+                        with st.expander("👥 Lista de Distribución Oficial (Idéntica a Remisiones)", expanded=False):
+                            st.caption("Esta lista se precarga automáticamente en los campos **Para:** y **CC:** del correo de apertura. Puede modificarla antes de generar el correo.")
+                            col_to_edit, col_cc_edit = st.columns(2)
+                            with col_to_edit:
+                                dest_to_val = st.text_area("Para (Destinatarios principales):", value=cfg_to, height=120, key=f"dest_to_apertura_{sel_po}")
+                            with col_cc_edit:
+                                dest_cc_val = st.text_area("CC (Copia a involucrados):", value=cfg_cc, height=120, key=f"dest_cc_apertura_{sel_po}")
+                            
+                            c_save_btn, _ = st.columns([1.5, 3.5])
+                            with c_save_btn:
+                                if st.button("💾 Guardar lista como predeterminada", key=f"btn_save_emails_{sel_po}"):
+                                    guardar_emails_config(dest_to_val, dest_cc_val)
+                                    st.success("¡Lista de distribución predeterminada guardada exitosamente!")
+
+                        excel_piezas_bytes = generate_apertura_piezas_excel(sel_po, id_int_txt, cab_info, df_merged_360)
+                        eml_apertura_bytes = generate_apertura_eml(
+                            sel_po, id_int_txt, cab_info, df_merged_360,
+                            msg_bytes=msg_b, msg_name=msg_n,
+                            pdf_bytes=pdf_b, pdf_name=pdf_n,
+                            excel_bytes=excel_piezas_bytes,
+                            dest_to=dest_to_val if 'dest_to_val' in locals() else None,
+                            dest_cc=dest_cc_val if 'dest_cc_val' in locals() else None
+                        )
                         
                         c_btn_eml, c_btn_xl = st.columns(2)
                         with c_btn_eml:
                             st.download_button(
-                                label="✉️ Descargar Correo de Apertura (.eml)",
+                                label="✉️ Descargar Borrador Oficial (.eml) — Listo para Enviar",
                                 data=eml_apertura_bytes,
                                 file_name=f"Apertura_Proyecto_{id_int_txt}_{sel_po}.eml",
                                 mime="message/rfc822",
-                                help="Descarga el correo formal de Apertura de Proyecto con la Lista de Piezas (.xlsx), el correo original (.msg) y la PO oficial (.pdf) embebidos como adjuntos.",
+                                help="Descarga el correo en modo borrador con destinatarios de Remisiones listos. Al abrirlo en Outlook solo confirme y presione 'Enviar'. Incluye Lista de Piezas (.xlsx), correo original (.msg) y PO (.pdf).",
                                 use_container_width=True,
                                 type="primary",
                                 key=f"btn_dl_eml_apertura_{sel_po}"

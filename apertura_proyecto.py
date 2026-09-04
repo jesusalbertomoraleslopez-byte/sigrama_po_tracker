@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import io
+import os
+import json
 import datetime
 import re
 import openpyxl
@@ -10,6 +12,61 @@ import email.utils
 from pathlib import Path
 import pandas as pd
 import db_manager
+
+# ── LISTA OFICIAL DE DISTRIBUCIÓN (IDÉNTICA A LA APP DE REMISIONES) ───────────
+DEFAULT_DEST_TO = (
+    "Victor Montoya Martinez <victor.montoya@sigrama.com.mx>; "
+    "Luis Domingo Garcia Gracia <luis.garcia@sigrama.com.mx>; "
+    "Josue Mesta <josue.mesta@sigrama.com.mx>; "
+    "Alejandra Arellano Machado <sarellano@sigrama.com.mx>; "
+    "Mydory Noehmi Gonzalez Leon <abastecimientos@sigrama.com.mx>; "
+    "Luis Alberto Sianez Moreno <almacen@sigrama.com.mx>"
+)
+
+DEFAULT_DEST_CC = (
+    "Calidad <calidad@sigrama.com.mx>; "
+    "Jesus Alberto Morales Lopez <jesus.morales@sigrama.com.mx>; "
+    "Edgar Sosa Suarez <edgar.sosa@sigrama.com.mx>; "
+    "Lorena Hernandez Cuellar <lhernandez@sigrama.com.mx>; "
+    "Armando Woo Vazquez <armando.vazquez@sigrama.com.mx>; "
+    "Bryan Alejandro Flores Mancinas <bryan.mancinas@sigrama.com.mx>; "
+    "Cruz Eduardo Carreon Rios <cruz.carreon@sigrama.com.mx>; "
+    "Luis Alfredo Quintana Palma <luis.quintana@sigrama.com.mx>; "
+    "hluis.garcia@sigrama.com.mx; juan.ortiz@sigrama.com.mx; "
+    "miguel.ramos@sigrama.com.mx; fgarcia@sigrama.com.mx"
+)
+
+def obtener_emails_config():
+    """Obtiene la configuración de destinatarios To/CC por defecto de Remisiones."""
+    cfg_path = Path("data/config_emails.json")
+    default_cfg = {
+        "dest_to": DEFAULT_DEST_TO,
+        "dest_cc": DEFAULT_DEST_CC
+    }
+    if cfg_path.exists():
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                return {
+                    "dest_to": cfg.get("dest_to", DEFAULT_DEST_TO),
+                    "dest_cc": cfg.get("dest_cc", DEFAULT_DEST_CC)
+                }
+        except Exception:
+            return default_cfg
+    return default_cfg
+
+def guardar_emails_config(to_str, cc_str):
+    """Guarda la configuración personalizada de listas de distribución."""
+    cfg_path = Path("data/config_emails.json")
+    cfg = {"dest_to": str(to_str).strip(), "dest_cc": str(cc_str).strip()}
+    try:
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"[WARN] Error guardando config_emails: {e}")
+        return False
 
 def find_original_order_files(po, id_interno):
     """
@@ -360,13 +417,15 @@ def generate_apertura_piezas_excel(po, id_interno, cab_info, df_partidas):
     buf.seek(0)
     return buf.getvalue()
 
-def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None, msg_name=None, pdf_bytes=None, pdf_name=None, excel_bytes=None):
+def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None, msg_name=None, pdf_bytes=None, pdf_name=None, excel_bytes=None, dest_to=None, dest_cc=None):
     """
     Genera el correo formal de Apertura de Proyecto Interno en formato RFC 822 (.eml)
     100% COMPATIBLE CON MICROSOFT OUTLOOK (Word Engine):
-    - Usa tablas HTML puras con bgcolor="#18181B" para que Outlook jamás deje el fondo en blanco.
-    - Encabezado con banner idéntico a la Ficha de Trazabilidad 360° (segunda imagen).
-    - Codificación Content-Transfer-Encoding en base64 para evitar saltos suaves de línea con '='.
+    - Incluye 'X-Unsent: 1' para que Outlook lo abra directamente como BORRADOR con botón 'ENVIAR'.
+    - Lista de distribución predeterminada idéntica a la aplicación de Remisiones.
+    - Tablas HTML anidadas con bgcolor="#18181B" para que Outlook jamás deje el fondo en blanco.
+    - Encabezado con banner idéntico a la Ficha de Trazabilidad 360°.
+    - Codificación base64 para evitar saltos suaves de línea con '='.
     - Adjuntos embebidos: Lista de Piezas (.xlsx), Correo Original (.msg) y PDF de la PO.
     """
     df_partidas = _ensure_partidas_skus(po, df_partidas)
@@ -412,11 +471,19 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
     if tot_imp == 0.0 and 'precio_total' in df_partidas.columns:
         tot_imp = float(df_partidas['precio_total'].sum())
 
+    # Configuración de Destinatarios (Lista de Distribución Oficial Remisiones)
+    cfg_emails = obtener_emails_config()
+    final_to = str(dest_to).strip() if dest_to else cfg_emails.get("dest_to", DEFAULT_DEST_TO)
+    final_cc = str(dest_cc).strip() if dest_cc else cfg_emails.get("dest_cc", DEFAULT_DEST_CC)
+
     msg['Subject'] = f"[APERTURA DE PROYECTO INTERNO] {id_clean} - OC {po_clean} | PROYECTO: {prj_clean}"
     msg['From'] = 'operaciones@sigrama.com.mx'
-    msg['To'] = f"{cmp_clean.lower().replace(' ', '.')}@sigrama.com.mx"
-    msg['Cc'] = 'operaciones@sigrama.com.mx, produccion@sigrama.com.mx, calidad@sigrama.com.mx, almacen@sigrama.com.mx'
+    msg['To'] = final_to
+    msg['Cc'] = final_cc
     msg['Date'] = email.utils.formatdate(localtime=True)
+    
+    # ── CLAVE FUNDAMENTAL: X-Unsent: 1 permite que Outlook abra el correo en MODO BORRADOR/EDICIÓN con botón 'ENVIAR'
+    msg['X-Unsent'] = '1'
 
     # Filas de la tabla de partidas
     filas_html = ""

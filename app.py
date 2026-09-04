@@ -2259,6 +2259,60 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         
                     df_merged_360['estatus_partida_360'] = df_merged_360.apply(_calc_part_status, axis=1)
                     
+                    # ── BOTONES OFICIALES DE APERTURA DE PROYECTO INTERNO ──────────────
+                    from apertura_proyecto import (
+                        find_original_order_files,
+                        generate_apertura_piezas_excel,
+                        generate_apertura_eml
+                    )
+                    
+                    msg_b, msg_n, pdf_b, pdf_n = find_original_order_files(sel_po, id_int_txt)
+                    excel_piezas_bytes = generate_apertura_piezas_excel(sel_po, id_int_txt, cab_info, df_merged_360)
+                    eml_apertura_bytes = generate_apertura_eml(
+                        sel_po, id_int_txt, cab_info, df_merged_360,
+                        msg_bytes=msg_b, msg_name=msg_n,
+                        pdf_bytes=pdf_b, pdf_name=pdf_n,
+                        excel_bytes=excel_piezas_bytes
+                    )
+                    
+                    with st.container(border=True):
+                        c_ap_h1, c_ap_h2 = st.columns([2.2, 1.3])
+                        with c_ap_h1:
+                            st.markdown(f"#### 🚀 Apertura del Proyecto INTERNO: `{id_int_txt}` — PO `{sel_po}`")
+                            st.caption("Genere el paquete oficial de arranque: Correo **`.eml`** (Outlook) con el **correo original (.msg)** embebido y lista oficial de piezas en **Excel (.xlsx)**.")
+                        with c_ap_h2:
+                            eml_orig_label = f"📎 Correo original: `{msg_n}`" if msg_n else "⚠️ Sin correo .msg previo"
+                            pdf_orig_label = f"📄 PDF oficial: `{pdf_n}`" if pdf_n else "⚠️ Sin PDF oficial"
+                            st.markdown(f"""
+                            <div style='text-align:right; font-size:11.5px; color:#475569; background:#F8FAFC; border:1px solid #E2E8F0; padding:6px 10px; border-radius:6px;'>
+                                <div>{eml_orig_label}</div>
+                                <div>{pdf_orig_label}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        c_btn_eml, c_btn_xl = st.columns(2)
+                        with c_btn_eml:
+                            st.download_button(
+                                label="✉️ Descargar Correo de Apertura (.eml)",
+                                data=eml_apertura_bytes,
+                                file_name=f"Apertura_Proyecto_{id_int_txt}_{sel_po}.eml",
+                                mime="message/rfc822",
+                                help="Descarga el correo formal de Apertura de Proyecto con la Lista de Piezas (.xlsx), el correo original (.msg) y la PO oficial (.pdf) embebidos como adjuntos.",
+                                use_container_width=True,
+                                type="primary",
+                                key=f"btn_dl_eml_apertura_{sel_po}"
+                            )
+                        with c_btn_xl:
+                            st.download_button(
+                                label="📊 Descargar Lista de Piezas (.xlsx)",
+                                data=excel_piezas_bytes,
+                                file_name=f"Lista_Piezas_Despiece_{id_int_txt}_{sel_po}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                help="Descarga la lista de piezas oficial y despiece en Excel (.xlsx) formateado con estilos corporativos SIGRAMA y fórmulas de sumatoria.",
+                                use_container_width=True,
+                                key=f"btn_dl_xl_piezas_{sel_po}"
+                            )
+                    
                     # -------------------------------------------------------------
                     # VISUALIZACIÓN TIPO EXCEL CON BARRAS DE DATOS EN CELDAS
                     # -------------------------------------------------------------

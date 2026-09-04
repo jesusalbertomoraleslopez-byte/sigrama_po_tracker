@@ -404,10 +404,12 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
                     for l in lines:
                         l_upper = l.upper()
                         is_amt = sum(1 for w in amount_words if w in l_upper) >= 2 or re.search(r'\d', l)
-                        if not is_amt and l not in ('COMPRADOR', 'FIRMA', 'DESCUENTO', 'OBSERVACIONES', 'PROVEEDOR', 'TOTAL'):
+                        ignored_words = ('COMPRADOR', 'FIRMA', 'DESCUENTO', 'OBSERVACIONES', 'PROVEEDOR', 'TOTAL', 'PIEZA', 'PZA', 'PIEZAS', 'PZAS', 'KG', 'METRO', 'JGO', 'LOTE', 'SER', 'CANTIDAD', 'UNIDAD', 'PRECIO', 'IMPORTE')
+                        if not is_amt and l_upper not in ignored_words and len(l.strip()) > 3:
                             comprador = l
                             
-            if not comprador or re.search(r'\d', comprador):
+            ignored_words = ('COMPRADOR', 'FIRMA', 'DESCUENTO', 'OBSERVACIONES', 'PROVEEDOR', 'TOTAL', 'PIEZA', 'PZA', 'PIEZAS', 'PZAS', 'KG', 'METRO', 'JGO', 'LOTE', 'SER', 'CANTIDAD', 'UNIDAD', 'PRECIO', 'IMPORTE')
+            if not comprador or comprador.upper() in ignored_words or re.search(r'\d', comprador):
                 if email_context and email_context.get('remitente') and not re.search(r'\d', str(email_context.get('remitente'))):
                     comprador = email_context.get('remitente')
                 else:

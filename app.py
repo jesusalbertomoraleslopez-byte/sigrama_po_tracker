@@ -639,6 +639,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             
             tot_val = float(r_bar.get('total', 0) or 0)
             
+            st_txt = str(r_bar.get('estatus_remision', '⚪ Registrada'))
             is_canc = ("cancelad" in st_txt.lower())
             if is_canc:
                 b_bg, b_fg = "#FEE2E2", "#B91C1C"

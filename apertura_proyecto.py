@@ -7,7 +7,11 @@ import re
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-import email.message
+import email
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 import email.utils
 from pathlib import Path
 import pandas as pd
@@ -430,7 +434,8 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
     """
     df_partidas = _ensure_partidas_skus(po, df_partidas)
 
-    msg = email.message.EmailMessage()
+    msg = MIMEMultipart('mixed')
+    msg['X-Unsent'] = '1'  # Clave para que Outlook lo abra directamente como borrador editable con botón 'Enviar'
 
     def _clean(v, d=""):
         if v is None or pd.isna(v):
@@ -477,13 +482,10 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
     final_cc = str(dest_cc).strip() if dest_cc else cfg_emails.get("dest_cc", DEFAULT_DEST_CC)
 
     msg['Subject'] = f"[APERTURA DE PROYECTO INTERNO] {id_clean} - OC {po_clean} | PROYECTO: {prj_clean}"
-    msg['From'] = 'operaciones@sigrama.com.mx'
-    msg['To'] = final_to
-    msg['Cc'] = final_cc
-    msg['Date'] = email.utils.formatdate(localtime=True)
-    
-    # ── CLAVE FUNDAMENTAL: X-Unsent: 1 permite que Outlook abra el correo en MODO BORRADOR/EDICIÓN con botón 'ENVIAR'
-    msg['X-Unsent'] = '1'
+    if final_to:
+        msg['To'] = final_to
+    if final_cc:
+        msg['Cc'] = final_cc
 
     # Filas de la tabla de partidas
     filas_html = ""
@@ -703,31 +705,34 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
 </html>
 """
 
-    msg.set_content(f"Apertura de Proyecto Interno {id_clean} - OC {po_clean}. Consulte la versión HTML y los archivos adjuntos.")
-    # Usar CTE base64 para evitar saltos de línea Quoted-Printable que corrompen palabras con '='
-    msg.add_alternative(html_content, subtype='html', cte='base64')
+    # Cuerpo HTML
+    body_part = MIMEText(html_content, 'html', 'utf-8')
+    msg.attach(body_part)
 
-    # Adjuntos
+    # Adjuntos (idéntico al generador de remisiones)
+    adjuntos_dict = {}
     if excel_bytes:
-        msg.add_attachment(
-            excel_bytes,
-            maintype='application',
-            subtype='vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            filename=f"Lista_Piezas_Despiece_{id_clean}_{po_clean}.xlsx"
-        )
+        adjuntos_dict[f"Lista_Piezas_Despiece_{id_clean}_{po_clean}.xlsx"] = excel_bytes
     if msg_bytes and msg_name:
-        msg.add_attachment(
-            msg_bytes,
-            maintype='application',
-            subtype='vnd.ms-outlook',
-            filename=msg_name
-        )
+        adjuntos_dict[msg_name] = msg_bytes
     if pdf_bytes and pdf_name:
-        msg.add_attachment(
-            pdf_bytes,
-            maintype='application',
-            subtype='pdf',
-            filename=pdf_name
-        )
+        adjuntos_dict[pdf_name] = pdf_bytes
 
-    return msg.as_bytes()
+    for filename, file_bytes in adjuntos_dict.items():
+        if not file_bytes:
+            continue
+        if hasattr(file_bytes, 'getvalue'):
+            file_bytes = file_bytes.getvalue()
+        elif hasattr(file_bytes, 'read'):
+            file_bytes = file_bytes.read()
+
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload(file_bytes)
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
+        msg.attach(part)
+
+    import gc
+    val = msg.as_bytes()
+    gc.collect()
+    return val

@@ -345,6 +345,16 @@ def save_archivo_adjunto(po, id_interno, nombre_archivo, tipo, contenido_bytes):
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     tamano = len(contenido_bytes)
     try:
+        # Siempre guardar en disco data/correos/
+        correos_dir = DATA_DIR / 'correos'
+        correos_dir.mkdir(parents=True, exist_ok=True)
+        with open(correos_dir / nombre_archivo, 'wb') as f:
+            f.write(contenido_bytes)
+            
+        # Para evitar que po_tracker.db supere el límite de 100MB de GitHub,
+        # los archivos mayores a 500KB residen en data/correos/ y en SQLite se guarda NULL en el BLOB
+        contenido_db = contenido_bytes if tamano <= 500000 else None
+        
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute('''
@@ -357,16 +367,9 @@ def save_archivo_adjunto(po, id_interno, nombre_archivo, tipo, contenido_bytes):
                 contenido=excluded.contenido,
                 tamano_bytes=excluded.tamano_bytes,
                 fecha_subida=excluded.fecha_subida
-        ''', (str(po), str(id_interno), str(nombre_archivo), str(tipo).lower(), contenido_bytes, tamano, now_str))
+        ''', (str(po), str(id_interno), str(nombre_archivo), str(tipo).lower(), contenido_db, tamano, now_str))
         conn.commit()
         conn.close()
-        
-        # También guardar en disco data/correos/
-        correos_dir = DATA_DIR / 'correos'
-        correos_dir.mkdir(parents=True, exist_ok=True)
-        with open(correos_dir / nombre_archivo, 'wb') as f:
-            f.write(contenido_bytes)
-            
         return True
     except Exception as e:
         print(f"Error guardando archivo adjunto {nombre_archivo}: {e}")
@@ -393,25 +396,37 @@ def get_todos_archivos_adjuntos():
     return df
 
 def get_contenido_archivo_por_nombre(nombre_archivo):
-    """Obtiene el binario de un archivo por su nombre."""
+    """Obtiene el binario de un archivo por su nombre, con respaldo desde data/correos si no está en BLOB."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT nombre_archivo, tipo, contenido FROM po_archivos_adjuntos WHERE nombre_archivo = ?", (str(nombre_archivo),))
     row = cursor.fetchone()
     conn.close()
     if row:
-        return row[0], row[1], row[2]
+        fn, ft, fb = row[0], row[1], row[2]
+        if fb is None:
+            disk_p = DATA_DIR / 'correos' / fn
+            if disk_p.exists():
+                with open(disk_p, 'rb') as f:
+                    fb = f.read()
+        return fn, ft, fb
     return None, None, None
 
 def get_contenido_archivo_por_id(id_archivo):
-    """Obtiene el binario de un archivo por su ID."""
+    """Obtiene el binario de un archivo por su ID, con respaldo desde data/correos si no está en BLOB."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT nombre_archivo, tipo, contenido FROM po_archivos_adjuntos WHERE id = ?", (int(id_archivo),))
     row = cursor.fetchone()
     conn.close()
     if row:
-        return row[0], row[1], row[2]
+        fn, ft, fb = row[0], row[1], row[2]
+        if fb is None:
+            disk_p = DATA_DIR / 'correos' / fn
+            if disk_p.exists():
+                with open(disk_p, 'rb') as f:
+                    fb = f.read()
+        return fn, ft, fb
     return None, None, None
 
 def cancelar_po(po, motivo="Cancelada por cliente", archivo_bytes=None, archivo_nombre=None, usuario="Usuario", push_to_gh=True):

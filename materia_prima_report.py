@@ -31,12 +31,14 @@ KNOWN_DECAPADO_POS = [
 
 def classify_material_and_calibre(of_name, of_desc="", cal_field="", po_val="", proy_val="", piezas_text=""):
     """
-    Clasifica de forma precisa el Calibre y Tipo de Material considerando:
-    - Indicadores en nombre de la OF y descripción
-    - Mapeo de piezas cortadas (gacr, CR = Cold Rolled / Decapado, ANSI-61 = Pintura gris sobre decapado)
-    - Especificación de la PO / Proyecto (ej. 2602-0711 RENO 6 y 2603-2561 LC8 20K son Decapado/ANSI 61)
+    Regla Oficial de Planta Sigrama:
+    - Las OF de material GALVANIZADO llevan obligatoriamente 'GALV' en el nombre de la OF.
+    - Las OF de material INOXIDABLE llevan 'INOX'.
+    - Las OF de material ALUMINIO llevan 'ALUM'.
+    - Todas las demás OF (que no llevan GALV) son DECAPADO (lámina rolada en frío para pintura electrostática ANSI 61).
     """
-    comb = f"{of_name} {of_desc} {cal_field} {po_val} {proy_val}".upper()
+    of_upper = f"{of_name} {of_desc}".upper()
+    comb = f"{of_upper} {cal_field} {po_val} {proy_val}".upper()
     full_text = f"{comb} {piezas_text}".upper()
     
     # 1. Calibre
@@ -54,29 +56,16 @@ def classify_material_and_calibre(of_name, of_desc="", cal_field="", po_val="", 
     elif re.search(r'\b(CAL\.?\s*20|20\s*GA|CAL20|20GACR)\b', full_text):
         cal = 'CAL 20'
         
-    # 2. Material
-    has_inox = bool(re.search(r'\b(INOX|INOXIDABLE|SS304|SS316)\b', full_text))
-    has_alum = bool(re.search(r'\b(ALUM|ALUMINIO|AL5052)\b', full_text))
-    
-    # Título o piezas que expresamente dicen Galvanizado (ej. PROD. GALV, PPAP GALV)
-    title_galv = bool(re.search(r'\b(GALV|GALVANIZAD)\b', f"{of_name} {of_desc}".upper()))
-    
-    # Indicadores claros de Lámina Rolada en Frío / Decapada para pintar con ANSI 61
-    norm_po = normalize_po(po_val) if po_val else ""
-    is_known_decap = any(normalize_po(kp) in norm_po or normalize_po(kp) in normalize_po(of_name) for kp in KNOWN_DECAPADO_POS)
-    has_cr_ansi = bool(re.search(r'\b(GACR|CR|ANSI|ANSI-61|ANSI 61|COLD\s*ROLLED|DECAPAD|DECP|PINTAR|LC8|RENO|SWBD|SOUTH VALLEY)\b', full_text))
-    
-    if has_inox:
+    # 2. Material (Regla Directa de Planta)
+    if re.search(r'\b(INOX|INOXIDABLE|SS304|SS316)\b', of_upper):
         mat = 'INOX'
-    elif has_alum:
+    elif re.search(r'\b(ALUM|ALUMINIO|AL5052)\b', of_upper):
         mat = 'ALUMINIO'
-    elif title_galv:
-        mat = 'GALV'
-    elif is_known_decap or has_cr_ansi:
-        mat = 'DECAPADO'
-    elif 'GALV' in full_text:
+    elif 'GALV' in of_upper:
+        # Cualquier OF con 'GALV' en el nombre es Galvanizado
         mat = 'GALV'
     else:
+        # Todas las demás OF que no llevan 'GALV' son material Decapado / ANSI 61
         mat = 'DECAPADO'
         
     return mat, cal

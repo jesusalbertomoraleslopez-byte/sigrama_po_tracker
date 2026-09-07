@@ -30,8 +30,10 @@ def parse_tarimas_asociadas(raw_val):
     return [t.strip() for t in s.split(",") if t.strip()]
 
 def sync_live_remisiones_from_github():
-    """Descarga en caliente las bases de datos de remisiones directamente de GitHub o local."""
+    """Descarga en caliente las bases de datos de remisiones y corte/doblez directamente de GitHub o local."""
     import urllib.request
+    import subprocess
+    from config import get_corte_doblez_dir
     rem_dir = get_remisiones_dir()
     urls = [
         'https://raw.githubusercontent.com/jesusalbertomoraleslopez-byte/remisiones-de-materiales/main/BD_Detalle_Tarimas.xlsx',
@@ -47,6 +49,15 @@ def sync_live_remisiones_from_github():
             ok_any = True
         except Exception:
             pass
+            
+    try:
+        cd_dir = get_corte_doblez_dir()
+        if (cd_dir / '.git').exists():
+            subprocess.run(['git', '-C', str(cd_dir), 'pull', 'origin', 'main'], capture_output=True, timeout=15)
+            ok_any = True
+    except Exception:
+        pass
+        
     return ok_any
 
 def load_remisiones_databases():

@@ -6,10 +6,12 @@ from config import normalize_po, get_corte_doblez_dir
 
 def clean_pronest_piece_name(p):
     s = str(p).strip()
-    # Eliminar prefijo de número de ítem de Pronest: '20.-', '01.-', '1.', etc.
-    s = re.sub(r'^\d+[\.\-_]\s*', '', s)
+    # Eliminar prefijo de número de ítem de Pronest: '20.-', '01.-', '02.- ', '1.', etc.
+    s = re.sub(r'^\d+[\.\-_\s]+', '', s).strip()
+    # Eliminar sufijo de calibre: ' CAL. 12', ' CAL 14', etc.
+    s = re.sub(r'\s+CAL\b.*$', '', s, flags=re.IGNORECASE).strip()
     # Eliminar sufijo de fecha/anidado: '-(10-08-26)', ' (10-08-26)', etc.
-    s = re.sub(r'[\-_]\s*\(\d+[-/]\d+[-/]\d+\).*$', '', s)
+    s = re.sub(r'[\-_]\s*\(\d+[-/]\d+[-/]\d+\).*$', '', s).strip()
     return s.strip()
 
 def normalize_sku(s):
@@ -93,6 +95,15 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
                 pat = rf'\b(PO|INT|OC)?\s*0*{id_int_num}\b'
                 if re.search(pat, comb_txt):
                     m_by_id = True
+                    
+            # Inteligencia Operativa: Caso específico OF 83 (P4-P5-P6 Cal. 12 CLOUD)
+            # En la captura de planta fue ingresada con PO 26083235 por error de dedo, pero sus 30 SKUs
+            # y 552 piezas corresponden al paquete de producción CLOUD de PO 2608-3425 (INT-0047).
+            if '00083' in of_num:
+                if po_norm in ('26083425', 'PO047', 'INT0047', '047', '47'):
+                    m_by_po = True
+                elif po_norm in ('26083235', 'PO055', 'INT0055', '055', '55'):
+                    m_by_po = False
                     
             if m_by_po or m_by_id:
                 matched_ofs.add(of_num)
@@ -190,17 +201,17 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
     total_doblado = 0.0
     total_terminado = 0.0
     
-    # Pre-normalizar columnas para matching vectorizado (evitar O(partidas × filas) con apply)
+    # Pre-normalizar columnas para matching vectorizado (limpiando prefijos de Pronest como '02.-')
     if not df_pie_po.empty and 'no_pieza' in df_pie_po.columns:
         df_pie_po = df_pie_po.copy()
-        df_pie_po['_norm_pieza'] = df_pie_po['no_pieza'].apply(normalize_sku)
+        df_pie_po['_norm_pieza'] = df_pie_po['no_pieza'].apply(lambda x: normalize_sku(clean_pronest_piece_name(x)))
     if not df_ava_po.empty and 'no_pieza' in df_ava_po.columns:
         df_ava_po = df_ava_po.copy()
-        df_ava_po['_norm_pieza'] = df_ava_po['no_pieza'].apply(normalize_sku)
+        df_ava_po['_norm_pieza'] = df_ava_po['no_pieza'].apply(lambda x: normalize_sku(clean_pronest_piece_name(x)))
         df_ava_po['_area_lc'] = df_ava_po['area'].astype(str).str.lower()
     if not df_tar_po.empty and 'no_pieza' in df_tar_po.columns:
         df_tar_po = df_tar_po.copy()
-        df_tar_po['_norm_pieza'] = df_tar_po['no_pieza'].apply(normalize_sku)
+        df_tar_po['_norm_pieza'] = df_tar_po['no_pieza'].apply(lambda x: normalize_sku(clean_pronest_piece_name(x)))
     
     if not df_partidas.empty:
         for _, part in df_partidas.iterrows():

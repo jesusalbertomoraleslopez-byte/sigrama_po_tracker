@@ -50,6 +50,7 @@ from corte_doblez_sync import (
 )
 from pdf_parser import parse_po_pdf, parse_email_text
 from excel_importer import generate_po_excel_template, parse_uploaded_excel
+from materia_prima_report import render_materia_prima_page
 
 # ── Configuración de Página (DEBE ser el primer comando de Streamlit) ──────────
 st.set_page_config(
@@ -319,6 +320,7 @@ with st.sidebar:
             "📊 Dashboard Ejecutivo",
             "🔍 Ficha de Trazabilidad 360°",
             "📋 Tabla de Todas las Órdenes",
+            "🏭 Uso de Materia Prima (Láminas)",
             "📬 Bandeja de Entrada OCR",
             "📁 Repositorio de Correos y Archivos",
             "✏️ Ajuste de PO",
@@ -1896,6 +1898,12 @@ elif menu == "📋 Tabla de Todas las Órdenes":
     df_pos = get_all_pos()
     df_part = get_all_partidas()
     render_tabla_todas_las_ordenes(df_pos, df_part)
+
+# ==============================================================================
+# SECCIÓN: REPORTE DE USO DE MATERIA PRIMA (LÁMINAS / HOJAS)
+# ==============================================================================
+elif menu == "🏭 Uso de Materia Prima (Láminas)":
+    render_materia_prima_page()
 
 # ==============================================================================
 # SECCIÓN 5: FICHA DE TRAZABILIDAD 360° (INVESTIGACIÓN & CRUCE)

@@ -24,35 +24,60 @@ STANDARD_COLUMNS = [
     'CAL 16 DECAPADO'
 ]
 
-def classify_material_and_calibre(of_name, cal_field=""):
-    s = f"{of_name} {cal_field}".upper()
+KNOWN_DECAPADO_POS = [
+    '2602-0711', '2603-2561', '2603-2809', '2603-2811', '2603-2815', 
+    '2603-2836', '2603-2838', '2608-3186', '2608-3261'
+]
+
+def classify_material_and_calibre(of_name, of_desc="", cal_field="", po_val="", proy_val="", piezas_text=""):
+    """
+    Clasifica de forma precisa el Calibre y Tipo de Material considerando:
+    - Indicadores en nombre de la OF y descripción
+    - Mapeo de piezas cortadas (gacr, CR = Cold Rolled / Decapado, ANSI-61 = Pintura gris sobre decapado)
+    - Especificación de la PO / Proyecto (ej. 2602-0711 RENO 6 y 2603-2561 LC8 20K son Decapado/ANSI 61)
+    """
+    comb = f"{of_name} {of_desc} {cal_field} {po_val} {proy_val}".upper()
+    full_text = f"{comb} {piezas_text}".upper()
     
     # 1. Calibre
     cal = None
-    if re.search(r'\b(CAL\.?\s*10|10\s*GA|CAL10)\b', s):
+    if re.search(r'\b(CAL\.?\s*10|10\s*GA|CAL10|10GACR)\b', full_text):
         cal = 'CAL 10'
-    elif re.search(r'\b(CAL\.?\s*12|12\s*GA|CAL12)\b', s):
+    elif re.search(r'\b(CAL\.?\s*12|12\s*GA|CAL12|12GACR)\b', full_text):
         cal = 'CAL 12'
-    elif re.search(r'\b(CAL\.?\s*14|14\s*GA|CAL14)\b', s):
+    elif re.search(r'\b(CAL\.?\s*14|14\s*GA|CAL14|14GACR)\b', full_text):
         cal = 'CAL 14'
-    elif re.search(r'\b(CAL\.?\s*16|16\s*GA|CAL16)\b', s):
+    elif re.search(r'\b(CAL\.?\s*16|16\s*GA|CAL16|16GACR)\b', full_text):
         cal = 'CAL 16'
-    elif re.search(r'\b(CAL\.?\s*18|18\s*GA|CAL18)\b', s):
+    elif re.search(r'\b(CAL\.?\s*18|18\s*GA|CAL18|18GACR)\b', full_text):
         cal = 'CAL 18'
-    elif re.search(r'\b(CAL\.?\s*20|20\s*GA|CAL20)\b', s):
+    elif re.search(r'\b(CAL\.?\s*20|20\s*GA|CAL20|20GACR)\b', full_text):
         cal = 'CAL 20'
         
     # 2. Material
-    if 'DECAPAD' in s or 'DECP' in s:
-        mat = 'DECAPADO'
-    elif 'INOX' in s or 'INOXIDABLE' in s:
+    has_inox = bool(re.search(r'\b(INOX|INOXIDABLE|SS304|SS316)\b', full_text))
+    has_alum = bool(re.search(r'\b(ALUM|ALUMINIO|AL5052)\b', full_text))
+    
+    # Título o piezas que expresamente dicen Galvanizado (ej. PROD. GALV, PPAP GALV)
+    title_galv = bool(re.search(r'\b(GALV|GALVANIZAD)\b', f"{of_name} {of_desc}".upper()))
+    
+    # Indicadores claros de Lámina Rolada en Frío / Decapada para pintar con ANSI 61
+    norm_po = normalize_po(po_val) if po_val else ""
+    is_known_decap = any(normalize_po(kp) in norm_po or normalize_po(kp) in normalize_po(of_name) for kp in KNOWN_DECAPADO_POS)
+    has_cr_ansi = bool(re.search(r'\b(GACR|CR|ANSI|ANSI-61|ANSI 61|COLD\s*ROLLED|DECAPAD|DECP|PINTAR|LC8|RENO|SWBD|SOUTH VALLEY)\b', full_text))
+    
+    if has_inox:
         mat = 'INOX'
-    elif 'ALUM' in s or 'ALUMINIO' in s:
+    elif has_alum:
         mat = 'ALUMINIO'
-    elif 'GALV' in s or 'GALVANIZAD' in s:
+    elif title_galv:
+        mat = 'GALV'
+    elif is_known_decap or has_cr_ansi:
+        mat = 'DECAPADO'
+    elif 'GALV' in full_text:
         mat = 'GALV'
     else:
-        mat = 'GALV'
+        mat = 'DECAPADO'
         
     return mat, cal
 
@@ -84,17 +109,26 @@ def build_materia_prima_data():
 
     dbs = load_corte_doblez_databases()
     df_ord = dbs[0]
-    df_nid = dbs[4]
+    df_piez = dbs[1] if len(dbs) > 1 else pd.DataFrame()
+    df_nid = dbs[4] if len(dbs) > 4 else pd.DataFrame()
     
     if df_ord.empty:
         return pd.DataFrame(), pd.DataFrame()
 
+    # Mapa de textos de piezas por OF (para detección de gacr / ANSI 61 / Galv)
+    piezas_map = {}
+    if not df_piez.empty and 'of_number' in df_piez.columns:
+        for of_num, grp in df_piez.groupby('of_number'):
+            p_names = grp['nombre_pieza'].dropna().astype(str).tolist()
+            piezas_map[of_num] = " ".join(p_names).upper()
+
     raw_records = []
     for _, r in df_ord.iterrows():
         of_n = str(r['of_number']).strip()
+        of_d = str(r.get('descripcion_pronest') or r.get('descripcion') or '').strip()
         po_raw = str(r.get('po') or '').strip()
         cal_raw = str(r.get('calibre') or '').strip()
-        proy_raw = str(r.get('proyecto_cliente') or '').strip()
+        proy_raw = str(r.get('proyecto_cliente') or r.get('proyecto') or '').strip()
         
         po_norm = normalize_po(po_raw)
         po_match = None
@@ -105,25 +139,56 @@ def build_materia_prima_data():
         elif po_norm in po_map:
             po_match = po_map[po_norm]
         else:
-            comb = f"{of_n} {po_raw}".upper()
-            m_id = re.search(r'\b(?:PO|INT|OC)?\s*0*(\d{1,3})\b', comb)
+            comb_srch = f"{of_n} {po_raw}".upper()
+            m_id = re.search(r'\b(?:PO|INT|OC)?\s*0*(\d{1,3})\b', comb_srch)
             if m_id and m_id.group(1) in po_map:
                 po_match = po_map[m_id.group(1)]
             else:
                 for p_k, p_info in po_map.items():
-                    if len(p_k) >= 6 and p_k in normalize_po(comb):
+                    if len(p_k) >= 6 and p_k in normalize_po(comb_srch):
                         po_match = p_info
                         break
                         
-        po_disp = po_match['po'] if po_match else (po_raw if po_raw and po_raw != 'nan' else 'Sin PO')
-        id_disp = po_match['id_interno'] if po_match else ''
-        proy_disp = po_match['proyecto'] if po_match else (proy_raw if proy_raw and proy_raw != 'nan' and proy_raw != 'POR DEFINIR' else 'General')
-        
+        if po_match:
+            po_disp = po_match['po']
+            id_disp = po_match['id_interno']
+            proy_disp = po_match['proyecto']
+        else:
+            # Extracción de formato estándar de PO (ej. 2602-0711, 2603-2561)
+            m_po_pat = re.search(r'\b(260\d-?\d{4})\b', f"{po_raw} {of_n}")
+            if m_po_pat:
+                po_disp = m_po_pat.group(1)
+            else:
+                po_disp = po_raw if po_raw and po_raw != 'nan' else 'Sin PO'
+            id_disp = ''
+            
+            if proy_raw and proy_raw not in ('nan', 'POR DEFINIR'):
+                proy_disp = proy_raw
+            elif 'RENO' in of_n:
+                proy_disp = 'RENO 6'
+            elif 'LC8' in of_n:
+                proy_disp = 'LC8 20K'
+            else:
+                proy_disp = 'General'
+                
+        # Estandarización de nombres de proyectos reconocidos
+        if '0711' in po_disp or '0711' in of_n:
+            proy_disp = 'RENO 6'
+        elif '2561' in po_disp or '2561' in of_n:
+            proy_disp = 'LC8 20K'
+        elif '2809' in po_disp or '2809' in of_n:
+            proy_disp = 'ALM SWBD META'
+        elif '2811' in po_disp or '2811' in of_n:
+            proy_disp = 'ALM SWBD SOUTH VALLEY'
+        elif '2815' in po_disp or '2815' in of_n:
+            proy_disp = 'SWBD RENO 4'
+            
         m_nid = df_nid[df_nid['of_number'] == of_n] if not df_nid.empty else pd.DataFrame()
         hojas = float(m_nid['hojas'].sum()) if not m_nid.empty and 'hojas' in m_nid.columns else 0.0
         nidos_cnt = len(m_nid) if not m_nid.empty else 0
         
-        mat, cal = classify_material_and_calibre(of_n, cal_raw)
+        piezas_txt = piezas_map.get(of_n, '')
+        mat, cal = classify_material_and_calibre(of_n, of_d, cal_raw, po_raw, proy_raw, piezas_txt)
         mat_key = f"{cal} {mat}" if (cal and mat) else "OTRO"
         
         raw_records.append({

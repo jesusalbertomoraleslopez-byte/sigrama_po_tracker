@@ -21,13 +21,14 @@ def build_executive_excel(df_data, df_partidas=None):
     C_SLATE_DARK = "0F172A"
     C_SLATE_MID  = "1E293B"
     C_RED_SIG    = "EC2024"
+    C_PURPLE_OF  = "312E81"
     C_BLUE_FAB   = "1E3A8A"
     C_AMBER_ENT  = "78350F"
     C_GREEN_REM  = "064E3B"
     C_RED_PEN    = "7C2D12"
     
     # ── 1. Banner Principal (Fila 1 y 2) ──────────────────────────────────────
-    ws.merge_cells("A1:P1")
+    ws.merge_cells("A1:Q1")
     cell_t1 = ws["A1"]
     cell_t1.value = "INDUSTRIA SIGRAMA S.A. DE C.V.  —  MATRIZ DE CONTROL 360° DE ÓRDENES DE COMPRA"
     cell_t1.font = Font(name="Calibri", size=13, bold=True, color="FFFFFF")
@@ -39,6 +40,7 @@ def build_executive_excel(df_data, df_partidas=None):
     now_str = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
     tot_pos = len(df_data)
     tot_req = float(df_data['piezas_requeridas'].sum()) if 'piezas_requeridas' in df_data.columns else 0
+    tot_prog = float(df_data['piezas_programadas'].sum()) if 'piezas_programadas' in df_data.columns else 0
     tot_fab = float(df_data['piezas_fabricadas'].sum()) if 'piezas_fabricadas' in df_data.columns else 0
     tot_ent = float(df_data['piezas_entarimadas'].sum()) if 'piezas_entarimadas' in df_data.columns else 0
     tot_rem = float(df_data['piezas_remisionadas'].sum()) if 'piezas_remisionadas' in df_data.columns else 0
@@ -46,7 +48,7 @@ def build_executive_excel(df_data, df_partidas=None):
     tot_imp = float(df_data['total'].sum()) if 'total' in df_data.columns else 0
     pct_glob = (tot_rem / tot_req * 100.0) if tot_req > 0 else 0.0
     
-    ws.merge_cells("A2:P2")
+    ws.merge_cells("A2:Q2")
     cell_t2 = ws["A2"]
     cell_t2.value = f"Reporte Oficial de Cadena de Suministro | Emisión: {now_str} | {tot_pos} Órdenes Activas | Cumplimiento Global: {pct_glob:.1f}% | Importe Total: ${tot_imp:,.2f} MXN"
     cell_t2.font = Font(name="Calibri", size=9.5, italic=True, color="94A3B8")
@@ -59,10 +61,11 @@ def build_executive_excel(df_data, df_partidas=None):
     
     kpis = [
         ("A4:C4", f"1. REQUERIDAS: {tot_req:,.0f} pzas", "0F172A", "F8FAFC", "0F172A"),
-        ("D4:F4", f"2. FABRICADAS: {tot_fab:,.0f} pzas", "1D4ED8", "EFF6FF", "3B82F6"),
-        ("G4:I4", f"3. ENTARIMADAS: {tot_ent:,.0f} pzas", "B45309", "FEF3C7", "F59E0B"),
-        ("J4:L4", f"4. REMISIONADAS: {tot_rem:,.0f} pzas", "15803D", "DCFCE7", "10B981"),
-        ("M4:P4", f"5. PENDIENTES: {tot_pen:,.0f} pzas", "B91C1C", "FEE2E2", "EF4444"),
+        ("D4:F4", f"OFs PLANEADAS: {tot_prog:,.0f} pzas", "4338CA", "EEF2FF", "6366F1"),
+        ("G4:I4", f"2. FABRICADAS: {tot_fab:,.0f} pzas", "1D4ED8", "EFF6FF", "3B82F6"),
+        ("J4:L4", f"3. ENTARIMADAS: {tot_ent:,.0f} pzas", "B45309", "FEF3C7", "F59E0B"),
+        ("M4:N4", f"4. REMISIONADAS: {tot_rem:,.0f} pzas", "15803D", "DCFCE7", "10B981"),
+        ("O4:Q4", f"5. PENDIENTES: {tot_pen:,.0f} pzas", "B91C1C", "FEE2E2", "EF4444"),
     ]
     for rng, text, fg, bg, border_c in kpis:
         ws.merge_cells(rng)
@@ -89,6 +92,7 @@ def build_executive_excel(df_data, df_partidas=None):
         ("Fecha Entrega", C_SLATE_DARK, "center", 14),
         ("Part. #", C_SLATE_DARK, "center", 10),
         ("1. Req. (PO)", "1E293B", "right", 15),
+        ("📋 OFs Planeadas", C_PURPLE_OF, "right", 16),
         ("🔵 2. Fabricadas", C_BLUE_FAB, "right", 16),
         ("📦 3. Entarimadas", C_AMBER_ENT, "right", 16),
         ("🟢 4. Remisionadas", C_GREEN_REM, "right", 16),
@@ -140,6 +144,7 @@ def build_executive_excel(df_data, df_partidas=None):
         c_fent = str(r.get('fecha_solicitada', '')).strip()
         c_arts = int(r.get('articulos_count', 0) or 0)
         c_req  = float(r.get('piezas_requeridas', 0) or 0)
+        c_prog = float(r.get('piezas_programadas', 0) or 0)
         c_fab  = float(r.get('piezas_fabricadas', 0) or 0)
         c_ent  = float(r.get('piezas_entarimadas', 0) or 0)
         c_rem  = float(r.get('piezas_remisionadas', 0) or 0)
@@ -158,6 +163,7 @@ def build_executive_excel(df_data, df_partidas=None):
             (c_fent, "center", "yyyy-mm-dd", Font(name="Calibri", size=9, bold=True, color="DC2626"), fill_zebra),
             (c_arts, "center", "#,##0", Font(name="Calibri", size=9.5, color="475569"), fill_zebra),
             (c_req,  "right",  '#,##0 "pzas"', Font(name="Calibri", size=9.5, bold=True, color="0F172A"), PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")),
+            (c_prog, "right",  '#,##0 "pzas"', Font(name="Calibri", size=9.5, bold=True, color="4338CA"), fill_zebra),
             (c_fab,  "right",  '#,##0 "pzas"', Font(name="Calibri", size=9.5, bold=True, color="1D4ED8"), fill_zebra),
             (c_ent,  "right",  '#,##0 "pzas"', Font(name="Calibri", size=9.5, bold=True, color="B45309"), fill_zebra),
             (c_rem,  "right",  '#,##0 "pzas"', Font(name="Calibri", size=9.5, bold=True, color="15803D"), fill_zebra),
@@ -178,8 +184,8 @@ def build_executive_excel(df_data, df_partidas=None):
             if fnt: c_cell.font = fnt
             if fll: c_cell.fill = fll
             
-        # Coloreo especial de badge para Estatus Entrega (Col 13)
-        c_st = ws.cell(row=curr_row, column=13)
+        # Coloreo especial de badge para Estatus Entrega (Col 14)
+        c_st = ws.cell(row=curr_row, column=14)
         if "Cancelada" in st_txt:
             c_st.fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
             c_st.font = Font(name="Calibri", size=9, bold=True, color="B91C1C")
@@ -203,20 +209,23 @@ def build_executive_excel(df_data, df_partidas=None):
     
     # ── 5. Barras de Datos Nativas de Excel (Data Bars) ───────────────────────
     if end_data_row >= start_row:
+        rule_prog = DataBarRule(start_type="num", start_value=0, end_type="max", color="818CF8", showValue=None)
+        ws.conditional_formatting.add(f"H{start_row}:H{end_data_row}", rule_prog)
+        
         rule_fab = DataBarRule(start_type="num", start_value=0, end_type="max", color="5B9BD5", showValue=None)
-        ws.conditional_formatting.add(f"H{start_row}:H{end_data_row}", rule_fab)
+        ws.conditional_formatting.add(f"I{start_row}:I{end_data_row}", rule_fab)
         
         rule_ent = DataBarRule(start_type="num", start_value=0, end_type="max", color="F59E0B", showValue=None)
-        ws.conditional_formatting.add(f"I{start_row}:I{end_data_row}", rule_ent)
+        ws.conditional_formatting.add(f"J{start_row}:J{end_data_row}", rule_ent)
         
         rule_rem = DataBarRule(start_type="num", start_value=0, end_type="max", color="70AD47", showValue=None)
-        ws.conditional_formatting.add(f"J{start_row}:J{end_data_row}", rule_rem)
+        ws.conditional_formatting.add(f"K{start_row}:K{end_data_row}", rule_rem)
         
         rule_pen = DataBarRule(start_type="num", start_value=0, end_type="max", color="FFC000", showValue=None)
-        ws.conditional_formatting.add(f"K{start_row}:K{end_data_row}", rule_pen)
+        ws.conditional_formatting.add(f"L{start_row}:L{end_data_row}", rule_pen)
         
         rule_pct = DataBarRule(start_type="num", start_value=0, end_type="num", end_value=1.0, color="6366F1", showValue=None)
-        ws.conditional_formatting.add(f"L{start_row}:L{end_data_row}", rule_pct)
+        ws.conditional_formatting.add(f"M{start_row}:M{end_data_row}", rule_pct)
 
     # ── 6. Fila de Totales Generales ──────────────────────────────────────────
     tot_row = end_data_row + 1
@@ -231,15 +240,16 @@ def build_executive_excel(df_data, df_partidas=None):
     # Fórmulas de suma nativas de Excel
     tot_cols = [
         (7,  f"=SUM(G{start_row}:G{end_data_row})", '#,##0 "pzas"', "0F172A", "F1F5F9"),
-        (8,  f"=SUM(H{start_row}:H{end_data_row})", '#,##0 "pzas"', "1D4ED8", "EFF6FF"),
-        (9,  f"=SUM(I{start_row}:I{end_data_row})", '#,##0 "pzas"', "B45309", "FEF3C7"),
-        (10, f"=SUM(J{start_row}:J{end_data_row})", '#,##0 "pzas"', "15803D", "DCFCE7"),
-        (11, f"=SUM(K{start_row}:K{end_data_row})", '#,##0 "pzas"', "B91C1C", "FEE2E2"),
-        (12, f"=J{tot_row}/G{tot_row}",            "0.0%",          "0F172A", "F1F5F9"),
-        (13, "",                                    "@",             "0F172A", "F1F5F9"),
-        (14, f"=SUM(N{start_row}:N{end_data_row})", '"$"#,##0.00',  "0F172A", "F1F5F9"),
-        (15, "",                                    "@",             "0F172A", "F1F5F9"),
+        (8,  f"=SUM(H{start_row}:H{end_data_row})", '#,##0 "pzas"', "4338CA", "EEF2FF"),
+        (9,  f"=SUM(I{start_row}:I{end_data_row})", '#,##0 "pzas"', "1D4ED8", "EFF6FF"),
+        (10, f"=SUM(J{start_row}:J{end_data_row})", '#,##0 "pzas"', "B45309", "FEF3C7"),
+        (11, f"=SUM(K{start_row}:K{end_data_row})", '#,##0 "pzas"', "15803D", "DCFCE7"),
+        (12, f"=SUM(L{start_row}:L{end_data_row})", '#,##0 "pzas"', "B91C1C", "FEE2E2"),
+        (13, f"=K{tot_row}/G{tot_row}",            "0.0%",          "0F172A", "F1F5F9"),
+        (14, "",                                    "@",             "0F172A", "F1F5F9"),
+        (15, f"=SUM(O{start_row}:O{end_data_row})", '"$"#,##0.00',  "0F172A", "F1F5F9"),
         (16, "",                                    "@",             "0F172A", "F1F5F9"),
+        (17, "",                                    "@",             "0F172A", "F1F5F9"),
     ]
     
     border_total = Border(

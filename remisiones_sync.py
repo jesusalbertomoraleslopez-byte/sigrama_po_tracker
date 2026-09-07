@@ -283,6 +283,7 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
         # 2. Seguimiento en Taller Planta (Corte y Doblez)
         tot_fab = 0.0
         pct_fab = 0.0
+        tot_prog = 0.0
         ofs_str = "Sin OF"
         if get_corte_doblez_tracking_for_po and dbs_cd is not None:
             try:
@@ -292,6 +293,7 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
                     dbs=dbs_cd, skip_sku_fallback=True, rem_dbs=dbs_rem
                 )
                 tot_fab = float(cd_trk.get('total_fabricado', cd_trk.get('total_terminado_planta', 0.0)) or 0.0)
+                tot_prog = float(cd_trk.get('total_programado', 0.0) or 0.0)
                 pct_fab = float(cd_trk.get('porcentaje_fabricacion', 0.0) or 0.0)
                 ofs_list = cd_trk.get('ofs_asociadas', [])
                 if ofs_list:
@@ -324,6 +326,7 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
         row_summary = dict(po_row)
         row_summary['articulos_count'] = len(partidas_po) if not partidas_po.empty else 0
         row_summary['piezas_requeridas'] = tot_req
+        row_summary['piezas_programadas'] = tot_prog
         row_summary['piezas_fabricadas'] = tot_fab
         row_summary['piezas_entarimadas'] = tot_ent
         row_summary['piezas_remisionadas'] = tot_rem

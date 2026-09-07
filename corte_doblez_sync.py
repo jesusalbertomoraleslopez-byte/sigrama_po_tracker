@@ -185,6 +185,7 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
                 
     partidas_cd = []
     total_req_cd = 0.0
+    total_programado = 0.0
     total_cortado = 0.0
     total_doblado = 0.0
     total_terminado = 0.0
@@ -248,6 +249,8 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
             else:
                 c_terminado_real = max(c_liberado, c_doblez, c_rebabeo, c_corte)
             
+            prog_part = c_prog if c_prog > 0 else c_terminado_real
+            total_programado += min(cant_req, prog_part)
             total_cortado += min(cant_req, c_corte)
             total_doblado += min(cant_req, c_doblez)
             total_terminado += min(cant_req, c_terminado_real)
@@ -260,7 +263,7 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
                 ofs_tag = ', '.join(sorted(matched_ofs)) if matched_ofs else 'Por programar OF'
                 
             p_res = dict(part)
-            p_res['piezas_programadas'] = c_prog if c_prog > 0 else c_terminado_real
+            p_res['piezas_programadas'] = prog_part
             p_res['piezas_cortadas'] = c_corte
             p_res['piezas_dobladas'] = c_doblez
             p_res['piezas_terminadas_planta'] = c_terminado_real
@@ -278,7 +281,7 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
         'po': po_str,
         'matched_ofs': ofs_final_list,
         'ofs_asociadas': ofs_final_list,
-        'total_programado': total_cortado,
+        'total_programado': total_programado,
         'total_cortado': total_cortado,
         'total_doblado': total_doblado,
         'total_terminado_planta': total_terminado,

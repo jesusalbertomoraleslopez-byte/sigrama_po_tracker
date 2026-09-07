@@ -459,22 +459,32 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
         st.info("💡 No hay POs registradas. Cárgalas en **'📬 Bandeja de Entrada OCR'**.")
         return
 
-    # Tarjetas de Totales Globales (Las 5 Métricas Clave de la Cadena de Suministro)
+    # Tarjetas de Totales Globales (Las 6 Métricas Clave de la Cadena de Suministro)
     tot_req_g = float(df_summary['piezas_requeridas'].sum())
+    tot_prog_g = float(df_summary['piezas_programadas'].sum()) if 'piezas_programadas' in df_summary.columns else 0.0
     tot_fab_g = float(df_summary['piezas_fabricadas'].sum())
     tot_ent_g = float(df_summary['piezas_entarimadas'].sum())
     tot_rem_g = float(df_summary['piezas_remisionadas'].sum())
     tot_pen_g = float(df_summary['piezas_pendientes'].sum())
     tot_imp_g = float(df_summary['total'].sum())
     pct_rem_g = (tot_rem_g / tot_req_g * 100.0) if tot_req_g > 0 else 0.0
+    pct_prog_g = (tot_prog_g / tot_req_g * 100.0) if tot_req_g > 0 else 0.0
 
-    k1, k2, k3, k4, k5 = st.columns(5)
+    k1, k_of, k2, k3, k4, k5 = st.columns(6)
     with k1:
         st.markdown(f"""
         <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #0F172A; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:115px;">
             <div style="font-size:11px; font-weight:800; color:#0F172A; text-transform:uppercase;">1. Requeridas</div>
             <div style="font-size:24px; font-weight:900; color:#0F172A; margin:6px 0 2px 0;">{tot_req_g:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">pzas</span></div>
             <span style="background:#F1F5F9; color:#475569; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:12px;">{len(df_summary)} Órdenes</span>
+        </div>
+        """, unsafe_allow_html=True)
+    with k_of:
+        st.markdown(f"""
+        <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #6366F1; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:115px;">
+            <div style="font-size:11px; font-weight:800; color:#6366F1; text-transform:uppercase;">OFs Planeadas</div>
+            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:6px 0 2px 0;">{tot_prog_g:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">pzas</span></div>
+            <span style="background:#EEF2FF; color:#4F46E5; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:12px;">{pct_prog_g:.1f}% En OFs</span>
         </div>
         """, unsafe_allow_html=True)
     with k2:
@@ -611,6 +621,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
                     <th style="border-bottom:2px solid #EC2024; width:88px; text-align:center; color:#FCA5A5;">F. Entrega</th>
                     <th style="border-bottom:2px solid #EC2024; width:55px; text-align:center;">Part. #</th>
                     <th style="border-bottom:2px solid #EC2024; text-align:right; width:80px; background-color:#1E293B;">1. Req. (PO)</th>
+                    <th style="border-bottom:2px solid #6366F1; min-width:115px; background-color:#312E81;">📋 OFs Planeadas</th>
                     <th style="border-bottom:2px solid #3B82F6; min-width:115px; background-color:#1E3A8A;">🔵 2. Fabricadas</th>
                     <th style="border-bottom:2px solid #F59E0B; min-width:115px; background-color:#78350F;">📦 3. Entarimadas</th>
                     <th style="border-bottom:2px solid #10B981; min-width:115px; background-color:#064E3B;">🟢 4. Remisionadas</th>
@@ -633,11 +644,13 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             c_req = float(r_bar.get('piezas_requeridas', 0) or 0)
             base_div = c_req if c_req > 0 else 1.0
             
+            c_prog = float(r_bar.get('piezas_programadas', 0) or 0)
             c_fab = float(r_bar.get('piezas_fabricadas', 0) or 0)
             c_ent = float(r_bar.get('piezas_entarimadas', 0) or 0)
             c_rem = float(r_bar.get('piezas_remisionadas', 0) or 0)
             c_pen = float(r_bar.get('piezas_pendientes', max(0.0, c_req - c_rem)) or 0)
             
+            pct_prog = min(100.0, max(0.0, (c_prog / base_div * 100.0)))
             pct_f = min(100.0, max(0.0, (c_fab / base_div * 100.0)))
             pct_e = min(100.0, max(0.0, (c_ent / base_div * 100.0)))
             pct_r = min(100.0, max(0.0, (c_rem / base_div * 100.0)))
@@ -690,8 +703,16 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
                 <td style="text-align:center; color:#475569; font-weight:600;">{c_arts}</td>
                 <td style="text-align:right; font-weight:800; color:#0F172A; background-color:#F8FAFC;">{c_req:,.0f}</td>
                 
+                <!-- BARRA OFS PLANEADAS (ÍNDIGO/MORADO) -->
+                <td style="background:linear-gradient(90deg, rgba(99,102,241,0.35) {pct_prog:.1f}%, transparent {pct_prog:.1f}%); border-left:1px solid #E2E8F0; border-right:1px solid #E2E8F0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <b style="color:#4338CA; font-size:12px;">{c_prog:,.0f}</b>
+                        <span style="font-size:10.5px; color:#4F46E5; font-weight:bold;">{pct_prog:.1f}%</span>
+                    </div>
+                </td>
+                
                 <!-- BARRA FABRICADAS (AZUL) -->
-                <td style="background:linear-gradient(90deg, rgba(59,130,246,0.38) {pct_f:.1f}%, transparent {pct_f:.1f}%); border-left:1px solid #E2E8F0; border-right:1px solid #E2E8F0;">
+                <td style="background:linear-gradient(90deg, rgba(59,130,246,0.38) {pct_f:.1f}%, transparent {pct_f:.1f}%); border-right:1px solid #E2E8F0;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <b style="color:#1D4ED8; font-size:12px;">{c_fab:,.0f}</b>
                         <span style="font-size:10.5px; color:#2563EB; font-weight:bold;">{pct_f:.1f}%</span>
@@ -744,7 +765,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
         # Columnas de visualización ordenadas para tabla estándar
         disp_cols = [
             'id_interno', 'po', 'proyecto', 'fecha_llegada', 'fecha_solicitada',
-            'articulos_count', 'piezas_requeridas', 'piezas_fabricadas',
+            'articulos_count', 'piezas_requeridas', 'piezas_programadas', 'piezas_fabricadas',
             'piezas_entarimadas', 'piezas_remisionadas', 'piezas_pendientes',
             'pct_cumplimiento', 'estatus_remision', 'total', 'comprador', 'solicitante'
         ]
@@ -759,6 +780,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
                 'fecha_solicitada': 'Fecha Entrega',
                 'articulos_count': 'Partidas #',
                 'piezas_requeridas': '1. Requeridas',
+                'piezas_programadas': '📋 OFs Planeadas',
                 'piezas_fabricadas': '2. Fabricadas',
                 'piezas_entarimadas': '3. Entarimadas',
                 'piezas_remisionadas': '4. Remisionadas',
@@ -775,6 +797,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
                 "Proyecto": st.column_config.TextColumn("Proyecto", width="medium"),
                 "Fecha Entrega": st.column_config.TextColumn("Fecha Entrega", width="small"),
                 "1. Requeridas": st.column_config.NumberColumn("1. Requeridas", format="%d pzas"),
+                "📋 OFs Planeadas": st.column_config.NumberColumn("📋 OFs Planeadas", format="%d pzas"),
                 "2. Fabricadas": st.column_config.NumberColumn("2. Fabricadas", format="%d pzas"),
                 "3. Entarimadas": st.column_config.NumberColumn("3. Entarimadas", format="%d pzas"),
                 "4. Remisionadas": st.column_config.NumberColumn("4. Remisionadas", format="%d pzas"),

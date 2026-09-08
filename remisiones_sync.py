@@ -51,10 +51,20 @@ def sync_live_remisiones_from_github():
             pass
             
     try:
+        from config import SYNC_DB_DIR
         cd_dir = get_corte_doblez_dir()
         if (cd_dir / '.git').exists():
             subprocess.run(['git', '-C', str(cd_dir), 'pull', 'origin', 'main'], capture_output=True, timeout=15)
             ok_any = True
+        else:
+            corte_url = 'https://raw.githubusercontent.com/jesusalbertomoraleslopez-byte/control-corte-doblez/main/sigrama_database.xlsx'
+            for d in set([cd_dir, SYNC_DB_DIR]):
+                try:
+                    d.mkdir(parents=True, exist_ok=True)
+                    urllib.request.urlretrieve(corte_url, d / 'sigrama_database.xlsx')
+                    ok_any = True
+                except Exception:
+                    pass
     except Exception:
         pass
         

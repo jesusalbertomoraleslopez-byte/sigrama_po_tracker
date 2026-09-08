@@ -1232,6 +1232,26 @@ elif menu == "📬 Bandeja de Entrada OCR":
                         hide_index=True
                     )
 
+        st.write("---")
+        with st.expander("🌐 Ingesta Automatizada desde Servidor de Compras (Disco Z:)", expanded=False):
+            st.markdown("""
+            **Sincronización Directa de Órdenes Históricas (INT-0001 a INT-0029):**
+            Escanea automáticamente la carpeta de red `Z:\\01 - PLANTA METALES\\01 - ORDENES DE COMPRA\\00 - CORREO DE COMPRAS`
+            y las carpetas de proyectos para extraer los correos `.msg`, PDFs de POs oficiales y desglosar todas las partidas.
+            """)
+            if st.button("🚀 Iniciar Ingesta de Órdenes INT-0001 a INT-0029 desde Z:", type="secondary", key="btn_sync_nas_orders"):
+                with st.spinner("Procesando archivos desde el servidor de compras Z:..."):
+                    try:
+                        from ingest_pos_001_to_029 import run_ingestion
+                        ok = run_ingestion(apply=True)
+                        if ok:
+                            st.success("✅ Ingesta histórica completada con éxito. Las 29 órdenes y 176 partidas han sido cargadas en la Base de Datos.")
+                            st.rerun()
+                        else:
+                            st.error("❌ No se pudo conectar al servidor Z:. Verifique la conexión de red.")
+                    except Exception as e_nas:
+                        st.error(f"Error durante la sincronización: {e_nas}")
+
     # 2. Pestaña: Carga Masiva Excel
     with tab_ocr_excel:
         st.subheader("📁 Carga Masiva mediante Plantilla Oficial Excel")

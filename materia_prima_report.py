@@ -70,8 +70,72 @@ def classify_material_and_calibre(of_name, of_desc="", cal_field="", po_val="", 
         
     return mat, cal
 
+def extract_orden_interna(of_n, po_raw, proy_int, proy_cli, of_d, po_map):
+    """
+    Determina con precisión el número de Orden Interna (INT-001 en adelante)
+    y su valor numérico entero para ordenamiento natural ascendente.
+    """
+    comb = f"{of_n} {po_raw} {proy_int} {proy_cli} {of_d}".upper()
+    
+    # Caso especial conocido OF 83 -> INT-0047 (PO 2608-3425 CLOUD)
+    if '00083' in of_n:
+        return 'INT-0047', 47
+        
+    p_norm = normalize_po(po_raw)
+    if p_norm in po_map:
+        info = po_map[p_norm]
+        id_str = str(info.get('id_interno', '')).strip()
+        m = re.search(r'\d+', id_str)
+        if m:
+            return id_str, int(m.group())
+            
+    for p_k, info in po_map.items():
+        if len(p_k) >= 6 and p_k in normalize_po(comb):
+            id_str = str(info.get('id_interno', '')).strip()
+            m = re.search(r'\d+', id_str)
+            if m:
+                return id_str, int(m.group())
+                
+    # Limpiar posibles calibres antes de buscar números para no confundir CAL 10, CAL 12, etc.
+    clean_comb = re.sub(r'\bCAL\.?\s*\d+\b', '', comb)
+    clean_po = re.sub(r'\bCAL\.?\s*\d+\b', '', po_raw.upper())
+    
+    # 1. Buscar en campo Proyecto o PO expresiones directas como "PO 047", "PO 050", "PO 003", "INT 047"
+    m_po_match = re.search(r'\b(?:PO|INT|OC)[-\s]*0*(\d{1,4})\b', f"{proy_int} {proy_cli} {clean_po}".upper())
+    if m_po_match:
+        val = int(m_po_match.group(1))
+        if val < 2000:
+            return f"INT-{val:04d}", val
+            
+    # 2. Buscar prefijos de proyecto como "003.- OC 2602-0711" o "026.- OC 2603-2561"
+    m_proy = re.search(r'^\s*0*(\d{1,4})\s*\.-', proy_int)
+    if m_proy:
+        num = int(m_proy.group(1))
+        return f"INT-{num:04d}", num
+        
+    # 3. Buscar "INT-XXXX" o "INT XXXX"
+    m_int = re.search(r'\bINT[-\s]*0*(\d{1,4})\b', clean_comb)
+    if m_int:
+        num = int(m_int.group(1))
+        return f"INT-{num:04d}", num
+        
+    # 4. Buscar "026 - OC" o similar
+    m_fallback = re.search(r'\b0*(\d{1,3})\s*-\s*OC\b', clean_comb)
+    if m_fallback:
+        num = int(m_fallback.group(1))
+        return f"INT-{num:04d}", num
+
+    # 5. Si el nombre de la OF indica folio "OF 00003" o "0F 00003" (menor a 200)
+    m_of_num = re.search(r'\b[0O]F[-\s]*0*(\d{1,4})\b', of_n.upper())
+    if m_of_num:
+        val_of = int(m_of_num.group(1))
+        if 1 <= val_of <= 200:
+            return f"INT-{val_of:04d}", val_of
+
+    return "SIN INT", 99999
+
 def build_materia_prima_data():
-    """Construye el dataset detallado y pivoteado del reporte de materia prima."""
+    """Construye el dataset detallado y pivoteado del reporte de materia prima con ordenamiento INT-001 en adelante."""
     df_pos = get_all_pos()
     po_map = {}
     for _, r in df_pos.iterrows():
@@ -117,7 +181,9 @@ def build_materia_prima_data():
         of_d = str(r.get('descripcion_pronest') or r.get('descripcion') or '').strip()
         po_raw = str(r.get('po') or '').strip()
         cal_raw = str(r.get('calibre') or '').strip()
-        proy_raw = str(r.get('proyecto_cliente') or r.get('proyecto') or '').strip()
+        proy_int = str(r.get('proyecto') or '').strip()
+        proy_cli = str(r.get('proyecto_cliente') or '').strip()
+        proy_raw = proy_cli if proy_cli and proy_cli not in ('nan', 'POR DEFINIR') else proy_int
         
         po_norm = normalize_po(po_raw)
         po_match = None
@@ -140,7 +206,6 @@ def build_materia_prima_data():
                         
         if po_match:
             po_disp = po_match['po']
-            id_disp = po_match['id_interno']
             proy_disp = po_match['proyecto']
         else:
             # Extracción de formato estándar de PO (ej. 2602-0711, 2603-2561)
@@ -149,7 +214,6 @@ def build_materia_prima_data():
                 po_disp = m_po_pat.group(1)
             else:
                 po_disp = po_raw if po_raw and po_raw != 'nan' else 'Sin PO'
-            id_disp = ''
             
             if proy_raw and proy_raw not in ('nan', 'POR DEFINIR'):
                 proy_disp = proy_raw
@@ -172,6 +236,9 @@ def build_materia_prima_data():
         elif '2815' in po_disp or '2815' in of_n:
             proy_disp = 'SWBD RENO 4'
             
+        # Extracción precisa de Orden Interna (INT-001 en adelante) y valor numérico
+        id_disp, int_num = extract_orden_interna(of_n, po_disp, proy_int, proy_cli, of_d, po_map)
+            
         m_nid = df_nid[df_nid['of_number'] == of_n] if not df_nid.empty else pd.DataFrame()
         hojas = float(m_nid['hojas'].sum()) if not m_nid.empty and 'hojas' in m_nid.columns else 0.0
         nidos_cnt = len(m_nid) if not m_nid.empty else 0
@@ -182,6 +249,7 @@ def build_materia_prima_data():
         
         raw_records.append({
             'id_interno': id_disp,
+            'int_num': int_num,
             'po': po_disp,
             'of_number': of_n,
             'proyecto': proy_disp,
@@ -196,9 +264,9 @@ def build_materia_prima_data():
     if df_raw.empty:
         return pd.DataFrame(), pd.DataFrame()
 
-    # 1. PIVOT POR OF (Detalle idéntico a la imagen)
+    # 1. PIVOT POR OF (Detalle idéntico a la imagen con Orden Interna al frente)
     pivot_of = df_raw.pivot_table(
-        index=['po', 'of_number', 'proyecto', 'id_interno'],
+        index=['id_interno', 'int_num', 'po', 'of_number', 'proyecto'],
         columns='material_key',
         values='hojas',
         aggfunc='sum',
@@ -209,17 +277,20 @@ def build_materia_prima_data():
         if col not in pivot_of.columns:
             pivot_of[col] = 0.0
 
-    col_order_of = ['po', 'of_number', 'proyecto', 'id_interno'] + STANDARD_COLUMNS
+    col_order_of = ['id_interno', 'int_num', 'po', 'of_number', 'proyecto'] + STANDARD_COLUMNS
     extra_cols = [c for c in pivot_of.columns if c not in col_order_of and c != 'TOTAL HOJAS']
     col_order_of.extend(extra_cols)
     
     pivot_of['TOTAL HOJAS'] = pivot_of[STANDARD_COLUMNS + extra_cols].sum(axis=1)
     col_order_of.append('TOTAL HOJAS')
     pivot_of = pivot_of[[c for c in col_order_of if c in pivot_of.columns]]
+    
+    # Ordenar por defecto por Orden Interna ascendente (INT-001 en adelante)
+    pivot_of = pivot_of.sort_values(by=['int_num', 'po', 'of_number'], ascending=[True, True, True]).reset_index(drop=True)
 
     # 2. PIVOT CONSOLIDADO POR PO
     pivot_po = df_raw.pivot_table(
-        index=['po', 'id_interno', 'proyecto'],
+        index=['id_interno', 'int_num', 'po', 'proyecto'],
         columns='material_key',
         values='hojas',
         aggfunc='sum',
@@ -233,13 +304,16 @@ def build_materia_prima_data():
     ofs_per_po = df_raw.groupby('po')['of_number'].nunique().to_dict()
     pivot_po['ofs_count'] = pivot_po['po'].map(ofs_per_po).fillna(0).astype(int)
 
-    col_order_po = ['id_interno', 'po', 'proyecto', 'ofs_count'] + STANDARD_COLUMNS
+    col_order_po = ['id_interno', 'int_num', 'po', 'proyecto', 'ofs_count'] + STANDARD_COLUMNS
     extra_cols_po = [c for c in pivot_po.columns if c not in col_order_po and c != 'TOTAL HOJAS']
     col_order_po.extend(extra_cols_po)
     
     pivot_po['TOTAL HOJAS'] = pivot_po[STANDARD_COLUMNS + extra_cols_po].sum(axis=1)
     col_order_po.append('TOTAL HOJAS')
     pivot_po = pivot_po[[c for c in col_order_po if c in pivot_po.columns]]
+    
+    # Ordenar por defecto por Orden Interna ascendente (INT-001 en adelante)
+    pivot_po = pivot_po.sort_values(by=['int_num', 'po'], ascending=[True, True]).reset_index(drop=True)
 
     return pivot_of, pivot_po
 
@@ -258,8 +332,8 @@ def generate_materia_prima_excel(df_pivot_of, df_pivot_po=None):
     C_TOTAL_TEXT  = "1A202C"
     
     # ── 1. Banner Superior
-    ws.merge_cells("A1:L1")
-    ws.merge_cells("A2:L2")
+    ws.merge_cells("A1:M1")
+    ws.merge_cells("A2:M2")
     c1 = ws["A1"]
     c1.value = "INDUSTRIA SIGRAMA S.A. DE C.V.  —  REPORTE DE USO DE MATERIA PRIMA (LÁMINAS POR OF / PO)"
     c1.font = Font(name="Calibri", size=13, bold=True, color="FFFFFF")
@@ -277,8 +351,9 @@ def generate_materia_prima_excel(df_pivot_of, df_pivot_po=None):
     ws.row_dimensions[2].height = 20
     ws.row_dimensions[3].height = 8
 
-    # ── 2. Encabezados de Columna (Fila 4) - Idénticos a la imagen
+    # ── 2. Encabezados de Columna (Fila 4) - Idénticos a la imagen con Orden Interna
     headers = [
+        ("ORDEN INTERNA", "center", 16),
         ("PO", "center", 14),
         ("OF", "left", 34),
         ("PROYECTO", "left", 16),
@@ -326,11 +401,13 @@ def generate_materia_prima_excel(df_pivot_of, df_pivot_po=None):
         bg_color = C_ZEBRA if (idx % 2 == 1) else "FFFFFF"
         fill_row = PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid")
         
+        id_v   = str(r.get('id_interno', '')).strip()
         po_v   = str(r.get('po', '')).strip()
         of_v   = str(r.get('of_number', '')).strip()
         proy_v = str(r.get('proyecto', '')).strip()
         
         vals = [
+            (id_v,   "center", "@", Font(name="Calibri", size=9.5, bold=True, color="1E3A8A")),
             (po_v,   "center", "@", Font(name="Calibri", size=9.5, bold=True, color="EC2024")),
             (of_v,   "left",   "@", Font(name="Calibri", size=9, bold=True, color="1E293B")),
             (proy_v, "left",   "@", Font(name="Calibri", size=9.5, color="334155")),
@@ -362,7 +439,7 @@ def generate_materia_prima_excel(df_pivot_of, df_pivot_po=None):
     tot_row = end_row + 1
     ws.row_dimensions[tot_row].height = 24
     
-    ws.merge_cells(f"A{tot_row}:C{tot_row}")
+    ws.merge_cells(f"A{tot_row}:D{tot_row}")
     c_tot = ws[f"A{tot_row}"]
     c_tot.value = "TOTALES GENERALES DE HOJAS"
     c_tot.font = Font(name="Calibri", size=10, bold=True, color=C_TOTAL_TEXT)
@@ -375,12 +452,12 @@ def generate_materia_prima_excel(df_pivot_of, df_pivot_po=None):
         right=Side(border_style="thin", color="CBD5E1")
     )
     
-    for c_idx in range(1, 4):
+    for c_idx in range(1, 5):
         cell = ws.cell(row=tot_row, column=c_idx)
         cell.fill = PatternFill(start_color=C_TOTAL_BG, end_color=C_TOTAL_BG, fill_type="solid")
         cell.border = border_total
 
-    for c_idx in range(4, 13):
+    for c_idx in range(5, 14):
         col_letter = get_column_letter(c_idx)
         cell = ws.cell(row=tot_row, column=c_idx)
         cell.value = f"=SUM({col_letter}{start_row}:{col_letter}{end_row})"
@@ -535,6 +612,7 @@ def render_materia_prima_page():
     tot_cal12_g = float(df_of['CAL 12 GALV'].sum())
     tot_cal14_g = float(df_of['CAL 14 GALV'].sum())
     tot_cal16_g = float(df_of['CAL 16 GALV'].sum())
+    tot_decap_glob = float(df_of[['CAL 10 DECAPADO', 'CAL 12 DECAPADO', 'CAL 14 DECAPADO', 'CAL 16 DECAPADO']].sum().sum())
     tot_ofs_cnt = len(df_of)
     tot_pos_cnt = df_of['po'].nunique()
 
@@ -582,22 +660,29 @@ def render_materia_prima_page():
     with k6:
         st.markdown(f"""
         <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #475569; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:105px;">
-            <div style="font-size:11px; font-weight:800; color:#475569; text-transform:uppercase;">Decapado / Otros</div>
-            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:4px 0 2px 0;">0 <span style="font-size:12px; font-weight:500; color:#64748B;">hjs</span></div>
-            <span style="background:#F1F5F9; color:#64748B; font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px;">Disponible en BD</span>
+            <div style="font-size:11px; font-weight:800; color:#475569; text-transform:uppercase;">Decapado / ANSI 61</div>
+            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:4px 0 2px 0;">{tot_decap_glob:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">hjs</span></div>
+            <span style="background:#F1F5F9; color:#475569; font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px;">{(tot_decap_glob/tot_hjs_glob*100):.1f}% del total</span>
         </div>
         """, unsafe_allow_html=True)
 
     st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
 
-    # ── 3. Filtros y Selector de Vista
-    f1, f2, f3 = st.columns([2.5, 1.3, 1.2])
+    # ── 3. Filtros, Ordenamiento y Selector de Vista
+    f1, f2, f3, f4 = st.columns([2.0, 1.2, 1.4, 1.4])
     with f1:
-        q_search = st.text_input("🔍 Búsqueda rápida:", placeholder="Buscar por Folio PO, OF, Proyecto...", key="search_materia_prima")
+        q_search = st.text_input("🔍 Búsqueda rápida:", placeholder="Buscar por Orden Interna, PO, OF, Proyecto...", key="search_materia_prima")
     with f2:
         all_proys = sorted([p for p in df_of['proyecto'].unique() if p and p != 'Varios' and p != 'General'])
         sel_proy = st.selectbox("Filtrar por Proyecto:", ["Todos"] + all_proys, key="sb_proy_materia_prima")
     with f3:
+        sort_by = st.selectbox("Ordenar por:", [
+            "🔢 Orden Interna (INT-001 en adelante)",
+            "📑 Folio de PO",
+            "🏭 Número de OF",
+            "📊 Mayor Consumo de Hojas (Descendente)"
+        ], index=0, key="sb_sort_materia_prima")
+    with f4:
         modo_vista = st.selectbox("Tipo de Reporte:", [
             "📋 Vista por OF (Idéntica a la Imagen)",
             "📦 Vista Consolidada por PO"
@@ -644,10 +729,23 @@ def render_materia_prima_page():
     if sel_proy != "Todos":
         df_active = df_active[df_active['proyecto'] == sel_proy]
 
+    # Aplicar ordenamiento seleccionado
+    if "Orden Interna" in sort_by:
+        if "of_number" in df_active.columns:
+            df_active = df_active.sort_values(by=['int_num', 'po', 'of_number'], ascending=[True, True, True])
+        else:
+            df_active = df_active.sort_values(by=['int_num', 'po'], ascending=[True, True])
+    elif "Folio de PO" in sort_by:
+        df_active = df_active.sort_values(by=['po', 'int_num'], ascending=[True, True])
+    elif "Número de OF" in sort_by and "of_number" in df_active.columns:
+        df_active = df_active.sort_values(by=['of_number'], ascending=True)
+    elif "Mayor Consumo" in sort_by:
+        df_active = df_active.sort_values(by=['TOTAL HOJAS'], ascending=False)
+
     # ── 4. Renderizado
     if "Vista de Tabla Formato Oficial" in vista_tabla_tipo:
         if "Vista por OF" in modo_vista:
-            # HTML idéntico a la imagen con encabezado azul #2B6CB0
+            # HTML idéntico a la imagen con encabezado azul #2B6CB0 y Orden Interna
             html_code = """
             <!DOCTYPE html>
             <html>
@@ -672,6 +770,7 @@ def render_materia_prima_page():
             <table>
                 <thead>
                     <tr>
+                        <th style="width:105px; text-align:center;">ORDEN<br>INTERNA</th>
                         <th style="width:90px; text-align:center;">PO</th>
                         <th style="min-width:240px; text-align:left;">OF</th>
                         <th style="min-width:110px; text-align:left;">PROYECTO</th>
@@ -690,6 +789,7 @@ def render_materia_prima_page():
             """
             
             for _, r in df_active.iterrows():
+                id_v = str(r.get('id_interno', '')).strip()
                 po_v = str(r.get('po', '')).strip()
                 of_v = str(r.get('of_number', '')).strip()
                 proy_v = str(r.get('proyecto', '')).strip()
@@ -705,6 +805,7 @@ def render_materia_prima_page():
                         
                 html_code += f"""
                 <tr>
+                    <td style="text-align:center; font-weight:800; color:#1E3A8A; background-color:#F8FAFC;">{id_v}</td>
                     <td style="text-align:center; font-weight:700; color:#EC2024;">{po_v}</td>
                     <td style="font-weight:600; color:#1E293B;">{of_v}</td>
                     <td style="color:#334155; font-weight:500;">{proy_v}</td>
@@ -722,7 +823,7 @@ def render_materia_prima_page():
             tot_act_h = float(df_active['TOTAL HOJAS'].sum()) if 'TOTAL HOJAS' in df_active.columns else 0.0
             html_code += f"""
                 <tr class="t-total">
-                    <td colspan="3" style="text-align:center; font-weight:800; color:#0F172A; text-transform:uppercase;">TOTALES GENERALES</td>
+                    <td colspan="4" style="text-align:center; font-weight:800; color:#0F172A; text-transform:uppercase;">TOTALES GENERALES</td>
                     {td_tot_mat}
                     <td style="text-align:right; font-weight:900; color:#1E3A8A; background-color:#E2E8F0;">{tot_act_h:,.0f}</td>
                 </tr>
@@ -737,9 +838,12 @@ def render_materia_prima_page():
             
         else:
             # Vista Consolidada por PO
+            disp_po = df_active.copy()
+            if 'int_num' in disp_po.columns:
+                disp_po = disp_po.drop(columns=['int_num'])
             st.dataframe(
-                df_active.rename(columns={
-                    'id_interno': 'ID Interno',
+                disp_po.rename(columns={
+                    'id_interno': 'Orden Interna',
                     'po': 'PO / Folio',
                     'proyecto': 'Proyecto',
                     'ofs_count': 'OFs #',
@@ -754,6 +858,7 @@ def render_materia_prima_page():
                     'TOTAL HOJAS': 'Total Hojas'
                 }),
                 column_config={
+                    "Orden Interna": st.column_config.TextColumn("Orden Interna", help="Folio Interno INT-XXXX"),
                     "Total Hojas": st.column_config.NumberColumn("Total Hojas", format="%d hjs"),
                     "OFs #": st.column_config.NumberColumn("OFs #", format="%d"),
                 },
@@ -763,12 +868,20 @@ def render_materia_prima_page():
             
     else:
         # Modo Interactivo Streamlit Dataframe
+        disp_inter = df_active.copy()
+        if 'int_num' in disp_inter.columns:
+            disp_inter = disp_inter.drop(columns=['int_num'])
         cfg = {
-            c: st.column_config.NumberColumn(c, format="%d hjs" if c == "TOTAL HOJAS" else "%d")
-            for c in STANDARD_COLUMNS + ['TOTAL HOJAS'] if c in df_active.columns
+            'id_interno': st.column_config.TextColumn("Orden Interna", help="Folio Interno INT-XXXX"),
+            'po': st.column_config.TextColumn("PO / Folio"),
+            'of_number': st.column_config.TextColumn("Orden de Fabricación (OF)"),
+            'proyecto': st.column_config.TextColumn("Proyecto"),
         }
+        for c in STANDARD_COLUMNS + ['TOTAL HOJAS']:
+            if c in disp_inter.columns:
+                cfg[c] = st.column_config.NumberColumn(c, format="%d hjs" if c == "TOTAL HOJAS" else "%d")
         st.dataframe(
-            df_active,
+            disp_inter,
             column_config=cfg,
             use_container_width=True,
             hide_index=True

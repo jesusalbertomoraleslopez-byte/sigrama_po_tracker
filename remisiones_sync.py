@@ -119,7 +119,7 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
         mask_match = pd.Series([False] * len(df_det))
         if 'PO' in df_det.columns:
             df_det['norm_po'] = df_det['PO'].apply(normalize_po)
-            mask_match = mask_match | (df_det['norm_po'] == po_norm) | (df_det['norm_po'].str.contains(po_norm, na=False)) | (df_det['PO'].astype(str).str.contains(po_str, na=False))
+            mask_match = mask_match | (df_det['norm_po'] == po_norm) | (df_det['norm_po'].str.contains(po_norm, regex=False, na=False)) | (df_det['PO'].astype(str).str.contains(po_str, regex=False, na=False))
         if 'Proyecto' in df_det.columns and id_int_num is not None:
             pat = rf'\b(?:PO|INT|OC)?\s*0*{id_int_num}\b'
             mask_match = mask_match | df_det['Proyecto'].astype(str).str.contains(pat, regex=True, case=False, na=False)
@@ -145,7 +145,7 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
                 })
                 
     # 2. Si df_partidas viene vacío, sintetizar partidas desde Detalle_Tarimas si existen
-    if df_partidas.empty and not df_det_po.empty:
+    if df_partidas.empty and not df_det_po.empty and 'SKU' in df_det_po.columns:
         synth_list = []
         for idx, (sku_val, g) in enumerate(df_det_po.groupby('SKU'), start=1):
             tot_cant = float(g['Cantidad'].sum())
@@ -182,9 +182,9 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
             cant_rem = 0.0
             rem_folios_partida = set()
             
-            if not df_det_po.empty:
-                # Coincidencia flexible por SKU Planta o SKU Cliente
-                match_det = df_det_po[df_det_po['SKU'].apply(lambda p: sku_matches(sku, p) or (sku_cli and sku_matches(sku_cli, p)))]
+            if not df_det_po.empty and 'SKU' in df_det_po.columns:
+                # Coincidencia flexible por SKU Planta o SKU Cliente (garantizando retorno booleano)
+                match_det = df_det_po[df_det_po['SKU'].apply(lambda p: bool(sku_matches(sku, p) or (bool(sku_cli) and sku_matches(sku_cli, p))))]
                 
                 for _, d_row in match_det.iterrows():
                     t_id = str(d_row.get('ID_Tarima', '')).strip()

@@ -77,8 +77,13 @@ def extract_orden_interna(of_n, po_raw, proy_int, proy_cli, of_d, po_map):
     """
     comb = f"{of_n} {po_raw} {proy_int} {proy_cli} {of_d}".upper()
     
-    # Caso especial conocido OF 83 -> INT-0047 (PO 2608-3425 CLOUD)
-    if '00083' in of_n:
+    # Caso especial conocido INT-0047 (PO 2608-3425 CLOUD / GALVANIZADO)
+    if (
+        '047' in po_raw.upper() or '047' in proy_int.upper() or '047' in proy_cli.upper() or
+        'PPAP GALV' in po_raw.upper() or
+        any(x in of_n for x in ['00067', '00068', '00069', '00070', '00071', '00072', '00073', '00082', '00083', '00084', '00085', '00087', '00088', '00090', '00091']) or
+        '3425' in po_raw or '3425' in of_n
+    ):
         return 'INT-0047', 47
         
     p_norm = normalize_po(po_raw)
@@ -188,21 +193,34 @@ def build_materia_prima_data():
         po_norm = normalize_po(po_raw)
         po_match = None
         
-        # 1. Alias OF 83 -> INT-0047 / 2608-3425
-        if '00083' in of_n:
+        # 1. Alias integral INT-0047 (PO 2608-3425 CLOUD / GALVANIZADO)
+        is_int_47 = (
+            '047' in po_raw.upper() or '047' in proy_int.upper() or '047' in proy_cli.upper() or
+            'PPAP GALV' in po_raw.upper() or
+            any(x in of_n for x in ['00067', '00068', '00069', '00070', '00071', '00072', '00073', '00082', '00083', '00084', '00085', '00087', '00088', '00090', '00091']) or
+            '3425' in po_norm or '3425' in of_n
+        )
+        if is_int_47:
             po_match = po_map.get('26083425')
+            if not po_match:
+                po_match = {'po': '26083425', 'id_interno': 'INT-0047', 'proyecto': 'CLOUD'}
         elif po_norm in po_map:
             po_match = po_map[po_norm]
         else:
-            comb_srch = f"{of_n} {po_raw}".upper()
-            m_id = re.search(r'\b(?:PO|INT|OC)?\s*0*(\d{1,3})\b', comb_srch)
-            if m_id and m_id.group(1) in po_map:
-                po_match = po_map[m_id.group(1)]
+            # Primero verificar si el texto contiene una PO formal de 8 dígitos (ej. 2603-2815)
+            m_po_pat = re.search(r'\b(260\d-?\d{4})\b', f"{po_raw} {of_n} {proy_int}")
+            if m_po_pat and normalize_po(m_po_pat.group(1)) in po_map:
+                po_match = po_map[normalize_po(m_po_pat.group(1))]
             else:
-                for p_k, p_info in po_map.items():
-                    if len(p_k) >= 6 and p_k in normalize_po(comb_srch):
-                        po_match = p_info
-                        break
+                comb_srch = f"{of_n} {po_raw}".upper()
+                m_id = re.search(r'\b(?:PO|INT|OC)?\s*0*(\d{1,3})\b', comb_srch)
+                if m_id and m_id.group(1) in po_map:
+                    po_match = po_map[m_id.group(1)]
+                else:
+                    for p_k, p_info in po_map.items():
+                        if len(p_k) >= 6 and p_k in normalize_po(comb_srch):
+                            po_match = p_info
+                            break
                         
         if po_match:
             po_disp = po_match['po']

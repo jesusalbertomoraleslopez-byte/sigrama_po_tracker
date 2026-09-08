@@ -818,64 +818,112 @@ def render_materia_prima_page():
         st.info("💡 No se encontraron órdenes de fabricación en la base de datos de Corte.")
         return
 
-    # ── 2. Tarjetas de Totales Globales (KPIs)
+    # ── 2. Tarjetas de Totales Globales (KPIs Ejecutivos con Desglose por Calibre)
     tot_hjs_glob = float(df_of['TOTAL HOJAS'].sum())
-    tot_cal10_g = float(df_of['CAL 10 GALV'].sum())
-    tot_cal12_g = float(df_of['CAL 12 GALV'].sum())
-    tot_cal14_g = float(df_of['CAL 14 GALV'].sum())
-    tot_cal16_g = float(df_of['CAL 16 GALV'].sum())
-    tot_decap_glob = float(df_of[['CAL 10 DECAPADO', 'CAL 12 DECAPADO', 'CAL 14 DECAPADO', 'CAL 16 DECAPADO']].sum().sum())
+    tot_cal10_g = float(df_of['CAL 10 GALV'].sum()) if 'CAL 10 GALV' in df_of.columns else 0.0
+    tot_cal12_g = float(df_of['CAL 12 GALV'].sum()) if 'CAL 12 GALV' in df_of.columns else 0.0
+    tot_cal14_g = float(df_of['CAL 14 GALV'].sum()) if 'CAL 14 GALV' in df_of.columns else 0.0
+    tot_cal16_g = float(df_of['CAL 16 GALV'].sum()) if 'CAL 16 GALV' in df_of.columns else 0.0
+    tot_galv_glob = tot_cal10_g + tot_cal12_g + tot_cal14_g + tot_cal16_g
+
+    tot_cal10_d = float(df_of['CAL 10 DECAPADO'].sum()) if 'CAL 10 DECAPADO' in df_of.columns else 0.0
+    tot_cal12_d = float(df_of['CAL 12 DECAPADO'].sum()) if 'CAL 12 DECAPADO' in df_of.columns else 0.0
+    tot_cal14_d = float(df_of['CAL 14 DECAPADO'].sum()) if 'CAL 14 DECAPADO' in df_of.columns else 0.0
+    tot_cal16_d = float(df_of['CAL 16 DECAPADO'].sum()) if 'CAL 16 DECAPADO' in df_of.columns else 0.0
+    tot_decap_glob = tot_cal10_d + tot_cal12_d + tot_cal14_d + tot_cal16_d
+
     tot_ofs_cnt = len(df_of)
     tot_pos_cnt = len(df_po)
     pos_con_info = len(df_po[df_po['informacion'] == 'Con Información']) if 'informacion' in df_po.columns else df_of['po'].nunique()
 
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
-    with k1:
+    k_tot, k_galv, k_decap = st.columns([1.1, 2.3, 2.3])
+    with k_tot:
+        pct_g_tot = (tot_galv_glob / tot_hjs_glob * 100) if tot_hjs_glob > 0 else 0
+        pct_d_tot = (tot_decap_glob / tot_hjs_glob * 100) if tot_hjs_glob > 0 else 0
         st.markdown(f"""
-        <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #0F172A; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:105px;">
-            <div style="font-size:11px; font-weight:800; color:#0F172A; text-transform:uppercase;">Total Hojas</div>
-            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:4px 0 2px 0;">{tot_hjs_glob:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">hjs</span></div>
-            <span style="background:#F1F5F9; color:#475569; font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px;">{tot_ofs_cnt} OFs | {pos_con_info} con Corte / {tot_pos_cnt} POs</span>
+        <div style="background:#FFFFFF; border:1px solid #CBD5E1; border-top:4px solid #0F172A; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:125px; display:flex; flex-direction:column; justify-content:space-between;">
+            <div>
+                <div style="font-size:11px; font-weight:800; color:#0F172A; text-transform:uppercase; letter-spacing:0.5px;">📦 Total Hojas Global</div>
+                <div style="font-size:26px; font-weight:900; color:#0F172A; margin:4px 0 2px 0;">{tot_hjs_glob:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">hjs</span></div>
+                <span style="background:#F1F5F9; color:#475569; font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px;">{tot_ofs_cnt} Filas | {pos_con_info} con Corte / {tot_pos_cnt} POs</span>
+            </div>
+            <div style="margin-top:8px; padding-top:6px; border-top:1px solid #F1F5F9; font-size:10.5px; color:#64748B;">
+                <span style="color:#2B6CB0; font-weight:700;">🔩 Galv:</span> {tot_galv_glob:,.0f} ({pct_g_tot:.1f}%) <span style="color:#CBD5E1;">|</span> <span style="color:#475569; font-weight:700;">🎨 Decap:</span> {tot_decap_glob:,.0f} ({pct_d_tot:.1f}%)
+            </div>
         </div>
         """, unsafe_allow_html=True)
-    with k2:
+
+    with k_galv:
+        pct_g = (tot_galv_glob / tot_hjs_glob * 100) if tot_hjs_glob > 0 else 0
+        c10_g_pct = (tot_cal10_g / tot_galv_glob * 100) if tot_galv_glob > 0 else 0
+        c12_g_pct = (tot_cal12_g / tot_galv_glob * 100) if tot_galv_glob > 0 else 0
+        c14_g_pct = (tot_cal14_g / tot_galv_glob * 100) if tot_galv_glob > 0 else 0
+        c16_g_pct = (tot_cal16_g / tot_galv_glob * 100) if tot_galv_glob > 0 else 0
         st.markdown(f"""
-        <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #2B6CB0; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:105px;">
-            <div style="font-size:11px; font-weight:800; color:#2B6CB0; text-transform:uppercase;">Cal. 10 Galv</div>
-            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:4px 0 2px 0;">{tot_cal10_g:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">hjs</span></div>
-            <span style="background:#EBF8FF; color:#2B6CB0; font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px;">{(tot_cal10_g/tot_hjs_glob*100):.1f}% del total</span>
+        <div style="background:#FFFFFF; border:1px solid #CBD5E1; border-top:4px solid #2B6CB0; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:125px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-size:11px; font-weight:800; color:#2B6CB0; text-transform:uppercase; letter-spacing:0.5px;">🔩 Lámina Galvanizada</span>
+                <span style="background:#EBF8FF; color:#2B6CB0; font-size:11px; font-weight:800; padding:2px 8px; border-radius:8px; border:1px solid #BEE3F8;">Total: {tot_galv_glob:,.0f} hjs ({pct_g:.1f}%)</span>
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:6px;">
+                <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:6px; padding:6px 8px; text-align:center;">
+                    <div style="font-size:9.5px; font-weight:700; color:#64748B; text-transform:uppercase;">Cal. 10</div>
+                    <div style="font-size:16px; font-weight:900; color:#0F172A;">{tot_cal10_g:,.0f}</div>
+                    <div style="font-size:9px; color:#2B6CB0; font-weight:600;">{c10_g_pct:.0f}%</div>
+                </div>
+                <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:6px; padding:6px 8px; text-align:center;">
+                    <div style="font-size:9.5px; font-weight:700; color:#64748B; text-transform:uppercase;">Cal. 12</div>
+                    <div style="font-size:16px; font-weight:900; color:#0F172A;">{tot_cal12_g:,.0f}</div>
+                    <div style="font-size:9px; color:#2B6CB0; font-weight:600;">{c12_g_pct:.0f}%</div>
+                </div>
+                <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:6px; padding:6px 8px; text-align:center;">
+                    <div style="font-size:9.5px; font-weight:700; color:#64748B; text-transform:uppercase;">Cal. 14</div>
+                    <div style="font-size:16px; font-weight:900; color:#0F172A;">{tot_cal14_g:,.0f}</div>
+                    <div style="font-size:9px; color:#2B6CB0; font-weight:600;">{c14_g_pct:.0f}%</div>
+                </div>
+                <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:6px; padding:6px 8px; text-align:center;">
+                    <div style="font-size:9.5px; font-weight:700; color:#64748B; text-transform:uppercase;">Cal. 16</div>
+                    <div style="font-size:16px; font-weight:900; color:#0F172A;">{tot_cal16_g:,.0f}</div>
+                    <div style="font-size:9px; color:#2B6CB0; font-weight:600;">{c16_g_pct:.0f}%</div>
+                </div>
+            </div>
         </div>
         """, unsafe_allow_html=True)
-    with k3:
+
+    with k_decap:
+        pct_d = (tot_decap_glob / tot_hjs_glob * 100) if tot_hjs_glob > 0 else 0
+        c10_d_pct = (tot_cal10_d / tot_decap_glob * 100) if tot_decap_glob > 0 else 0
+        c12_d_pct = (tot_cal12_d / tot_decap_glob * 100) if tot_decap_glob > 0 else 0
+        c14_d_pct = (tot_cal14_d / tot_decap_glob * 100) if tot_decap_glob > 0 else 0
+        c16_d_pct = (tot_cal16_d / tot_decap_glob * 100) if tot_decap_glob > 0 else 0
         st.markdown(f"""
-        <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #3182CE; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:105px;">
-            <div style="font-size:11px; font-weight:800; color:#3182CE; text-transform:uppercase;">Cal. 12 Galv</div>
-            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:4px 0 2px 0;">{tot_cal12_g:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">hjs</span></div>
-            <span style="background:#EBF8FF; color:#3182CE; font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px;">{(tot_cal12_g/tot_hjs_glob*100):.1f}% del total</span>
-        </div>
-        """, unsafe_allow_html=True)
-    with k4:
-        st.markdown(f"""
-        <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #4299E1; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:105px;">
-            <div style="font-size:11px; font-weight:800; color:#4299E1; text-transform:uppercase;">Cal. 14 Galv</div>
-            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:4px 0 2px 0;">{tot_cal14_g:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">hjs</span></div>
-            <span style="background:#EBF8FF; color:#4299E1; font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px;">{(tot_cal14_g/tot_hjs_glob*100):.1f}% del total</span>
-        </div>
-        """, unsafe_allow_html=True)
-    with k5:
-        st.markdown(f"""
-        <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #63B3ED; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:105px;">
-            <div style="font-size:11px; font-weight:800; color:#2B6CB0; text-transform:uppercase;">Cal. 16 Galv</div>
-            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:4px 0 2px 0;">{tot_cal16_g:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">hjs</span></div>
-            <span style="background:#EBF8FF; color:#2B6CB0; font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px;">{(tot_cal16_g/tot_hjs_glob*100):.1f}% del total</span>
-        </div>
-        """, unsafe_allow_html=True)
-    with k6:
-        st.markdown(f"""
-        <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #475569; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:105px;">
-            <div style="font-size:11px; font-weight:800; color:#475569; text-transform:uppercase;">Decapado / ANSI 61</div>
-            <div style="font-size:24px; font-weight:900; color:#0F172A; margin:4px 0 2px 0;">{tot_decap_glob:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">hjs</span></div>
-            <span style="background:#F1F5F9; color:#475569; font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px;">{(tot_decap_glob/tot_hjs_glob*100):.1f}% del total</span>
+        <div style="background:#FFFFFF; border:1px solid #CBD5E1; border-top:4px solid #475569; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:125px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <span style="font-size:11px; font-weight:800; color:#475569; text-transform:uppercase; letter-spacing:0.5px;">🎨 Lámina Decapada / ANSI 61</span>
+                <span style="background:#F1F5F9; color:#334155; font-size:11px; font-weight:800; padding:2px 8px; border-radius:8px; border:1px solid #CBD5E1;">Total: {tot_decap_glob:,.0f} hjs ({pct_d:.1f}%)</span>
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:6px;">
+                <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:6px; padding:6px 8px; text-align:center;">
+                    <div style="font-size:9.5px; font-weight:700; color:#64748B; text-transform:uppercase;">Cal. 10</div>
+                    <div style="font-size:16px; font-weight:900; color:#0F172A;">{tot_cal10_d:,.0f}</div>
+                    <div style="font-size:9px; color:#64748B; font-weight:600;">{c10_d_pct:.0f}%</div>
+                </div>
+                <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:6px; padding:6px 8px; text-align:center;">
+                    <div style="font-size:9.5px; font-weight:700; color:#64748B; text-transform:uppercase;">Cal. 12</div>
+                    <div style="font-size:16px; font-weight:900; color:#0F172A;">{tot_cal12_d:,.0f}</div>
+                    <div style="font-size:9px; color:#64748B; font-weight:600;">{c12_d_pct:.0f}%</div>
+                </div>
+                <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:6px; padding:6px 8px; text-align:center;">
+                    <div style="font-size:9.5px; font-weight:700; color:#64748B; text-transform:uppercase;">Cal. 14</div>
+                    <div style="font-size:16px; font-weight:900; color:#0F172A;">{tot_cal14_d:,.0f}</div>
+                    <div style="font-size:9px; color:#64748B; font-weight:600;">{c14_d_pct:.0f}%</div>
+                </div>
+                <div style="background:#F8FAFC; border:1px solid #E2E8F0; border-radius:6px; padding:6px 8px; text-align:center;">
+                    <div style="font-size:9.5px; font-weight:700; color:#64748B; text-transform:uppercase;">Cal. 16</div>
+                    <div style="font-size:16px; font-weight:900; color:#0F172A;">{tot_cal16_d:,.0f}</div>
+                    <div style="font-size:9px; color:#64748B; font-weight:600;">{c16_d_pct:.0f}%</div>
+                </div>
+            </div>
         </div>
         """, unsafe_allow_html=True)
 

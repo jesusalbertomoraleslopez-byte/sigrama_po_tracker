@@ -9,9 +9,11 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from pathlib import Path
 
-from config import get_corte_doblez_dir, normalize_po
+from config import get_corte_doblez_dir, normalize_po, DATA_DIR
 from db_manager import get_all_pos
 from corte_doblez_sync import load_corte_doblez_databases
+
+MANUAL_MP_EXCEL = Path(DATA_DIR) / "materia_prima_manual.xlsx"
 
 STANDARD_COLUMNS = [
     'CAL 10 GALV',
@@ -150,6 +152,91 @@ def extract_of_consecutive_digits(of_str):
         val = int(m2.group(1))
         return f"{val:02d}"
     return str(of_str).strip()
+
+def apply_manual_materia_prima_overrides(pivot_of, pivot_po):
+    """Aplica capturas manuales que el usuario haya editado en su archivo Excel descargado y vuelto a subir."""
+    if not MANUAL_MP_EXCEL.exists():
+        return pivot_of, pivot_po
+    try:
+        # Lee la hoja 1: Uso_Materia_Prima_OF (encabezados en fila 4 -> header=3)
+        df_m = pd.read_excel(MANUAL_MP_EXCEL, sheet_name=0, header=3)
+        df_m.columns = [str(c).strip().upper() for c in df_m.columns]
+        
+        valid_rows = []
+        for _, r in df_m.iterrows():
+            id_i = str(r.get('ORDEN INTERNA', '')).strip()
+            po_i = str(r.get('PO', '')).strip()
+            of_i = str(r.get('OF', '')).strip()
+            proy_i = str(r.get('PROYECTO', '')).strip()
+            
+            # Omitir filas vacías o totales
+            if not po_i or po_i in ('nan', 'None', '') or 'TOTAL' in id_i.upper() or 'TOTAL' in po_i.upper():
+                continue
+                
+            m_num = re.search(r'\d+', id_i)
+            int_num = int(m_num.group()) if m_num else 999
+            
+            def safe_float(v):
+                try:
+                    return float(v)
+                except Exception:
+                    return 0.0
+
+            has_manual_data = (of_i not in ('Sin Información', 'nan', '')) or any(safe_float(r.get(sc)) > 0 for sc in STANDARD_COLUMNS)
+            
+            row_d = {
+                'id_interno': id_i,
+                'int_num': int_num,
+                'po': po_i,
+                'of_number': of_i,
+                'proyecto': proy_i,
+                'informacion': 'Con Información' if has_manual_data else 'Sin Información'
+            }
+            for sc in STANDARD_COLUMNS:
+                row_d[sc] = safe_float(r.get(sc))
+            row_d['TOTAL HOJAS'] = sum(row_d[sc] for sc in STANDARD_COLUMNS)
+            valid_rows.append(row_d)
+            
+        if valid_rows:
+            df_m_clean = pd.DataFrame(valid_rows)
+            pivot_of = df_m_clean.sort_values(by=['int_num', 'po', 'of_number'], ascending=[True, True, True]).reset_index(drop=True)
+            
+            # Reconstruir consolidado por PO
+            agg_dict = {sc: 'sum' for sc in STANDARD_COLUMNS}
+            agg_dict['TOTAL HOJAS'] = 'sum'
+            
+            pivot_po_m = pivot_of.groupby(['id_interno', 'int_num', 'po', 'proyecto'], as_index=False).agg(agg_dict)
+            
+            # Recalcular OFs consecutivas por PO
+            po_ofs_m = {}
+            for p_v, grp in pivot_of.groupby('po'):
+                digits_set = set()
+                for of_n in grp['of_number']:
+                    d = extract_of_consecutive_digits(of_n)
+                    if d:
+                        digits_set.add(d)
+                def _sort_k(x):
+                    try:
+                        return (0, int(x))
+                    except Exception:
+                        return (1, str(x))
+                sd = sorted(list(digits_set), key=_sort_k)
+                po_ofs_m[p_v] = ", ".join(sd) if sd else "Sin Información"
+                
+            pivot_po_m['ofs_count'] = pivot_po_m['po'].map(po_ofs_m).fillna("Sin Información")
+            
+            info_map = pivot_of.groupby('po')['informacion'].apply(
+                lambda s: 'Con Información' if any(x == 'Con Información' for x in s) else 'Sin Información'
+            ).to_dict()
+            pivot_po_m['informacion'] = pivot_po_m['po'].map(info_map).fillna("Sin Información")
+            
+            base_cols_po = ['id_interno', 'int_num', 'po', 'proyecto', 'ofs_count', 'informacion']
+            pivot_po = pivot_po_m[base_cols_po + STANDARD_COLUMNS + ['TOTAL HOJAS']].sort_values(by=['int_num', 'po'], ascending=[True, True]).reset_index(drop=True)
+            
+    except Exception:
+        pass
+        
+    return pivot_of, pivot_po
 
 def build_materia_prima_data():
     """Construye el dataset detallado y pivoteado del reporte de materia prima con ordenamiento INT-001 en adelante."""
@@ -307,12 +394,48 @@ def build_materia_prima_data():
         if col not in pivot_of.columns:
             pivot_of[col] = 0.0
 
-    col_order_of = ['id_interno', 'int_num', 'po', 'of_number', 'proyecto'] + STANDARD_COLUMNS
-    extra_cols = [c for c in pivot_of.columns if c not in col_order_of and c != 'TOTAL HOJAS']
-    col_order_of.extend(extra_cols)
+    pivot_of['informacion'] = 'Con Información'
+
+    # Agregar todas las órdenes internas del sistema que aún no tengan registros de corte a pivot_of
+    existing_pos_norm_of = set(normalize_po(p) for p in pivot_of['po'])
+    missing_of_records = []
     
-    pivot_of['TOTAL HOJAS'] = pivot_of[STANDARD_COLUMNS + extra_cols].sum(axis=1)
-    col_order_of.append('TOTAL HOJAS')
+    for _, r in df_pos.iterrows():
+        p_str = str(r['po']).strip()
+        p_norm = normalize_po(p_str)
+        if p_norm not in existing_pos_norm_of:
+            id_int = str(r.get('id_interno', '')).strip()
+            proy = str(r.get('proyecto', '')).strip()
+            m_num = re.search(r'\d+', id_int)
+            int_num = int(m_num.group()) if m_num else 999
+            
+            row_dict = {
+                'id_interno': id_int,
+                'int_num': int_num,
+                'po': p_str,
+                'of_number': 'Sin Información',
+                'proyecto': proy,
+                'informacion': 'Sin Información'
+            }
+            for col in STANDARD_COLUMNS:
+                row_dict[col] = 0.0
+            row_dict['TOTAL HOJAS'] = 0.0
+            missing_of_records.append(row_dict)
+            existing_pos_norm_of.add(p_norm)
+            
+    if missing_of_records:
+        df_missing_of = pd.DataFrame(missing_of_records)
+        pivot_of = pd.concat([pivot_of, df_missing_of], ignore_index=True)
+
+    base_cols_of = ['id_interno', 'int_num', 'po', 'of_number', 'proyecto', 'informacion']
+    extra_cols_of = [c for c in pivot_of.columns if c not in base_cols_of and c not in STANDARD_COLUMNS and c != 'TOTAL HOJAS']
+    
+    for col in STANDARD_COLUMNS + extra_cols_of:
+        pivot_of[col] = pd.to_numeric(pivot_of[col], errors='coerce').fillna(0.0)
+        
+    pivot_of['TOTAL HOJAS'] = pivot_of[STANDARD_COLUMNS + extra_cols_of].sum(axis=1)
+
+    col_order_of = base_cols_of + STANDARD_COLUMNS + extra_cols_of + ['TOTAL HOJAS']
     pivot_of = pivot_of[[c for c in col_order_of if c in pivot_of.columns]]
     
     # Ordenar por defecto por Orden Interna ascendente (INT-001 en adelante)
@@ -394,6 +517,9 @@ def build_materia_prima_data():
     
     # Ordenar por defecto por Orden Interna ascendente (INT-001 en adelante)
     pivot_po = pivot_po.sort_values(by=['int_num', 'po'], ascending=[True, True]).reset_index(drop=True)
+
+    # Aplicar capturas manuales de archivo Excel si existe
+    pivot_of, pivot_po = apply_manual_materia_prima_overrides(pivot_of, pivot_po)
 
     return pivot_of, pivot_po
 
@@ -489,7 +615,7 @@ def generate_materia_prima_excel(df_pivot_of, df_pivot_po=None):
         vals = [
             (id_v,   "center", "@", Font(name="Calibri", size=9.5, bold=True, color="1E3A8A")),
             (po_v,   "center", "@", Font(name="Calibri", size=9.5, bold=True, color="EC2024")),
-            (of_v,   "left",   "@", Font(name="Calibri", size=9, bold=True, color="1E293B")),
+            (of_v,   "left",   "@", Font(name="Calibri", size=9, bold=(of_v != "Sin Información"), italic=(of_v == "Sin Información"), color="1E293B" if of_v != "Sin Información" else "94A3B8")),
             (proy_v, "left",   "@", Font(name="Calibri", size=9.5, color="334155")),
         ]
         
@@ -502,8 +628,8 @@ def generate_materia_prima_excel(df_pivot_of, df_pivot_po=None):
                 fnt_h = Font(name="Calibri", size=9, color="CBD5E1")
                 vals.append(("-", "center", "@", fnt_h))
                 
-        tot_h = float(r.get('TOTAL HOJAS', 0) or 0)
-        vals.append((tot_h, "right", '#,##0 "hjs"', Font(name="Calibri", size=10, bold=True, color="0F172A")))
+        tot_formula = f"=SUM(E{curr_row}:L{curr_row})"
+        vals.append((tot_formula, "right", '#,##0 "hjs";-#,##0 "hjs";"-"', Font(name="Calibri", size=10, bold=True, color="0F172A")))
         
         for c_idx, (val, al, nf, fnt) in enumerate(vals, start=1):
             cell = ws.cell(row=curr_row, column=c_idx)
@@ -541,7 +667,7 @@ def generate_materia_prima_excel(df_pivot_of, df_pivot_po=None):
         col_letter = get_column_letter(c_idx)
         cell = ws.cell(row=tot_row, column=c_idx)
         cell.value = f"=SUM({col_letter}{start_row}:{col_letter}{end_row})"
-        cell.number_format = '#,##0' if c_idx < 12 else '#,##0 "hjs"'
+        cell.number_format = '#,##0' if c_idx < 13 else '#,##0 "hjs"'
         cell.font = Font(name="Calibri", size=10, bold=True, color="0F172A")
         cell.fill = PatternFill(start_color=C_TOTAL_BG, end_color=C_TOTAL_BG, fill_type="solid")
         cell.alignment = Alignment(horizontal="right", vertical="center")
@@ -618,11 +744,8 @@ def generate_materia_prima_excel(df_pivot_of, df_pivot_po=None):
                 else:
                     vals_p.append(("-", "center", "@", Font(name="Calibri", size=9, color="CBD5E1")))
                     
-            tot_h_p = float(r_p.get('TOTAL HOJAS', 0) or 0)
-            if tot_h_p > 0:
-                vals_p.append((tot_h_p, "right", '#,##0 "hjs"', Font(name="Calibri", size=10, bold=True, color="0F172A")))
-            else:
-                vals_p.append(("-", "center", "@", Font(name="Calibri", size=9, color="CBD5E1")))
+            tot_p_formula = f"=SUM(F{curr_r}:M{curr_r})"
+            vals_p.append((tot_p_formula, "right", '#,##0 "hjs";-#,##0 "hjs";"-"', Font(name="Calibri", size=10, bold=True, color="0F172A")))
             
             for c_i, (val, al, nf, fnt) in enumerate(vals_p, start=1):
                 cell = ws2.cell(row=curr_r, column=c_i)
@@ -808,6 +931,33 @@ def render_materia_prima_page():
             help="Descargar archivo Excel formateado con el diseño azul de cabecera exacto a la imagen solicitada y fórmulas de totales nativas."
         )
 
+    # Expander para sincronizar Excel manual
+    with st.expander("📤 Cargar / Sincronizar Excel con Captura Manual", expanded=False):
+        st.markdown("""
+        **¿Capturaste consumos de lámina u OFs manualmente en tu archivo Excel?**  
+        Sube aquí el archivo modificado para que el sistema lo integre automáticamente a la aplicación y a los totales.
+        """)
+        c_up1, c_up2 = st.columns([3, 1.2])
+        with c_up1:
+            up_f = st.file_uploader("Subir archivo Excel (.xlsx):", type=["xlsx"], key="up_excel_mp_manual")
+            if up_f is not None:
+                with open(MANUAL_MP_EXCEL, "wb") as f:
+                    f.write(up_f.getbuffer())
+                st.toast("✅ ¡Archivo Excel manual cargado con éxito!")
+                st.cache_data.clear()
+                st.rerun()
+        with c_up2:
+            if MANUAL_MP_EXCEL.exists():
+                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("🗑️ Restablecer a Corte", use_container_width=True, help="Elimina los datos manuales y vuelve a los datos originales de Pronest/Corte"):
+                    try:
+                        MANUAL_MP_EXCEL.unlink()
+                    except Exception:
+                        pass
+                    st.toast("Capturas manuales eliminadas.")
+                    st.cache_data.clear()
+                    st.rerun()
+
     # Filtrar datos
     df_active = df_of.copy() if "Vista por OF" in modo_vista else df_po.copy()
     if q_search:
@@ -908,14 +1058,17 @@ def render_materia_prima_page():
                     else:
                         td_mat += "<td style='text-align:center; color:#CBD5E1;'>-</td>"
                         
+                of_html = f"<span style='font-weight:600; color:#1E293B;'>{of_v}</span>" if of_v != "Sin Información" else f"<span style='color:#94A3B8; font-style:italic;'>Sin Información</span>"
+                tot_str = f"{tot_h:,.0f}" if tot_h > 0 else "<span style='color:#CBD5E1;'>-</span>"
+                
                 html_code += f"""
                 <tr>
                     <td style="text-align:center; font-weight:800; color:#1E3A8A; background-color:#F8FAFC;">{id_v}</td>
                     <td style="text-align:center; font-weight:700; color:#EC2024;">{po_v}</td>
-                    <td style="font-weight:600; color:#1E293B;">{of_v}</td>
+                    <td>{of_html}</td>
                     <td style="color:#334155; font-weight:500;">{proy_v}</td>
                     {td_mat}
-                    <td style="text-align:right; font-weight:800; color:#0F172A; background-color:#F1F5F9;">{tot_h:,.0f}</td>
+                    <td style="text-align:right; font-weight:800; color:#0F172A; background-color:#F1F5F9;">{tot_str}</td>
                 </tr>
                 """
                 

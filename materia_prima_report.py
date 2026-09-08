@@ -81,7 +81,7 @@ def extract_orden_interna(of_n, po_raw, proy_int, proy_cli, of_d, po_map):
     if (
         '047' in po_raw.upper() or '047' in proy_int.upper() or '047' in proy_cli.upper() or
         'PPAP GALV' in po_raw.upper() or
-        any(x in of_n for x in ['00067', '00068', '00069', '00070', '00071', '00072', '00073', '00082', '00083', '00084', '00085', '00087', '00088', '00090', '00091']) or
+        any(x in of_n for x in ['00067', '00068', '00069', '00070', '00071', '00072', '00073', '00082', '00084', '00085', '00087', '00088', '00090', '00091']) or
         '3425' in po_raw or '3425' in of_n
     ):
         return 'INT-0047', 47
@@ -197,7 +197,7 @@ def build_materia_prima_data():
         is_int_47 = (
             '047' in po_raw.upper() or '047' in proy_int.upper() or '047' in proy_cli.upper() or
             'PPAP GALV' in po_raw.upper() or
-            any(x in of_n for x in ['00067', '00068', '00069', '00070', '00071', '00072', '00073', '00082', '00083', '00084', '00085', '00087', '00088', '00090', '00091']) or
+            any(x in of_n for x in ['00067', '00068', '00069', '00070', '00071', '00072', '00073', '00082', '00084', '00085', '00087', '00088', '00090', '00091']) or
             '3425' in po_norm or '3425' in of_n
         )
         if is_int_47:

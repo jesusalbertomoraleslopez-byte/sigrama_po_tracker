@@ -104,28 +104,38 @@ st.markdown("""
         font-family: 'Questrial', sans-serif !important;
     }
     
-    /* Radio de navegación en sidebar estilizado */
+    /* Radio de navegación en sidebar estilizado (+30% tamaño de fuente) */
     [data-testid="stSidebar"] div[role="radiogroup"] {
         background-color: #18181B !important;
         border: 1px solid #27272A !important;
         border-radius: 8px !important;
         padding: 6px !important;
-        gap: 3px !important;
+        gap: 4px !important;
     }
     [data-testid="stSidebar"] div[role="radiogroup"] label {
         color: #E2E8F0 !important;
-        font-size: 13.5px !important;
-        font-family: 'Questrial', sans-serif !important;
-        padding: 8px 12px !important;
+        padding: 9px 12px !important;
         border-radius: 6px !important;
         transition: all 0.2s ease !important;
         margin: 0 !important;
     }
-    [data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+    [data-testid="stSidebar"] div[role="radiogroup"] label,
+    [data-testid="stSidebar"] div[role="radiogroup"] label p,
+    [data-testid="stSidebar"] div[role="radiogroup"] label span,
+    [data-testid="stSidebar"] div[role="radiogroup"] label div {
+        font-size: 17.5px !important;
+        font-family: 'Questrial', sans-serif !important;
+        line-height: 1.35 !important;
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] label:hover,
+    [data-testid="stSidebar"] div[role="radiogroup"] label:hover p,
+    [data-testid="stSidebar"] div[role="radiogroup"] label:hover span {
         color: #FFFFFF !important;
         background-color: rgba(236, 32, 36, 0.15) !important;
     }
-    [data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] {
+    [data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"],
+    [data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] p,
+    [data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] span {
         background-color: #EC2024 !important;
         color: #FFFFFF !important;
         font-weight: 700 !important;
@@ -296,10 +306,16 @@ with st.sidebar:
     logo_neg_path = Path(__file__).resolve().parent / "logo_sigrama_negative.png"
     logo_path = Path(__file__).resolve().parent / "logo_sigrama.png"
     
-    if logo_neg_path.exists():
-        st.image(str(logo_neg_path), use_container_width=True)
-    elif logo_path.exists():
-        st.image(str(logo_path), use_container_width=True)
+    active_logo = logo_neg_path if logo_neg_path.exists() else (logo_path if logo_path.exists() else None)
+    if active_logo:
+        import base64
+        with open(active_logo, "rb") as f_img:
+            b64_logo = base64.b64encode(f_img.read()).decode()
+        st.markdown(f"""
+        <div style="display: flex; justify-content: center; align-items: center; padding: 4px 0 8px 0;">
+            <img src="data:image/png;base64,{b64_logo}" style="width: 60%; max-width: 180px; height: auto; display: block;" alt="Industria Sigrama">
+        </div>
+        """, unsafe_allow_html=True)
     else:
         st.markdown("<h2 style='color:#EC2024; text-align:center; font-family:\"Montserrat\";'>INDUSTRIA SIGRAMA</h2>", unsafe_allow_html=True)
         

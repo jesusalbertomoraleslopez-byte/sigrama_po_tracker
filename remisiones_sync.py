@@ -330,9 +330,13 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
         
         # Estatus 360 enriquecido
         est_gen = str(po_row.get('estatus_general', '')).strip()
-        if est_gen.lower() in ('cancelada', 'cancelado'):
+        is_canc = est_gen.lower() in ('cancelada', 'cancelado')
+        tot_req_orig = tot_req
+        if is_canc:
             st_360 = "🚫 Cancelado"
+            tot_req = 0.0
             tot_pend = 0.0
+            pct_cumpl = 0.0
         elif tot_rem >= tot_req and tot_req > 0:
             st_360 = "🟢 Remisionada Total (100%)"
         elif tot_rem > 0:
@@ -347,6 +351,7 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
         row_summary = dict(po_row)
         row_summary['articulos_count'] = len(partidas_po) if not partidas_po.empty else 0
         row_summary['piezas_requeridas'] = tot_req
+        row_summary['piezas_requeridas_original'] = tot_req_orig
         row_summary['piezas_programadas'] = tot_prog
         row_summary['piezas_fabricadas'] = tot_fab
         row_summary['piezas_entarimadas'] = tot_ent

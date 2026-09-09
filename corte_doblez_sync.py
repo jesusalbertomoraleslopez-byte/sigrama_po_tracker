@@ -329,7 +329,16 @@ def get_integrated_360_summary(df_all_pos, df_all_partidas):
         tot_env = trk_rem['total_remisionado']
         
         # Estatus combinado
-        if tot_env >= tot_req and tot_req > 0:
+        est_gen = str(po_row.get('estatus_general', '')).strip()
+        is_canc = est_gen.lower() in ('cancelada', 'cancelado')
+        
+        tot_req = 0.0 if is_canc else trk_rem['total_requerido']
+        tot_fab = trk_cd['total_terminado_planta']
+        tot_env = trk_rem['total_remisionado']
+        
+        if is_canc:
+            estatus_360 = '🚫 Cancelado'
+        elif tot_env >= tot_req and tot_req > 0:
             estatus_360 = '🟢 Remisionada Total (100%)'
         elif tot_env > 0:
             estatus_360 = '🟡 En Envíos Parciales'
@@ -342,12 +351,13 @@ def get_integrated_360_summary(df_all_pos, df_all_partidas):
             
         row = dict(po_row)
         row['piezas_requeridas'] = tot_req
+        row['piezas_requeridas_original'] = trk_rem['total_requerido']
         row['piezas_fabricadas'] = tot_fab
-        row['pct_fabricacion'] = trk_cd['pct_global_fabricacion']
+        row['pct_fabricacion'] = 0.0 if is_canc else trk_cd['pct_global_fabricacion']
         row['piezas_remisionadas'] = tot_env
-        row['pct_remision'] = trk_rem['porcentaje_global']
-        row['piezas_pendientes_fab'] = max(0.0, tot_req - tot_fab)
-        row['piezas_pendientes_env'] = max(0.0, tot_req - tot_env)
+        row['pct_remision'] = 0.0 if is_canc else trk_rem['porcentaje_global']
+        row['piezas_pendientes_fab'] = 0.0 if is_canc else max(0.0, tot_req - tot_fab)
+        row['piezas_pendientes_env'] = 0.0 if is_canc else max(0.0, tot_req - tot_env)
         row['ofs_asociadas'] = ', '.join(trk_cd['matched_ofs']) if trk_cd['matched_ofs'] else 'Sin OF'
         row['remisiones_asociadas'] = ', '.join(trk_rem['remisiones_asociadas']) if trk_rem['remisiones_asociadas'] else 'Sin Remisión'
         row['estatus_360'] = estatus_360

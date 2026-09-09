@@ -39,6 +39,7 @@ def build_executive_excel(df_data, df_partidas=None):
     # Fecha y metadata
     now_str = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
     tot_pos = len(df_data)
+    tot_act = len(df_data[~df_data['estatus_remision'].astype(str).str.contains('Cancelad')]) if 'estatus_remision' in df_data.columns else tot_pos
     tot_req = float(df_data['piezas_requeridas'].sum()) if 'piezas_requeridas' in df_data.columns else 0
     tot_prog = float(df_data['piezas_programadas'].sum()) if 'piezas_programadas' in df_data.columns else 0
     tot_fab = float(df_data['piezas_fabricadas'].sum()) if 'piezas_fabricadas' in df_data.columns else 0
@@ -50,7 +51,7 @@ def build_executive_excel(df_data, df_partidas=None):
     
     ws.merge_cells("A2:Q2")
     cell_t2 = ws["A2"]
-    cell_t2.value = f"Reporte Oficial de Cadena de Suministro | Emisión: {now_str} | {tot_pos} Órdenes Activas | Cumplimiento Global: {pct_glob:.1f}% | Importe Total: ${tot_imp:,.2f} MXN"
+    cell_t2.value = f"Reporte Oficial de Cadena de Suministro | Emisión: {now_str} | {tot_act} Órdenes Activas ({tot_pos} Total) | Cumplimiento Global: {pct_glob:.1f}% | Importe Total: ${tot_imp:,.2f} MXN"
     cell_t2.font = Font(name="Calibri", size=9.5, italic=True, color="94A3B8")
     cell_t2.fill = PatternFill(start_color=C_SLATE_MID, end_color=C_SLATE_MID, fill_type="solid")
     cell_t2.alignment = Alignment(horizontal="center", vertical="center")
@@ -186,7 +187,7 @@ def build_executive_excel(df_data, df_partidas=None):
             
         # Coloreo especial de badge para Estatus Entrega (Col 14)
         c_st = ws.cell(row=curr_row, column=14)
-        if "Cancelada" in st_txt:
+        if "Cancelad" in st_txt:
             c_st.fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
             c_st.font = Font(name="Calibri", size=9, bold=True, color="B91C1C")
         elif "Total" in st_txt or "100%" in st_txt:

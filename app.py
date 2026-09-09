@@ -472,13 +472,16 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
     pct_rem_g = (tot_rem_g / tot_req_g * 100.0) if tot_req_g > 0 else 0.0
     pct_prog_g = (tot_prog_g / tot_req_g * 100.0) if tot_req_g > 0 else 0.0
 
+    canc_count = int(df_summary['estatus_remision'].astype(str).str.contains('Cancelad').sum()) if 'estatus_remision' in df_summary.columns else 0
+    act_count = len(df_summary) - canc_count
+
     k1, k_of, k2, k3, k4, k5 = st.columns(6)
     with k1:
         st.markdown(f"""
         <div style="background:#FFFFFF; border:1px solid #E2E8F0; border-top:4px solid #0F172A; border-radius:10px; padding:12px 14px; box-shadow:0 3px 6px rgba(0,0,0,0.04); min-height:115px;">
             <div style="font-size:11px; font-weight:800; color:#0F172A; text-transform:uppercase;">1. Requeridas</div>
             <div style="font-size:24px; font-weight:900; color:#0F172A; margin:6px 0 2px 0;">{tot_req_g:,.0f} <span style="font-size:12px; font-weight:500; color:#64748B;">pzas</span></div>
-            <span style="background:#F1F5F9; color:#475569; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:12px;">{len(df_summary)} Órdenes</span>
+            <span style="background:#F1F5F9; color:#475569; font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:12px;" title="{canc_count} órdenes canceladas sin requerimientos">{act_count} Órdenes Activas</span>
         </div>
         """, unsafe_allow_html=True)
     with k_of:
@@ -644,6 +647,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             c_arts = int(r_bar.get('articulos_count', 0) or 0)
             
             c_req = float(r_bar.get('piezas_requeridas', 0) or 0)
+            c_req_orig = float(r_bar.get('piezas_requeridas_original', c_req) or 0)
             base_div = c_req if c_req > 0 else 1.0
             
             c_prog = float(r_bar.get('piezas_programadas', 0) or 0)
@@ -678,6 +682,12 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             tr_bg_style = ' style="background-color:#FFF5F5;"' if is_canc else ''
             
             if is_canc:
+                td_req_html = f"""
+                <td style="text-align:right; font-weight:800; color:#94A3B8; background-color:#FEF2F2;" title="Cancelada (Originalmente {c_req_orig:,.0f} pzas)">
+                    <span style="text-decoration:line-through; font-size:11px; color:#EF4444;">{c_req_orig:,.0f}</span>
+                    <br><b style="color:#B91C1C; font-size:10px;">0 req</b>
+                </td>
+                """
                 td_pen_html = """
                 <!-- CANCELADO PENDIENTES -->
                 <td style="background-color:#FEF2F2; text-align:center; border-right:1px solid #E2E8F0;">
@@ -685,6 +695,9 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
                 </td>
                 """
             else:
+                td_req_html = f"""
+                <td style="text-align:right; font-weight:800; color:#0F172A; background-color:#F8FAFC;">{c_req:,.0f}</td>
+                """
                 td_pen_html = f"""
                 <!-- BARRA PENDIENTES (ROJO) -->
                 <td style="background:linear-gradient(90deg, rgba(239,68,68,0.22) {pct_p:.1f}%, transparent {pct_p:.1f}%); border-right:1px solid #E2E8F0;">
@@ -703,7 +716,7 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
                 <td style="text-align:center; color:#64748B; font-size:11px;">{f_lleg}</td>
                 <td style="text-align:center; color:#DC2626; font-size:11px; font-weight:700;">{f_ent}</td>
                 <td style="text-align:center; color:#475569; font-weight:600;">{c_arts}</td>
-                <td style="text-align:right; font-weight:800; color:#0F172A; background-color:#F8FAFC;">{c_req:,.0f}</td>
+                {td_req_html}
                 
                 <!-- BARRA OFS PLANEADAS (ÍNDIGO/MORADO) -->
                 <td style="background:linear-gradient(90deg, rgba(99,102,241,0.35) {pct_prog:.1f}%, transparent {pct_prog:.1f}%); border-left:1px solid #E2E8F0; border-right:1px solid #E2E8F0;">

@@ -193,8 +193,12 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
             rem_folios_partida = set()
             
             if not df_det_po.empty and 'SKU' in df_det_po.columns:
-                # Coincidencia flexible por SKU Planta o SKU Cliente (garantizando retorno booleano)
-                match_det = df_det_po[df_det_po['SKU'].apply(lambda p: bool(sku_matches(sku, p) or (bool(sku_cli) and sku_matches(sku_cli, p))))]
+                # Coincidencia flexible por SKU Planta, SKU Cliente o Descripción (garantizando retorno booleano)
+                match_det = df_det_po[df_det_po['SKU'].apply(lambda p: bool(
+                    sku_matches(sku, p) or 
+                    (bool(sku_cli) and sku_matches(sku_cli, p)) or
+                    (bool(desc_prod) and sku_matches(desc_prod, p))
+                ))]
                 
                 for _, d_row in match_det.iterrows():
                     t_id = str(d_row.get('ID_Tarima', '')).strip()

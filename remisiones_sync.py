@@ -354,19 +354,25 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
         tot_req_orig = tot_req
         if is_canc:
             st_360 = "🚫 Cancelado"
+            st_cat = "Cancelada"
             tot_req = 0.0
             tot_pend = 0.0
             pct_cumpl = 0.0
         elif tot_rem >= tot_req and tot_req > 0:
             st_360 = "🟢 Remisionada Total (100%)"
+            st_cat = "Remisionada Total"
         elif tot_rem > 0:
             st_360 = f"🔵 Parcial Enviada ({pct_cumpl:.1f}%)"
+            st_cat = "Parcial Enviada"
         elif tot_fab >= tot_req and tot_req > 0:
             st_360 = "🟣 Lista para Envío (100% Fab)"
+            st_cat = "Lista para Envío"
         elif tot_fab > 0:
             st_360 = f"🟠 En Fabricación ({pct_fab:.1f}%)"
+            st_cat = "En Fabricación"
         else:
             st_360 = "⚪ Registrada (En Espera)"
+            st_cat = "Registrada"
             
         row_summary = dict(po_row)
         row_summary['articulos_count'] = len(partidas_po) if not partidas_po.empty else 0
@@ -380,6 +386,7 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
         row_summary['pct_cumplimiento'] = pct_cumpl
         row_summary['pct_fabricacion'] = pct_fab
         row_summary['estatus_remision'] = st_360
+        row_summary['canonical_status'] = st_cat
         row_summary['ofs_resumen'] = ofs_str
         row_summary['remisiones_asociadas'] = ', '.join(tracking['remisiones_asociadas']) if tracking.get('remisiones_asociadas') else 'Sin remisión'
         

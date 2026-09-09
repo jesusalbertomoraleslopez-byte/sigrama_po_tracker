@@ -541,15 +541,62 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
-    
-    # Filtros y búsqueda
-    f1, f2, f3 = st.columns([2.5, 1.2, 1.2])
+    # Precalcular categoría canónica de estatus y conteos dinámicos
+    if 'canonical_status' not in df_summary.columns:
+        def _get_st_cat(st_val):
+            s = str(st_val).lower()
+            if 'cancelad' in s: return 'Cancelada'
+            if 'total' in s or '100%' in s: return 'Remisionada Total'
+            if 'parcial' in s: return 'Parcial Enviada'
+            if 'lista' in s: return 'Lista para Envío'
+            if 'fabricaci' in s: return 'En Fabricación'
+            return 'Registrada'
+        df_summary['canonical_status'] = df_summary['estatus_remision'].apply(_get_st_cat)
+
+    c_tot = int((df_summary['canonical_status'] == 'Remisionada Total').sum())
+    c_parc = int((df_summary['canonical_status'] == 'Parcial Enviada').sum())
+    c_fab = int((df_summary['canonical_status'] == 'En Fabricación').sum())
+    c_reg = int((df_summary['canonical_status'] == 'Registrada').sum())
+    c_canc = int((df_summary['canonical_status'] == 'Cancelada').sum())
+    c_pend = int(((df_summary['piezas_pendientes'] > 0) & (df_summary['canonical_status'] != 'Cancelada')).sum())
+    c_act = int((df_summary['canonical_status'] != 'Cancelada').sum())
+
+    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+    # 1. Barra de Píldoras Interactivas (Filtro Rápido con 1 clic)
+    pill_opts = [
+        f"🌟 Todas ({len(df_summary)})",
+        f"🟢 Remisionadas ({c_tot})",
+        f"🔵 Parciales ({c_parc})",
+        f"🟠 En Fabricación ({c_fab})",
+        f"⚪ Registradas ({c_reg})",
+        f"⏳ Con Pendientes ({c_pend})",
+        f"✅ Solo Activas ({c_act})",
+        f"🚫 Canceladas ({c_canc})"
+    ]
+    pill_sel = st.pills(
+        "Filtro rápido por Estatus:",
+        options=pill_opts,
+        default=f"🌟 Todas ({len(df_summary)})",
+        key="pills_estatus_tabla_general"
+    )
+
+    # 2. Filtros y búsqueda
+    f1, f2, f3 = st.columns([2.3, 1.4, 1.3])
     with f1:
-        q_search = st.text_input("🔍 Búsqueda rápida en todas las órdenes:", placeholder="Escribe ID, Folio, Proyecto, Comprador...", key="search_tabla_general")
+        q_search = st.text_input("🔍 Búsqueda rápida en todas las órdenes:", placeholder="Escribe ID, Folio, Proyecto, Comprador o Estatus...", key="search_tabla_general")
     with f2:
-        estatus_opts = ["Todos"] + list(df_summary['estatus_remision'].unique())
-        sel_estatus = st.selectbox("Estatus de Entrega:", estatus_opts, key="sb_est_tabla_general")
+        estatus_dropdown_opts = [
+            f"🌟 Todos los Estatus ({len(df_summary)})",
+            f"🟢 Remisionadas Totales (100%) ({c_tot})",
+            f"🔵 Parciales Enviadas ({c_parc})",
+            f"🟠 En Fabricación ({c_fab})",
+            f"⚪ Registradas / En Espera ({c_reg})",
+            f"⏳ Con Pendientes por Entregar ({c_pend})",
+            f"✅ Solo Activas (Excluir Canceladas) ({c_act})",
+            f"🚫 Canceladas ({c_canc})"
+        ]
+        sel_estatus = st.selectbox("Estatus de Entrega:", estatus_dropdown_opts, key="sb_est_tabla_general")
     with f3:
         sort_opt = st.selectbox("Ordenar tabla por:", [
             "🔢 ID Interno (INT-0001, INT-0002...)",
@@ -561,6 +608,31 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
         ], key="sb_sort_tabla_general")
         
     df_f = df_summary.copy()
+
+    # Prioridad del filtro de estatus: si se usa la píldora se aplica; si la píldora está en "Todas", se aplica el desplegable
+    active_status_filter = None
+    if pill_sel and not pill_sel.startswith("🌟 Todas"):
+        active_status_filter = pill_sel
+    elif sel_estatus and not sel_estatus.startswith("🌟 Todos"):
+        active_status_filter = sel_estatus
+
+    if active_status_filter:
+        s = active_status_filter.lower()
+        if "remisionada" in s:
+            df_f = df_f[df_f['canonical_status'] == 'Remisionada Total']
+        elif "parcial" in s:
+            df_f = df_f[df_f['canonical_status'] == 'Parcial Enviada']
+        elif "fabricaci" in s:
+            df_f = df_f[df_f['canonical_status'] == 'En Fabricación']
+        elif "registrada" in s:
+            df_f = df_f[df_f['canonical_status'] == 'Registrada']
+        elif "pendiente" in s:
+            df_f = df_f[(df_f['piezas_pendientes'] > 0) & (df_f['canonical_status'] != 'Cancelada')]
+        elif "activa" in s:
+            df_f = df_f[df_f['canonical_status'] != 'Cancelada']
+        elif "cancelad" in s:
+            df_f = df_f[df_f['canonical_status'] == 'Cancelada']
+
     if q_search:
         q = q_search.strip().lower()
         df_f = df_f[
@@ -568,10 +640,10 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             df_f.get('id_interno', pd.Series(['']*len(df_f))).astype(str).str.lower().str.contains(q) |
             df_f['proyecto'].astype(str).str.lower().str.contains(q) |
             df_f['solicitante'].astype(str).str.lower().str.contains(q) |
-            df_f['comprador'].astype(str).str.lower().str.contains(q)
+            df_f['comprador'].astype(str).str.lower().str.contains(q) |
+            df_f['estatus_remision'].astype(str).str.lower().str.contains(q) |
+            df_f['canonical_status'].astype(str).str.lower().str.contains(q)
         ]
-    if sel_estatus != "Todos":
-        df_f = df_f[df_f['estatus_remision'] == sel_estatus]
         
     if "ID Interno" in sort_opt:
         df_f['id_sort_key'] = df_f['id_interno'].apply(lambda x: str(x) if str(x).strip() else 'ZZZ')
@@ -1981,8 +2053,44 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
         st.info("💡 No hay Órdenes de Compra registradas.")
     else:
         col_sel1, col_sel2 = st.columns([2.5, 1.5])
+        with col_sel2:
+            est_opts_360 = [
+                "🌟 Todos los Estatus",
+                "🟢 Remisionadas Totales (100%)",
+                "🔵 Parciales Enviadas",
+                "🟠 En Fabricación",
+                "⚪ Registradas (En Espera)",
+                "⏳ Con Pendientes por Entregar",
+                "🚫 Canceladas"
+            ]
+            sel_est_360 = st.selectbox("Filtrar lista por Estatus:", est_opts_360, key="sb_est_filter_360")
+            
+        df_pos_for_360 = df_pos.copy()
+        if sel_est_360 and not sel_est_360.startswith("🌟 Todos"):
+            df_sum_360 = get_cached_global_pos_summary()
+            if not df_sum_360.empty and 'canonical_status' in df_sum_360.columns:
+                s_360 = sel_est_360.lower()
+                if "remisionada" in s_360:
+                    matched_pos = set(df_sum_360[df_sum_360['canonical_status'] == 'Remisionada Total']['po'].astype(str))
+                elif "parcial" in s_360:
+                    matched_pos = set(df_sum_360[df_sum_360['canonical_status'] == 'Parcial Enviada']['po'].astype(str))
+                elif "fabricaci" in s_360:
+                    matched_pos = set(df_sum_360[df_sum_360['canonical_status'] == 'En Fabricación']['po'].astype(str))
+                elif "registrada" in s_360:
+                    matched_pos = set(df_sum_360[df_sum_360['canonical_status'] == 'Registrada']['po'].astype(str))
+                elif "pendiente" in s_360:
+                    matched_pos = set(df_sum_360[(df_sum_360['piezas_pendientes'] > 0) & (df_sum_360['canonical_status'] != 'Cancelada')]['po'].astype(str))
+                elif "cancelad" in s_360:
+                    matched_pos = set(df_sum_360[df_sum_360['canonical_status'] == 'Cancelada']['po'].astype(str))
+                else:
+                    matched_pos = set(df_pos['po'].astype(str))
+                df_pos_for_360 = df_pos[df_pos['po'].astype(str).isin(matched_pos)]
+
         with col_sel1:
-            pos_list = df_pos['po'].tolist()
+            pos_list = df_pos_for_360['po'].tolist()
+            if not pos_list:
+                st.warning("⚠️ No hay órdenes con el estatus seleccionado. Mostrando todas.")
+                pos_list = df_pos['po'].tolist()
             def _format_po_option(p):
                 sub_df = df_pos[df_pos['po'].astype(str) == str(p)]
                 if not sub_df.empty:

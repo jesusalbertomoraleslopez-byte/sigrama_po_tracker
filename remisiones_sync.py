@@ -100,15 +100,31 @@ def normalize_sku(s):
 def sku_matches(target_sku, candidate_piece):
     if not target_sku or not candidate_piece:
         return False
-    t_norm = normalize_sku(target_sku)
-    c_norm = normalize_sku(candidate_piece)
+    t_str = str(target_sku).strip()
+    c_str = str(candidate_piece).strip()
+    t_norm = normalize_sku(t_str)
+    c_norm = normalize_sku(c_str)
     if not t_norm or not c_norm:
         return False
     if t_norm == c_norm:
         return True
-    c_clean = normalize_sku(clean_pronest_piece_name(candidate_piece))
+    c_clean = normalize_sku(clean_pronest_piece_name(c_str))
     if t_norm == c_clean:
         return True
+        
+    # Extraer primer token si contiene espacios (e.g. '11-A-6014-01 UNPAINTED ...')
+    t_first = normalize_sku(t_str.split()[0])
+    c_first = normalize_sku(c_str.split()[0])
+    if t_first and c_first and t_first == c_first:
+        return True
+        
+    # Coincidencia de prefijo (para strings de al menos 6 caracteres alfanuméricos)
+    # Ejemplo: '11-B-9208-01 TRTO' -> '11B920801TRTO' vs '11B920801'
+    if len(c_norm) >= 6 and t_norm.startswith(c_norm):
+        return True
+    if len(t_norm) >= 6 and c_norm.startswith(t_norm):
+        return True
+        
     return False
 
 def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):

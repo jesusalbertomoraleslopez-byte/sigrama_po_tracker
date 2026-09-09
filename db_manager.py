@@ -14,6 +14,7 @@ from config import (
     EXCEL_CABECERA_PATH,
     EXCEL_REQ_PATH,
     EXCEL_PARTIDAS_DETALLE_PATH,
+    SYNC_DB_DIR,
     get_remisiones_dir,
     ESTATUS_REGISTRADA
 )
@@ -911,3 +912,10 @@ def export_sync_to_excel():
             shutil.copy2(EXCEL_REQ_PATH, rem_dir / 'BD_Requerimientos_POs.xlsx')
         except Exception as e:
             print(f'Sync copy to remisiones error: {e}')
+            
+    if SYNC_DB_DIR.exists() and SYNC_DB_DIR != EXCEL_CABECERA_PATH.parent:
+        try:
+            shutil.copy2(EXCEL_CABECERA_PATH, SYNC_DB_DIR / 'BD_POs_Cabecera.xlsx')
+            shutil.copy2(EXCEL_REQ_PATH, SYNC_DB_DIR / 'BD_Requerimientos_POs.xlsx')
+        except Exception as e:
+            pass

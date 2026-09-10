@@ -5,7 +5,8 @@ from config import (
     ESTATUS_REGISTRADA,
     ESTATUS_EN_PROCESO,
     ESTATUS_PARCIAL,
-    ESTATUS_COMPLETADA
+    ESTATUS_COMPLETADA,
+    is_historical_completed
 )
 
 def normalize_po(po_val):
@@ -129,13 +130,55 @@ def sku_matches(target_sku, candidate_piece):
 
 def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
     """Calcula el estatus de remisión/envío para cada partida y global de una PO dada."""
+    po_str = str(po_folio).strip()
+    po_norm = normalize_po(po_str)
+    
+    # Manejo de Órdenes Históricas (completadas y entregadas al 100% previas a sistemas)
+    if is_historical_completed(id_interno=id_interno, po=po_str):
+        partidas_enriched = []
+        total_requerido = 0.0
+        historial_envios = []
+        if df_partidas is not None and not df_partidas.empty:
+            for _, part in df_partidas.iterrows():
+                cant_req = float(part.get('cantidad_requerida', 0) or 0)
+                total_requerido += cant_req
+                sku = str(part.get('clave_sku', '')).strip().upper()
+                desc = str(part.get('descripcion_producto', '')).strip()
+                p_dict = dict(part)
+                p_dict['cantidad_entarimada'] = cant_req
+                p_dict['cantidad_remisionada'] = cant_req
+                p_dict['cantidad_pendiente'] = 0.0
+                p_dict['porcentaje_cumplimiento'] = 100.0
+                p_dict['estatus_partida'] = ESTATUS_COMPLETADA
+                p_dict['remisiones_folios'] = 'Entrega Histórica (100% Remisionada)'
+                partidas_enriched.append(p_dict)
+                historial_envios.append({
+                    'SKU': sku,
+                    'Descripción': desc,
+                    'Cantidad Enviada': cant_req,
+                    'ID Tarima': 'Tarima Histórica',
+                    'Folio Remisión': 'Entrega Histórica (100% Remisionada)',
+                    'Fecha Salida': 'Completada Previa a Sistemas',
+                    'Receptor': 'Cliente (Entregado)'
+                })
+        return {
+            'po': po_str,
+            'total_requerido': total_requerido,
+            'total_entarimado': total_requerido,
+            'total_remisionado': total_requerido,
+            'total_pendiente': 0.0,
+            'porcentaje_global': 100.0,
+            'estatus_global': ESTATUS_COMPLETADA,
+            'remisiones_asociadas': ['Entrega Histórica (100% Remisionada)'],
+            'df_partidas': pd.DataFrame(partidas_enriched),
+            'df_historial_envios': pd.DataFrame(historial_envios)
+        }
+        
     if dbs is not None:
         df_rem, df_det, df_tar = dbs
     else:
         df_rem, df_det, df_tar = load_remisiones_databases()
     
-    po_str = str(po_folio).strip()
-    po_norm = normalize_po(po_str)
     id_int_clean = re.sub(r'[^0-9]', '', str(id_interno)) if id_interno else ""
     id_int_num = int(id_int_clean) if id_int_clean else None
     
@@ -358,6 +401,17 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
             tot_req = 0.0
             tot_pend = 0.0
             pct_cumpl = 0.0
+        elif is_historical_completed(id_interno=id_int_val, po=po_folio):
+            st_360 = "🟢 Remisionada Total (100%)"
+            st_cat = "Remisionada Total"
+            tot_fab = tot_req
+            tot_prog = tot_req
+            tot_ent = tot_req
+            tot_rem = tot_req
+            tot_pend = 0.0
+            pct_cumpl = 100.0
+            pct_fab = 100.0
+            ofs_str = "Validación Histórica"
         elif tot_rem >= tot_req and tot_req > 0:
             st_360 = "🟢 Remisionada Total (100%)"
             st_cat = "Remisionada Total"

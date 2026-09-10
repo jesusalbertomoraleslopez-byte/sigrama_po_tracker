@@ -2,7 +2,7 @@ import pandas as pd
 import os
 import re
 from pathlib import Path
-from config import normalize_po, get_corte_doblez_dir
+from config import normalize_po, get_corte_doblez_dir, is_historical_completed
 
 def clean_pronest_piece_name(p):
     s = str(p).strip()
@@ -72,6 +72,41 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
     
     po_str = str(po_folio).strip()
     po_norm = normalize_po(po_str)
+    
+    # Manejo de Órdenes Históricas (completadas y entregadas al 100% previas a sistemas)
+    if is_historical_completed(id_interno=id_interno, po=po_str):
+        partidas_cd = []
+        total_req_cd = 0.0
+        if df_partidas is not None and not df_partidas.empty:
+            for _, part in df_partidas.iterrows():
+                cant_req = float(part.get('cantidad_requerida', 0) or 0)
+                total_req_cd += cant_req
+                p_res = dict(part)
+                p_res['piezas_programadas'] = cant_req
+                p_res['piezas_cortadas'] = cant_req
+                p_res['piezas_dobladas'] = cant_req
+                p_res['piezas_terminadas_planta'] = cant_req
+                p_res['pct_avance_fabricacion'] = 100.0
+                p_res['ofs_asociadas'] = 'Fabricación Histórica (100% Terminada)'
+                partidas_cd.append(p_res)
+        return {
+            'po': po_str,
+            'matched_ofs': ['Fabricación Histórica Validada'],
+            'ofs_asociadas': ['Fabricación Histórica Validada'],
+            'total_programado': total_req_cd,
+            'total_cortado': total_req_cd,
+            'total_doblado': total_req_cd,
+            'total_terminado_planta': total_req_cd,
+            'total_fabricado': total_req_cd,
+            'pct_global_fabricacion': 100.0,
+            'porcentaje_fabricacion': 100.0,
+            'df_partidas_cd': pd.DataFrame(partidas_cd),
+            'df_ofs': pd.DataFrame({'OF': ['Fabricación Histórica Validada']}),
+            'df_laminas': pd.DataFrame(),
+            'total_laminas': 0,
+            'df_nidos': pd.DataFrame()
+        }
+        
     id_int_clean = re.sub(r'[^0-9]', '', str(id_interno)) if id_interno else ""
     id_int_num = int(id_int_clean) if id_int_clean else None
     
@@ -316,13 +351,14 @@ def get_integrated_360_summary(df_all_pos, df_all_partidas):
         
     for _, po_row in df_all_pos.iterrows():
         po_folio = str(po_row.get('po', '')).strip()
+        id_int_val = str(po_row.get('id_interno', '')).strip()
         partidas_po = df_all_partidas[df_all_partidas['po'].astype(str).str.strip() == po_folio] if not df_all_partidas.empty else pd.DataFrame()
         
         # 1. Trazabilidad con Remisiones
-        trk_rem = get_tracking_for_po(po_folio, partidas_po)
+        trk_rem = get_tracking_for_po(po_folio, partidas_po, id_interno=id_int_val)
         
         # 2. Trazabilidad con Corte y Doblez
-        trk_cd = get_corte_doblez_tracking_for_po(po_folio, trk_rem['df_partidas'])
+        trk_cd = get_corte_doblez_tracking_for_po(po_folio, trk_rem['df_partidas'], id_interno=id_int_val)
         
         tot_req = trk_rem['total_requerido']
         tot_fab = trk_cd['total_terminado_planta']
@@ -338,6 +374,10 @@ def get_integrated_360_summary(df_all_pos, df_all_partidas):
         
         if is_canc:
             estatus_360 = '🚫 Cancelado'
+        elif is_historical_completed(id_interno=id_int_val, po=po_folio):
+            estatus_360 = '🟢 Remisionada Total (100%)'
+            tot_fab = tot_req
+            tot_env = tot_req
         elif tot_env >= tot_req and tot_req > 0:
             estatus_360 = '🟢 Remisionada Total (100%)'
         elif tot_env > 0:

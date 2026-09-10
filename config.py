@@ -79,3 +79,42 @@ def normalize_po(po_val):
         s = s[2:].strip()
     return s.replace("-", "").replace(" ", "").replace("/", "").replace("_", "")
 
+# Órdenes de compra históricas completadas al 100% previas a la implementación de sistemas
+HISTORICAL_COMPLETED_INTS = {
+    'INT-0001', 'INT-0002',
+    'INT-0010', 'INT-0011', 'INT-0014', 'INT-0015', 'INT-0016', 
+    'INT-0017', 'INT-0018', 'INT-0019', 'INT-0020', 'INT-0021', 
+    'INT-0022', 'INT-0023', 'INT-0024'
+}
+
+HISTORICAL_COMPLETED_POS = {
+    '2602-0482', '2602-0482 (2)', '26020482',
+    '2603-1316', '2603-1317', '2603-1431', '2603-1459', '2603-1530',
+    '2603-1605', '2603-1699', '2603-1700', '2603-1702', '2603-1797',
+    '2603-1039', '2603-1839', '2603-1893',
+    '26031316', '26031317', '26031431', '26031459', '26031530',
+    '26031605', '26031699', '26031700', '26031702', '26031797',
+    '26031039', '26031839', '26031893'
+}
+
+def is_historical_completed(id_interno="", po=""):
+    """Verifica si una orden de compra corresponde a las entregas históricas completadas al 100%."""
+    import re
+    if id_interno:
+        s_id = str(id_interno).strip().upper()
+        if s_id in HISTORICAL_COMPLETED_INTS:
+            return True
+        digits = re.sub(r'[^0-9]', '', s_id)
+        if digits:
+            formatted_id = f"INT-{int(digits):04d}"
+            if formatted_id in HISTORICAL_COMPLETED_INTS:
+                return True
+    if po:
+        s_po = str(po).strip().upper()
+        if s_po in HISTORICAL_COMPLETED_POS:
+            return True
+        norm_po = normalize_po(s_po)
+        if norm_po in HISTORICAL_COMPLETED_POS:
+            return True
+    return False
+

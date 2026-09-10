@@ -301,6 +301,114 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ==============================================================================
+# SISTEMA DE ACCESO Y AUTENTICACIÓN (LOGIN)
+# ==============================================================================
+def check_authentication():
+    """Valida las credenciales de acceso para proteger el PO Tracker en Streamlit Cloud."""
+    if st.session_state.get('authenticated', False):
+        return True
+
+    # Soporte SSO desde Concentradora SIGRAMA
+    try:
+        sso_token = st.query_params.get("sso_token")
+        sso_user = st.query_params.get("sso_user")
+        if sso_token == "SIGRAMA_AUTH_TOKEN" and sso_user:
+            st.session_state['authenticated'] = True
+            st.session_state['usuario'] = sso_user
+            st.session_state['rol'] = st.query_params.get("sso_role", "Admin")
+            return True
+    except Exception:
+        pass
+
+    # Ocultar barra lateral si no ha iniciado sesión
+    st.markdown("""
+    <style>
+        [data-testid="stSidebar"] {
+            display: none !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    col_l1, col_l2, col_l3 = st.columns([1, 1.3, 1])
+    with col_l2:
+        st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
+        
+        logo_path_login = Path(__file__).resolve().parent / "logo_sigrama.png"
+        if logo_path_login.exists():
+            import base64
+            b64_login_logo = base64.b64encode(logo_path_login.read_bytes()).decode()
+            st.markdown(f"""
+            <div style="text-align: center; margin-bottom: 20px;">
+                <div style="background: #FFFFFF; display: inline-block; padding: 12px 24px; border-radius: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.06); margin-bottom: 12px;">
+                    <img src="data:image/png;base64,{b64_login_logo}" style="width: 170px; height: auto; display: block;" alt="Industria Sigrama">
+                </div>
+                <h3 style="font-family: 'Montserrat', sans-serif; font-size: 20px; font-weight: 900; color: #111111; margin: 4px 0 2px 0;">
+                    PO TRACKER 4.0
+                </h3>
+                <p style="color: #64748B; font-size: 13px; margin: 0; font-family: 'Questrial', sans-serif;">
+                    Control Central y Trazabilidad Integral 360°
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div style="text-align: center; margin-bottom: 20px;">
+                <h2 style="font-family: 'Montserrat', sans-serif; color: #EC2024; font-weight: 900; margin: 0;">INDUSTRIA SIGRAMA</h2>
+                <h4 style="font-family: 'Montserrat', sans-serif; color: #111111; margin: 4px 0 0 0;">PO TRACKER 4.0</h4>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with st.form("form_login_po_tracker", clear_on_submit=False):
+            st.markdown("""
+            <div style="background: rgba(236,32,36,0.08); border-left: 3px solid #EC2024; padding: 8px 12px; border-radius: 4px; margin-bottom: 14px;">
+                <span style="font-family: 'Montserrat', sans-serif; font-size: 12px; font-weight: 700; color: #EC2024;">
+                    🔒 ACCESO RESTRINGIDO
+                </span>
+                <div style="font-size: 11.5px; color: #475569; margin-top: 2px;">
+                    Ingrese sus credenciales de Administrador para acceder.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            user_val = st.text_input("👤 Usuario:", placeholder="admin", key="auth_user_field")
+            pass_val = st.text_input("🔑 Contraseña:", type="password", placeholder="•••••", key="auth_pass_field")
+            
+            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+            btn_entrar = st.form_submit_button("Ingresar al Sistema", type="primary", use_container_width=True)
+            
+            if btn_entrar:
+                u_clean = str(user_val).strip().lower()
+                p_clean = str(pass_val).strip()
+                
+                valid_passwords = ["admin", "SigramaMetales2026", "Sigrama123!", "Admin2026"]
+                try:
+                    if hasattr(st, "secrets") and "admin_password" in st.secrets:
+                        valid_passwords.append(str(st.secrets["admin_password"]).strip())
+                except Exception:
+                    pass
+                
+                if u_clean in ["admin", "administrador"] and p_clean in valid_passwords:
+                    st.session_state['authenticated'] = True
+                    st.session_state['usuario'] = "admin"
+                    st.success("✅ Acceso concedido. Cargando sistema...")
+                    st.rerun()
+                else:
+                    st.error("❌ Credenciales inválidas. Verifique su usuario y contraseña.")
+
+        st.markdown("""
+        <div style="text-align: center; margin-top: 25px; color: #94A3B8; font-size: 11px; font-family: 'Questrial', sans-serif;">
+            Industria Sigrama S.A. de C.V. &bull; Área de TI & Manufactura<br>
+            <i>Ingeniería que da resultados!!</i>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.stop()
+    return False
+
+# Validar sesión activa antes de renderizar la aplicación
+check_authentication()
+
 # Sidebar Corporativo Oficial Sigrama (Manual pág. 28-29)
 with st.sidebar:
     logo_neg_path = Path(__file__).resolve().parent / "logo_sigrama_negative.png"
@@ -320,11 +428,19 @@ with st.sidebar:
         st.markdown("<h2 style='color:#EC2024; text-align:center; font-family:\"Montserrat\";'>INDUSTRIA SIGRAMA</h2>", unsafe_allow_html=True)
         
     st.markdown("""
-    <div style="background: rgba(236,32,36,0.12); border: 1px solid rgba(236,32,36,0.35); border-radius: 6px; padding: 7px 10px; margin: 10px 0 14px 0; text-align: center;">
+    <div style="background: rgba(236,32,36,0.12); border: 1px solid rgba(236,32,36,0.35); border-radius: 6px; padding: 7px 10px; margin: 10px 0 8px 0; text-align: center;">
         <span style="font-family: 'Montserrat', sans-serif; font-size: 10.5px; font-weight: 800; color: #EC2024; letter-spacing: 1px; text-transform: uppercase;">
             🛡️ CONTROL CENTRAL 4.0
         </span>
         <div style="color: #CBD5E1; font-size: 10.5px; margin-top: 1px;">Gestión y Trazabilidad de Órdenes (PO)</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Indicador de Usuario Autenticado
+    st.markdown(f"""
+    <div style="background: #18181B; border: 1px solid #27272A; border-radius: 6px; padding: 6px 10px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between;">
+        <span style="color: #94A3B8; font-size: 11px;">👤 Usuario: <b style="color: #FFFFFF;">{st.session_state.get('usuario', 'admin')}</b></span>
+        <span style="background: #10B981; color: #FFFFFF; font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 4px;">ACTIVO</span>
     </div>
     """, unsafe_allow_html=True)
     
@@ -392,6 +508,12 @@ with st.sidebar:
         st.success("☁️ BD restaurada desde GitHub")
         st.session_state['db_restored_from_github'] = False
         
+    # Botón de Cerrar Sesión
+    if st.button("🚪 Cerrar Sesión", use_container_width=True, key="btn_logout_sidebar"):
+        st.session_state['authenticated'] = False
+        st.session_state['usuario'] = ""
+        st.rerun()
+
     # Cierre Oficial de Barra Lateral (Manual pág. 27, 28, 29)
     st.markdown("""
     <div style="text-align: center; margin-top: 25px; padding-top: 15px; border-top: 1px solid #27272A;">

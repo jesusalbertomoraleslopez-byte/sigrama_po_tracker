@@ -453,6 +453,7 @@ with st.sidebar:
             "📊 Dashboard Ejecutivo",
             "🔍 Ficha de Trazabilidad 360°",
             "📋 Tabla de Todas las Órdenes",
+            "📦 Piezas por Proyecto",
             "🏭 Uso de Materia Prima (Láminas)",
             "📬 Bandeja de Entrada OCR",
             "📁 Repositorio de Correos y Archivos",
@@ -2150,6 +2151,12 @@ elif menu == "📋 Tabla de Todas las Órdenes":
         render_tabla_todas_las_ordenes(df_pos, df_part)
     with tab_piezas:
         render_catalogo_piezas_por_proyecto()
+
+# ==============================================================================
+# SECCIÓN: CATÁLOGO Y LISTA DE PIEZAS POR PROYECTO
+# ==============================================================================
+elif menu == "📦 Piezas por Proyecto":
+    render_catalogo_piezas_por_proyecto()
 
 # ==============================================================================
 # SECCIÓN: REPORTE DE USO DE MATERIA PRIMA (LÁMINAS / HOJAS)

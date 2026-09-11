@@ -51,6 +51,7 @@ from corte_doblez_sync import (
 from pdf_parser import parse_po_pdf, parse_email_text
 from excel_importer import generate_po_excel_template, parse_uploaded_excel
 from materia_prima_report import render_materia_prima_page
+from piezas_report import render_catalogo_piezas_por_proyecto
 
 # ── Configuración de Página (DEBE ser el primer comando de Streamlit) ──────────
 st.set_page_config(
@@ -2140,7 +2141,15 @@ elif menu == "✏️ Ajuste de PO":
 elif menu == "📋 Tabla de Todas las Órdenes":
     df_pos = get_all_pos()
     df_part = get_all_partidas()
-    render_tabla_todas_las_ordenes(df_pos, df_part)
+    
+    tab_ordenes, tab_piezas = st.tabs([
+        "📋 Órdenes de Compra (Visión Global 360°)",
+        "📦 Catálogo y Lista de Piezas por Proyecto"
+    ])
+    with tab_ordenes:
+        render_tabla_todas_las_ordenes(df_pos, df_part)
+    with tab_piezas:
+        render_catalogo_piezas_por_proyecto()
 
 # ==============================================================================
 # SECCIÓN: REPORTE DE USO DE MATERIA PRIMA (LÁMINAS / HOJAS)

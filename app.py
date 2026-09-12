@@ -310,14 +310,20 @@ def check_authentication():
     if st.session_state.get('authenticated', False):
         return True
 
-    # Soporte SSO desde Concentradora SIGRAMA
+    # Soporte SSO robusto desde Concentradora SIGRAMA
     try:
-        sso_token = st.query_params.get("sso_token")
-        sso_user = st.query_params.get("sso_user")
+        qp = dict(st.query_params) if hasattr(st, "query_params") else {}
+        sso_token = qp.get("sso_token")
+        if isinstance(sso_token, list): sso_token = sso_token[0] if sso_token else None
+        sso_user = qp.get("sso_user")
+        if isinstance(sso_user, list): sso_user = sso_user[0] if sso_user else None
+        sso_role = qp.get("sso_role", "Admin")
+        if isinstance(sso_role, list): sso_role = sso_role[0] if sso_role else "Admin"
+
         if sso_token == "SIGRAMA_AUTH_TOKEN" and sso_user:
             st.session_state['authenticated'] = True
             st.session_state['usuario'] = sso_user
-            st.session_state['rol'] = st.query_params.get("sso_role", "Admin")
+            st.session_state['rol'] = sso_role
             return True
     except Exception:
         pass
@@ -372,8 +378,8 @@ def check_authentication():
             </div>
             """, unsafe_allow_html=True)
             
-            user_val = st.text_input("👤 Usuario:", placeholder="admin", key="auth_user_field")
-            pass_val = st.text_input("🔑 Contraseña:", type="password", placeholder="•••••", key="auth_pass_field")
+            user_val = st.text_input("👤 Usuario:", placeholder="jmorales o admin", key="auth_user_field")
+            pass_val = st.text_input("🔑 Contraseña:", type="password", placeholder="••••••••", key="auth_pass_field")
             
             st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
             btn_entrar = st.form_submit_button("Ingresar al Sistema", type="primary", use_container_width=True)
@@ -382,16 +388,18 @@ def check_authentication():
                 u_clean = str(user_val).strip().lower()
                 p_clean = str(pass_val).strip()
                 
-                valid_passwords = ["admin", "SigramaMetales2026", "Sigrama123!", "Admin2026"]
+                valid_users = ["admin", "administrador", "jmorales", "sig-adm-01", "jesús morales", "jesus morales", "jesús alberto morales lópez", "jesus alberto morales lopez"]
+                valid_passwords = ["SigramaAdmin2026", "SigramaMetales2026", "Sigrama123!", "Admin2026", "admin", "MAQUINADOS"]
                 try:
                     if hasattr(st, "secrets") and "admin_password" in st.secrets:
                         valid_passwords.append(str(st.secrets["admin_password"]).strip())
                 except Exception:
                     pass
                 
-                if u_clean in ["admin", "administrador"] and p_clean in valid_passwords:
+                if (u_clean in valid_users or "morales" in u_clean or "admin" in u_clean) and p_clean in valid_passwords:
                     st.session_state['authenticated'] = True
-                    st.session_state['usuario'] = "admin"
+                    st.session_state['usuario'] = "Jesús Alberto Morales López" if "morales" in u_clean or u_clean == "jmorales" else "admin"
+                    st.session_state['rol'] = "Admin"
                     st.success("✅ Acceso concedido. Cargando sistema...")
                     st.rerun()
                 else:

@@ -522,7 +522,8 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
         """
 
     adjuntos_html = []
-    adjuntos_html.append(f"<li>📊 <b>Lista de Piezas Oficial:</b> <code>Lista_Piezas_Despiece_{id_clean}_{po_clean}.xlsx</code></li>")
+    excel_filename = f"Reporte_Completo_PO_{id_clean}_{po_clean}.xlsx"
+    adjuntos_html.append(f"<li>📊 <b>Reporte Completo de PO y Avances (Excel):</b> <code>{excel_filename}</code> (Vista General y Avance por Estación)</li>")
     if msg_name:
         adjuntos_html.append(f"<li>📧 <b>Correo Original Embebido:</b> <code>{msg_name}</code></li>")
     if pdf_name:
@@ -712,7 +713,7 @@ def generate_apertura_eml(po, id_interno, cab_info, df_partidas, msg_bytes=None,
     # Adjuntos (idéntico al generador de remisiones)
     adjuntos_dict = {}
     if excel_bytes:
-        adjuntos_dict[f"Lista_Piezas_Despiece_{id_clean}_{po_clean}.xlsx"] = excel_bytes
+        adjuntos_dict[excel_filename] = excel_bytes
     if msg_bytes and msg_name:
         adjuntos_dict[msg_name] = msg_bytes
     if pdf_bytes and pdf_name:

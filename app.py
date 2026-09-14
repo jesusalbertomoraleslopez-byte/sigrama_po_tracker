@@ -294,11 +294,16 @@ st.markdown("""
         padding-top: 0px !important;
     }
 
-    /* Ocultar elementos predeterminados de Streamlit */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+    /* Ocultar elementos predeterminados de Streamlit y badge de pie de página */
+    #MainMenu {visibility: hidden; display: none !important;}
+    footer {visibility: hidden !important; display: none !important; height: 0px !important;}
+    [data-testid="stFooter"] {display: none !important;}
+    [data-testid="stDecoration"] {display: none !important;}
     .stAppDeployButton {display: none !important;}
     [data-testid="stViewerBadge"] {display: none !important;}
+    div[class*="viewerBadge"] {display: none !important;}
+    div[class*="ProfileButton"] {display: none !important;}
+    a[href*="streamlit.io"] {display: none !important;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -2643,12 +2648,21 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                     guardar_emails_config(dest_to_val, dest_cc_val)
                                     st.success("¡Lista de distribución predeterminada guardada exitosamente!")
 
+                        from excel_export_styler import build_po_progress_excel
+                        excel_reporte_completo_bytes = build_po_progress_excel(
+                            po=sel_po,
+                            id_interno=id_int_txt,
+                            cab_info=cab_info,
+                            rem_tracking=rem_tracking,
+                            cd_tracking=cd_tracking,
+                            df_merged_360=df_merged_360
+                        )
                         excel_piezas_bytes = generate_apertura_piezas_excel(sel_po, id_int_txt, cab_info, df_merged_360)
                         eml_apertura_bytes = generate_apertura_eml(
                             sel_po, id_int_txt, cab_info, df_merged_360,
                             msg_bytes=msg_b, msg_name=msg_n,
                             pdf_bytes=pdf_b, pdf_name=pdf_n,
-                            excel_bytes=excel_piezas_bytes,
+                            excel_bytes=excel_reporte_completo_bytes,
                             dest_to=dest_to_val if 'dest_to_val' in locals() else None,
                             dest_cc=dest_cc_val if 'dest_cc_val' in locals() else None
                         )
@@ -2660,20 +2674,20 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 data=eml_apertura_bytes,
                                 file_name=f"Apertura_Proyecto_{id_int_txt}_{sel_po}.eml",
                                 mime="message/rfc822",
-                                help="Descarga el correo en modo borrador con destinatarios de Remisiones listos. Al abrirlo en Outlook solo confirme y presione 'Enviar'. Incluye Lista de Piezas (.xlsx), correo original (.msg) y PO (.pdf).",
+                                help="Descarga el correo en modo borrador con destinatarios de Remisiones listos. Al abrirlo en Outlook solo confirme y presione 'Enviar'. Incluye Reporte Completo de PO en Excel (.xlsx), correo original (.msg) y PO (.pdf).",
                                 use_container_width=True,
                                 type="primary",
                                 key=f"btn_dl_eml_apertura_{sel_po}"
                             )
                         with c_btn_xl:
                             st.download_button(
-                                label="📊 Descargar Lista de Piezas (.xlsx)",
-                                data=excel_piezas_bytes,
-                                file_name=f"Lista_Piezas_Despiece_{id_int_txt}_{sel_po}.xlsx",
+                                label="📊 Descargar Reporte Completo PO (.xlsx)",
+                                data=excel_reporte_completo_bytes,
+                                file_name=f"Reporte_Completo_PO_{id_int_txt}_{sel_po}.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                help="Descarga la lista de piezas oficial y despiece en Excel (.xlsx) formateado con estilos corporativos SIGRAMA y fórmulas de sumatoria.",
+                                help="Descarga el reporte integral oficial en Excel (.xlsx) con Vista General de la Orden (KPIs y datos consolidados) y Avance Detallado de cada Pieza por estación.",
                                 use_container_width=True,
-                                key=f"btn_dl_xl_piezas_{sel_po}"
+                                key=f"btn_dl_xl_completo_top_{sel_po}"
                             )
                     
                     # -------------------------------------------------------------
@@ -2868,6 +2882,32 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                             use_container_width=True,
                             hide_index=True
                         )
+
+                    # -------------------------------------------------------------
+                    # REPORTE EXCEL INTEGRAL PARA CLIENTES (VISTA GENERAL + AVANCES)
+                    # -------------------------------------------------------------
+                    st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
+                    with st.container(border=True):
+                        c_xl_f1, c_xl_f2 = st.columns([2.8, 1.2])
+                        with c_xl_f1:
+                            st.markdown(f"#### 📊 Reporte Completo de Orden de Compra para Clientes (`.xlsx`)")
+                            st.markdown(
+                                "Informe ejecutivo en Excel listo para entregar al cliente. Contiene la **Ficha General de la PO** "
+                                "(resumen ejecutivo, tarjetas KPI e indicadores consolidados idénticos a la *Tabla de todas las Órdenes*) "
+                                "y la **Matriz de Avances del Detalle de Piezas** (cantidades y barras de datos por estación: Cortado, Doblado, Entarimado, Remisionadas y Pendiente)."
+                            )
+                        with c_xl_f2:
+                            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+                            st.download_button(
+                                label="📥 Descargar Reporte Completo (.xlsx)",
+                                data=excel_reporte_completo_bytes,
+                                file_name=f"Reporte_Completo_PO_{id_int_txt}_{sel_po}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                type="primary",
+                                use_container_width=True,
+                                key=f"btn_dl_xl_completo_fin_{sel_po}",
+                                help="Descargar archivo Excel con Vista General de la Orden y Avance Detallado de Piezas para Clientes."
+                            )
                 else:
                     st.info("No hay partidas registradas para esta PO.")
                     
@@ -3266,15 +3306,25 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         filename=f"3_Reporte_Trazabilidad_PO_{clean_po_file}_{clean_id_file}.pdf"
                     )
                     
-                    return e_msg.as_bytes(), html_content, zip_data, pdf_rem_data, pdf_etiq_data, pdf_rep_data
+                    # 4. Adjuntar Reporte Excel Completo (Vista General + Avances por Pieza)
+                    from excel_export_styler import build_po_progress_excel
+                    excel_po_bytes = build_po_progress_excel(po_val, id_i, cab, rem_trk, cd_trk, df_m360)
+                    e_msg.add_attachment(
+                        excel_po_bytes,
+                        maintype='application',
+                        subtype='vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        filename=f"Reporte_Completo_PO_{clean_id_file}_{clean_po_file}.xlsx"
+                    )
                     
-                eml_bytes, eml_html, zip_att, rem_pdf_att, etiq_pdf_att, rep_pdf_att = build_po_eml(cab_info, cd_tracking, rem_tracking, df_merged_360 if 'df_merged_360' in locals() else pd.DataFrame(), dest_email, cc_email, nota_eml)
+                    return e_msg.as_bytes(), html_content, zip_data, pdf_rem_data, pdf_etiq_data, pdf_rep_data, excel_po_bytes
+                    
+                eml_bytes, eml_html, zip_att, rem_pdf_att, etiq_pdf_att, rep_pdf_att, excel_po_att = build_po_eml(cab_info, cd_tracking, rem_tracking, df_merged_360 if 'df_merged_360' in locals() else pd.DataFrame(), dest_email, cc_email, nota_eml)
                 
                 st.markdown("#### 📦 Descarga de Expedientes y Archivos Certificados")
                 b_c1, b_c2 = st.columns([1, 1])
                 with b_c1:
                     st.download_button(
-                        label=f"📥 Descargar Correo (.eml) con Expediente ZIP Adjunto",
+                        label=f"📥 Descargar Correo (.eml) con Expediente y Excel Adjunto",
                         data=eml_bytes,
                         file_name=f"Reporte_360_{id_int_txt if id_int_txt else 'INT'}_PO_{sel_po}.eml",
                         mime="message/rfc822",
@@ -3290,10 +3340,10 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         use_container_width=True
                     )
                     
-                d_c1, d_c2, d_c3 = st.columns([1, 1, 1])
+                d_c1, d_c2, d_c3, d_c4 = st.columns([1, 1, 1, 1])
                 with d_c1:
                     st.download_button(
-                        label=f"📄 Descargar Remisión E0125 (PDF)",
+                        label=f"📄 Descargar Remisión (PDF)",
                         data=rem_pdf_att,
                         file_name=f"Remision_E0125_{id_int_txt if id_int_txt else 'INT'}.pdf",
                         mime="application/pdf",
@@ -3301,7 +3351,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     )
                 with d_c2:
                     st.download_button(
-                        label=f"🏷️ Descargar Etiquetas Tarimas (PDF)",
+                        label=f"🏷️ Descargar Etiquetas (PDF)",
                         data=etiq_pdf_att,
                         file_name=f"Etiquetas_Tarimas_E0125_{id_int_txt if id_int_txt else 'INT'}.pdf",
                         mime="application/pdf",
@@ -3309,10 +3359,18 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     )
                 with d_c3:
                     st.download_button(
-                        label=f"📊 Descargar Reporte PO Trazabilidad (PDF)",
+                        label=f"📊 Reporte Trazabilidad (PDF)",
                         data=rep_pdf_att,
                         file_name=f"Reporte_PO_{sel_po}_{id_int_txt if id_int_txt else 'INT'}.pdf",
                         mime="application/pdf",
+                        use_container_width=True
+                    )
+                with d_c4:
+                    st.download_button(
+                        label=f"📥 Reporte PO (.xlsx)",
+                        data=excel_po_att,
+                        file_name=f"Reporte_Completo_PO_{id_int_txt if id_int_txt else 'INT'}_{sel_po}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
                     

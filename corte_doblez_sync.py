@@ -2,7 +2,7 @@ import pandas as pd
 import os
 import re
 from pathlib import Path
-from config import normalize_po, get_corte_doblez_dir, is_historical_completed
+from config import normalize_po, get_corte_doblez_dir, is_historical_completed, get_historical_qty_override
 
 def clean_pronest_piece_name(p):
     s = str(p).strip()
@@ -75,20 +75,29 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
     
     # Manejo de Órdenes Históricas (completadas y entregadas al 100% previas a sistemas)
     if is_historical_completed(id_interno=id_interno, po=po_str):
+        override_qty = get_historical_qty_override(id_interno=id_interno, po=po_str)
         partidas_cd = []
         total_req_cd = 0.0
         if df_partidas is not None and not df_partidas.empty:
+            orig_sum = float(df_partidas['cantidad_requerida'].sum() or 0)
             for _, part in df_partidas.iterrows():
                 cant_req = float(part.get('cantidad_requerida', 0) or 0)
-                total_req_cd += cant_req
+                if override_qty is not None and orig_sum > 0:
+                    cant_req_adj = round((cant_req / orig_sum) * override_qty, 2)
+                else:
+                    cant_req_adj = cant_req
+                total_req_cd += cant_req_adj
                 p_res = dict(part)
-                p_res['piezas_programadas'] = cant_req
-                p_res['piezas_cortadas'] = cant_req
-                p_res['piezas_dobladas'] = cant_req
-                p_res['piezas_terminadas_planta'] = cant_req
+                p_res['cantidad_requerida'] = cant_req_adj
+                p_res['piezas_programadas'] = cant_req_adj
+                p_res['piezas_cortadas'] = cant_req_adj
+                p_res['piezas_dobladas'] = cant_req_adj
+                p_res['piezas_terminadas_planta'] = cant_req_adj
                 p_res['pct_avance_fabricacion'] = 100.0
                 p_res['ofs_asociadas'] = 'Fabricación Histórica (100% Terminada)'
                 partidas_cd.append(p_res)
+        if override_qty is not None:
+            total_req_cd = float(override_qty)
         return {
             'po': po_str,
             'matched_ofs': ['Fabricación Histórica Validada'],

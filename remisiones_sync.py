@@ -6,7 +6,8 @@ from config import (
     ESTATUS_EN_PROCESO,
     ESTATUS_PARCIAL,
     ESTATUS_COMPLETADA,
-    is_historical_completed
+    is_historical_completed,
+    get_historical_qty_override
 )
 
 def normalize_po(po_val):
@@ -135,18 +136,25 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
     
     # Manejo de Órdenes Históricas (completadas y entregadas al 100% previas a sistemas)
     if is_historical_completed(id_interno=id_interno, po=po_str):
+        override_qty = get_historical_qty_override(id_interno=id_interno, po=po_str)
         partidas_enriched = []
         total_requerido = 0.0
         historial_envios = []
         if df_partidas is not None and not df_partidas.empty:
+            orig_sum = float(df_partidas['cantidad_requerida'].sum() or 0)
             for _, part in df_partidas.iterrows():
                 cant_req = float(part.get('cantidad_requerida', 0) or 0)
-                total_requerido += cant_req
+                if override_qty is not None and orig_sum > 0:
+                    cant_req_adj = round((cant_req / orig_sum) * override_qty, 2)
+                else:
+                    cant_req_adj = cant_req
+                total_requerido += cant_req_adj
                 sku = str(part.get('clave_sku', '')).strip().upper()
                 desc = str(part.get('descripcion_producto', '')).strip()
                 p_dict = dict(part)
-                p_dict['cantidad_entarimada'] = cant_req
-                p_dict['cantidad_remisionada'] = cant_req
+                p_dict['cantidad_requerida'] = cant_req_adj
+                p_dict['cantidad_entarimada'] = cant_req_adj
+                p_dict['cantidad_remisionada'] = cant_req_adj
                 p_dict['cantidad_pendiente'] = 0.0
                 p_dict['porcentaje_cumplimiento'] = 100.0
                 p_dict['estatus_partida'] = ESTATUS_COMPLETADA
@@ -155,12 +163,14 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
                 historial_envios.append({
                     'SKU': sku,
                     'Descripción': desc,
-                    'Cantidad Enviada': cant_req,
+                    'Cantidad Enviada': cant_req_adj,
                     'ID Tarima': 'Tarima Histórica',
                     'Folio Remisión': 'Entrega Histórica (100% Remisionada)',
                     'Fecha Salida': 'Completada Previa a Sistemas',
                     'Receptor': 'Cliente (Entregado)'
                 })
+        if override_qty is not None:
+            total_requerido = float(override_qty)
         return {
             'po': po_str,
             'total_requerido': total_requerido,

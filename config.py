@@ -81,7 +81,7 @@ def normalize_po(po_val):
 
 # Órdenes de compra históricas completadas al 100% previas a la implementación de sistemas
 HISTORICAL_COMPLETED_INTS = {
-    'INT-0001', 'INT-0002',
+    'INT-0001', 'INT-0002', 'INT-0007', 'INT-0009',
     'INT-0010', 'INT-0011', 'INT-0014', 'INT-0015', 'INT-0016', 
     'INT-0017', 'INT-0018', 'INT-0019', 'INT-0020', 'INT-0021', 
     'INT-0022', 'INT-0023', 'INT-0024'
@@ -89,6 +89,8 @@ HISTORICAL_COMPLETED_INTS = {
 
 HISTORICAL_COMPLETED_POS = {
     '2602-0482', '2602-0482 (2)', '26020482',
+    '2603-0989', '26030989',
+    '2603-1038', '26031038',
     '2603-1316', '2603-1317', '2603-1431', '2603-1459', '2603-1530',
     '2603-1605', '2603-1699', '2603-1700', '2603-1702', '2603-1797',
     '2603-1039', '2603-1839', '2603-1893',
@@ -96,6 +98,34 @@ HISTORICAL_COMPLETED_POS = {
     '26031605', '26031699', '26031700', '26031702', '26031797',
     '26031039', '26031839', '26031893'
 }
+
+# Cantidad específica entregada para órdenes con artículos cancelados respecto a la PO original
+HISTORICAL_QTY_OVERRIDE = {
+    'INT-0007': 1403.0,
+    '2603-0989': 1403.0,
+    '26030989': 1403.0
+}
+
+def get_historical_qty_override(id_interno="", po=""):
+    """Retorna la cantidad efectiva entregada si existe un ajuste histórico específico."""
+    import re
+    if id_interno:
+        s_id = str(id_interno).strip().upper()
+        if s_id in HISTORICAL_QTY_OVERRIDE:
+            return HISTORICAL_QTY_OVERRIDE[s_id]
+        digits = re.sub(r'[^0-9]', '', s_id)
+        if digits:
+            formatted_id = f"INT-{int(digits):04d}"
+            if formatted_id in HISTORICAL_QTY_OVERRIDE:
+                return HISTORICAL_QTY_OVERRIDE[formatted_id]
+    if po:
+        s_po = str(po).strip().upper()
+        if s_po in HISTORICAL_QTY_OVERRIDE:
+            return HISTORICAL_QTY_OVERRIDE[s_po]
+        norm = normalize_po(s_po)
+        if norm in HISTORICAL_QTY_OVERRIDE:
+            return HISTORICAL_QTY_OVERRIDE[norm]
+    return None
 
 def is_historical_completed(id_interno="", po=""):
     """Verifica si una orden de compra corresponde a las entregas históricas completadas al 100%."""
@@ -117,4 +147,5 @@ def is_historical_completed(id_interno="", po=""):
         if norm_po in HISTORICAL_COMPLETED_POS:
             return True
     return False
+
 

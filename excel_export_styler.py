@@ -809,7 +809,9 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
             sub_ava_copy['_area_lc'] = sub_ava_copy['area'].astype(str).str.lower()
             c_cort = float(sub_ava_copy[sub_ava_copy['_area_lc'] == 'corte']['cantidad'].sum())
             c_dobl = float(sub_ava_copy[sub_ava_copy['_area_lc'] == 'doblez']['cantidad'].sum())
-            c_term = float(sub_ava_copy[sub_ava_copy['_area_lc'].isin(['liberado', 'empaque'])]['cantidad'].sum())
+            c_term_scan = float(sub_ava_copy[sub_ava_copy['_area_lc'].isin(['liberado', 'empaque'])]['cantidad'].sum())
+            # Regla de Planta Sigrama: Si ya está cortada o doblada, la pieza está fabricada en taller
+            c_term = max(c_term_scan, c_dobl, c_cort)
         elif is_hist or (cd_tracking and cd_tracking.get('pct_global_fabricacion', 0) >= 100):
             c_cort = c_prog
             c_dobl = c_prog
@@ -817,16 +819,23 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
         else:
             c_cort, c_dobl, c_term = 0.0, 0.0, 0.0
 
-        pct_of = (c_term / c_prog) if c_prog > 0 else (1.0 if (c_cort >= c_prog and c_prog > 0) else 0.0)
-        pct_of = min(1.0, max(0.0, pct_of))
-
-        if pct_of >= 1.0 or is_hist:
+        # REGLA: Si la OF ya está cortada al 100% de lo programado, se cierra automáticamente al 100% Terminada
+        if c_prog > 0 and c_cort >= c_prog:
+            c_term = max(c_term, c_prog)
+            pct_of = 1.0
             st_of = "🟢 100% Terminada"
             fg_st, bg_st = "15803D", "DCFCE7"
-        elif c_cort > 0 or c_dobl > 0 or c_term > 0:
+        elif c_prog > 0 and c_cort > 0:
+            c_term = max(c_term, c_cort)
+            pct_of = min(1.0, c_cort / c_prog)
             st_of = f"🔵 En Proceso ({pct_of*100:.0f}%)"
             fg_st, bg_st = "1D4ED8", "DBEAFE"
+        elif is_hist or (cd_tracking and cd_tracking.get('pct_global_fabricacion', 0) >= 100):
+            pct_of = 1.0
+            st_of = "🟢 100% Terminada"
+            fg_st, bg_st = "15803D", "DCFCE7"
         else:
+            pct_of = 0.0
             st_of = "⚪ Registrada"
             fg_st, bg_st = "64748B", "F1F5F9"
 
@@ -870,7 +879,7 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
         (7, f"=SUM(G{start_of_data_r}:G{end_of_data_r})", '#,##0 "pzas"', "1D4ED8", "EFF6FF"),
         (8, f"=SUM(H{start_of_data_r}:H{end_of_data_r})", '#,##0 "pzas"', "4338CA", "EEF2FF"),
         (9, f"=SUM(I{start_of_data_r}:I{end_of_data_r})", '#,##0 "pzas"', "15803D", "DCFCE7"),
-        (10, f"=I{tot_of_r}/F{tot_of_r}", "0.0%", "15803D", "DCFCE7"),
+        (10, f"=MIN(1, I{tot_of_r}/F{tot_of_r})", "0.0%", "15803D", "DCFCE7"),
         (11, "", "@", "0F172A", "F1F5F9"),
     ]
     for col_i, form, nf, fg, bg in tot_cols_of:
@@ -1046,7 +1055,10 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
                 sub_av_p_copy['_area_lc'] = sub_av_p_copy['area'].astype(str).str.lower()
                 p_cort = float(sub_av_p_copy[sub_av_p_copy['_area_lc'] == 'corte']['cantidad'].sum())
                 p_dobl = float(sub_av_p_copy[sub_av_p_copy['_area_lc'] == 'doblez']['cantidad'].sum())
-                p_lib  = float(sub_av_p_copy[sub_av_p_copy['_area_lc'].isin(['liberado', 'empaque'])]['cantidad'].sum())
+                p_lib_scan = float(sub_av_p_copy[sub_av_p_copy['_area_lc'].isin(['liberado', 'empaque'])]['cantidad'].sum())
+                p_lib = max(p_lib_scan, p_dobl, p_cort)
+                if cant_p > 0 and p_cort >= cant_p:
+                    p_lib = max(p_lib, cant_p)
             elif is_hist or (cd_tracking and cd_tracking.get('pct_global_fabricacion', 0) >= 100):
                 p_cort = cant_p
                 p_dobl = cant_p

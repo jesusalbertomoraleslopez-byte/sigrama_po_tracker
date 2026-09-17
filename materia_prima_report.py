@@ -43,20 +43,24 @@ def classify_material_and_calibre(of_name, of_desc="", cal_field="", po_val="", 
     comb = f"{of_upper} {cal_field} {po_val} {proy_val}".upper()
     full_text = f"{comb} {piezas_text}".upper()
     
-    # 1. Calibre
+    # 1. Calibre (reconoce CAL 10, 10 GA, 12 GACR, etc.)
     cal = None
-    if re.search(r'\b(CAL\.?\s*10|10\s*GA|CAL10|10GACR)\b', full_text):
+    if re.search(r'\b(CAL\.?\s*10|CALIBRE\s*10|10\s*GA\b|10\s*GA\s*CR\b|10\s*GACR|CAL10|10GA\b)', full_text):
         cal = 'CAL 10'
-    elif re.search(r'\b(CAL\.?\s*12|12\s*GA|CAL12|12GACR)\b', full_text):
+    elif re.search(r'\b(CAL\.?\s*12|CALIBRE\s*12|12\s*GA\b|12\s*GA\s*CR\b|12\s*GACR|CAL12|12GA\b)', full_text):
         cal = 'CAL 12'
-    elif re.search(r'\b(CAL\.?\s*14|14\s*GA|CAL14|14GACR)\b', full_text):
+    elif re.search(r'\b(CAL\.?\s*14|CALIBRE\s*14|14\s*GA\b|14\s*GA\s*CR\b|14\s*GACR|CAL14|14GA\b)', full_text):
         cal = 'CAL 14'
-    elif re.search(r'\b(CAL\.?\s*16|16\s*GA|CAL16|16GACR)\b', full_text):
+    elif re.search(r'\b(CAL\.?\s*16|CALIBRE\s*16|16\s*GA\b|16\s*GA\s*CR\b|16\s*GACR|CAL16|16GA\b)', full_text):
         cal = 'CAL 16'
-    elif re.search(r'\b(CAL\.?\s*18|18\s*GA|CAL18|18GACR)\b', full_text):
+    elif re.search(r'\b(CAL\.?\s*18|CALIBRE\s*18|18\s*GA\b|18\s*GA\s*CR\b|18\s*GACR|CAL18|18GA\b)', full_text):
         cal = 'CAL 18'
-    elif re.search(r'\b(CAL\.?\s*20|20\s*GA|CAL20|20GACR)\b', full_text):
+    elif re.search(r'\b(CAL\.?\s*20|CALIBRE\s*20|20\s*GA\b|20\s*GA\s*CR\b|20\s*GACR|CAL20|20GA\b)', full_text):
         cal = 'CAL 20'
+    elif re.search(r'\b(CAL\.?\s*22|CALIBRE\s*22|22\s*GA\b|22\s*GA\s*CR\b|22\s*GACR|CAL22|22GA\b)', full_text):
+        cal = 'CAL 22'
+    elif re.search(r'\b(CAL\.?\s*24|CALIBRE\s*24|24\s*GA\b|24\s*GA\s*CR\b|24\s*GACR|CAL24|24GA\b)', full_text):
+        cal = 'CAL 24'
         
     # 2. Material (Regla Directa de Planta con soporte de descripción/piezas)
     text_for_mat = f"{of_upper} {full_text}".upper()

@@ -298,7 +298,8 @@ def generate_apertura_piezas_excel(po, id_interno, cab_info, df_partidas):
 
     ws.row_dimensions[6].height = 8
 
-    from materia_prima_report import classify_material_and_calibre
+    from excel_export_styler import classify_sku_material_calibre, _get_sku_material_map
+    sku_m = _get_sku_material_map()
 
     # 3. Encabezados de Columnas
     headers = [
@@ -352,9 +353,8 @@ def generate_apertura_piezas_excel(po, id_interno, cab_info, df_partidas):
         parc = _extract_val(row, ['parcialidad', 'Parcialidad'], 'P1')
         obs  = _extract_val(row, ['observaciones_partida', 'estatus_partida_360', 'Observaciones'])
 
-        mat_p, cal_p = classify_material_and_calibre("", desc, piezas_text=f"{sk_p} {sk_c}")
-        mat_txt_p = "Galvanizado" if mat_p == 'GALV' else ("Inoxidable" if mat_p == 'INOX' else ("Aluminio" if mat_p == 'ALUMINIO' else "Decapado"))
-        mat_lbl_p = f"{mat_txt_p} {cal_p if cal_p else ''}".strip()
+        ofs_val = str(_extract_val(row, ['ofs_asociadas', 'of_number', 'ofs']) or '').strip()
+        mat_lbl_p = classify_sku_material_calibre(sk_p, sk_c, desc, ofs_str=ofs_val, sku_m=sku_m)
 
         values = [
             (i_no, "center", "@"),

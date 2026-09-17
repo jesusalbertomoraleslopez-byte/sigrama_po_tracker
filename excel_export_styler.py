@@ -16,6 +16,56 @@ from config import is_historical_completed
 from materia_prima_report import classify_material_and_calibre
 import corte_doblez_sync
 
+def _get_sku_material_map():
+    """Construye un diccionario en memoria asociando SKUs y números de pieza a sus OFs y nombres de taller."""
+    try:
+        df_ord_all, df_pie_all, _, _, _ = corte_doblez_sync.load_corte_doblez_databases()
+        sku_m = {}
+        if not df_pie_all.empty:
+            for _, r in df_pie_all.iterrows():
+                p_num = str(r.get('no_pieza', '')).strip()
+                p_nom = str(r.get('nombre_pieza', '')).strip()
+                of_n  = str(r.get('of_number', '')).strip()
+                if p_num and p_num not in sku_m:
+                    sku_m[p_num] = f"{of_n} {p_nom}"
+        return sku_m
+    except Exception:
+        return {}
+
+def classify_sku_material_calibre(sk_p, sk_c, desc, ofs_str="", sku_m=None):
+    """Clasifica con máxima precisión el material y calibre de un SKU consultando Pronest y OFs."""
+    extra = ""
+    if sku_m:
+        extra = sku_m.get(sk_p, sku_m.get(sk_c, ''))
+        if not extra:
+            for k, v in sku_m.items():
+                if (sk_p and (sk_p in k or k in sk_p)) or (sk_c and (sk_c in k or k in sk_c)):
+                    extra = v
+                    break
+    full_info = f"{ofs_str} {extra}".strip()
+    mat_p, cal_p = classify_material_and_calibre(full_info, desc, piezas_text=f"{sk_p} {sk_c} {extra}")
+    mat_txt_p = "Galvanizado" if mat_p == 'GALV' else ("Inoxidable" if mat_p == 'INOX' else ("Aluminio" if mat_p == 'ALUMINIO' else "Decapado"))
+    
+    # Formatear Calibre con especificación exacta (ej. 10 GA, 12 GACR, etc.)
+    all_txt = f"{full_info} {desc} {sk_p} {sk_c}".upper()
+    cal_detail = ""
+    if cal_p:
+        m_num = re.search(r'\d+', cal_p)
+        num = m_num.group() if m_num else ""
+        if num:
+            if re.search(rf'\b({num}\s*GA\s*CR|{num}\s*GACR|{num}GACR)\b', all_txt) or (f"{num}GACR" in all_txt):
+                cal_detail = f"CAL {num} ({num} GACR)"
+            else:
+                cal_detail = f"CAL {num} ({num} GA)"
+        else:
+            cal_detail = cal_p
+            
+    if cal_detail:
+        return f"{mat_txt_p} {cal_detail}".strip()
+    elif cal_p:
+        return f"{mat_txt_p} {cal_p}".strip()
+    return mat_txt_p
+
 def build_executive_excel(df_data, df_partidas=None):
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -324,6 +374,7 @@ def build_executive_excel(df_data, df_partidas=None):
         valid_pos = set(df_data['po'].astype(str).str.strip().unique()) if not df_data.empty else set()
         df_part_f = df_partidas[df_partidas['po'].astype(str).str.strip().isin(valid_pos)].copy() if valid_pos else df_partidas.copy()
         
+        sku_m = _get_sku_material_map()
         for p_idx, (_, pr) in enumerate(df_part_f.iterrows()):
             p_row = p_start + p_idx
             ws2.row_dimensions[p_row].height = 18
@@ -342,9 +393,7 @@ def build_executive_excel(df_data, df_partidas=None):
             p_fent = str(pr.get('fecha_entrega', '')).strip()
             p_parc = str(pr.get('parcialidad', pr.get('observaciones_partida', ''))).strip()
 
-            mat_p, cal_p = classify_material_and_calibre("", p_desc, piezas_text=f"{p_sk_pla} {p_sk_cli}")
-            mat_txt_p = "Galvanizado" if mat_p == 'GALV' else ("Inoxidable" if mat_p == 'INOX' else ("Aluminio" if mat_p == 'ALUMINIO' else "Decapado"))
-            mat_lbl_p = f"{mat_txt_p} {cal_p if cal_p else ''}".strip()
+            mat_lbl_p = classify_sku_material_calibre(p_sk_pla, p_sk_cli, p_desc, "", sku_m=sku_m)
             
             row_p_vals = [
                 (p_po,      "center", "@", Font(name="Calibri", size=9.5, bold=True, color="EC2024")),
@@ -480,6 +529,7 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
     tot_fab = float(cd_tracking.get('total_fabricado', cd_tracking.get('total_terminado_planta', 0.0)) or 0.0) if cd_tracking else 0.0
     tot_rem = float(rem_tracking.get('total_remisionado', 0.0) or 0.0) if rem_tracking else 0.0
     tot_ent = float(rem_tracking.get('total_entarimado', 0.0) or 0.0) if rem_tracking else 0.0
+    sku_m = _get_sku_material_map()
     if tot_ent == 0.0 and df_merged_360 is not None and 'entarimado' in df_merged_360.columns:
         tot_ent = float(df_merged_360['entarimado'].sum())
     tot_pend = max(0.0, tot_req - tot_rem)
@@ -1045,9 +1095,7 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
             cant_p = float(r_pie.get('cantidad', 0) or 0)
             ruta_p = str(r_pie.get('ruta', '')).strip()
 
-            mat_p, cal_p = classify_material_and_calibre(of_p, nom_p, piezas_text=no_p)
-            mat_txt_p = "Galvanizado" if mat_p == 'GALV' else ("Inoxidable" if mat_p == 'INOX' else ("Aluminio" if mat_p == 'ALUMINIO' else "Decapado"))
-            mat_lbl_p = f"{mat_txt_p} {cal_p if cal_p else ''}".strip()
+            mat_lbl_p = classify_sku_material_calibre(no_p, "", nom_p, ofs_str=of_p, sku_m=sku_m)
 
             sub_av_p = df_ava_po[(df_ava_po['of_number'] == of_p) & (df_ava_po['no_pieza'] == no_p)] if (df_ava_po is not None and not df_ava_po.empty) else pd.DataFrame()
             if not sub_av_p.empty:
@@ -1102,9 +1150,9 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
             cant_p = float(r_m.get('cantidad_requerida', 0) or 0)
             ruta_p = "Corte -> Doblez -> Pintura"
 
-            mat_p, cal_p = classify_material_and_calibre(of_p, nom_p, piezas_text=f"{no_p} {sk_c}")
-            mat_txt_p = "Galvanizado" if mat_p == 'GALV' else ("Inoxidable" if mat_p == 'INOX' else ("Aluminio" if mat_p == 'ALUMINIO' else "Decapado"))
-            mat_lbl_p = f"{mat_txt_p} {cal_p if cal_p else ''}".strip()
+            ofs_asoc_str = str(r_m.get('ofs_asociadas', '')).strip()
+            comb_of_str = f"{of_p} {ofs_asoc_str}".strip()
+            mat_lbl_p = classify_sku_material_calibre(no_p, sk_c, nom_p, ofs_str=comb_of_str, sku_m=sku_m)
 
             p_cort = float(r_m.get('cortado', cant_p if is_hist else 0) or 0)
             p_dobl = float(r_m.get('doblado', cant_p if is_hist else 0) or 0)
@@ -1203,9 +1251,7 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
             
             # Clasificación de Material / Calibre para la pieza
             ofs_p_val = str(r_p.get('ofs_asociadas', '')).strip()
-            mat_p, cal_p = classify_material_and_calibre(ofs_p_val, desc, piezas_text=f"{sk_p} {sk_c}")
-            mat_txt_p = "Galvanizado" if mat_p == 'GALV' else ("Inoxidable" if mat_p == 'INOX' else ("Aluminio" if mat_p == 'ALUMINIO' else "Decapado"))
-            mat_cell_val = f"{mat_txt_p} {cal_p if cal_p else ''}".strip()
+            mat_cell_val = classify_sku_material_calibre(sk_p, sk_c, desc, ofs_str=ofs_p_val, sku_m=sku_m)
 
             c_req  = float(r_p.get('cantidad_requerida', 0) or 0)
             c_cort = float(r_p.get('cortado', r_p.get('piezas_cortadas', 0)) or 0)

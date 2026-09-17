@@ -58,16 +58,16 @@ def classify_material_and_calibre(of_name, of_desc="", cal_field="", po_val="", 
     elif re.search(r'\b(CAL\.?\s*20|20\s*GA|CAL20|20GACR)\b', full_text):
         cal = 'CAL 20'
         
-    # 2. Material (Regla Directa de Planta)
-    if re.search(r'\b(INOX|INOXIDABLE|SS304|SS316)\b', of_upper):
+    # 2. Material (Regla Directa de Planta con soporte de descripción/piezas)
+    text_for_mat = f"{of_upper} {full_text}".upper()
+    if re.search(r'\b(INOX|INOXIDABLE|SS304|SS316)\b', text_for_mat):
         mat = 'INOX'
-    elif re.search(r'\b(ALUM|ALUMINIO|AL5052)\b', of_upper):
+    elif re.search(r'\b(ALUM|ALUMINIO|AL5052)\b', text_for_mat):
         mat = 'ALUMINIO'
-    elif 'GALV' in of_upper:
-        # Cualquier OF con 'GALV' en el nombre es Galvanizado
+    elif 'GALV' in of_upper or re.search(r'\b(GALV|GALVANIZADO|GALVANNEALED|GACR)\b', text_for_mat):
         mat = 'GALV'
     else:
-        # Todas las demás OF que no llevan 'GALV' son material Decapado / ANSI 61
+        # Todas las demás piezas/OF que no son inoxidables, aluminio ni galvanizadas son material Decapado / ANSI 61
         mat = 'DECAPADO'
         
     return mat, cal

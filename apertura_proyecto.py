@@ -298,12 +298,15 @@ def generate_apertura_piezas_excel(po, id_interno, cab_info, df_partidas):
 
     ws.row_dimensions[6].height = 8
 
+    from materia_prima_report import classify_material_and_calibre
+
     # 3. Encabezados de Columnas
     headers = [
         ("#", 6, "center"),
         ("SKU Cliente", 18, "center"),
         ("SKU Planta (Clave)", 20, "center"),
         ("Descripción del Producto", 38, "left"),
+        ("Material / Calibre", 22, "center"),
         ("Cant. Requerida", 16, "right"),
         ("Unidad", 10, "center"),
         ("P. Unitario ($)", 15, "right"),
@@ -349,11 +352,16 @@ def generate_apertura_piezas_excel(po, id_interno, cab_info, df_partidas):
         parc = _extract_val(row, ['parcialidad', 'Parcialidad'], 'P1')
         obs  = _extract_val(row, ['observaciones_partida', 'estatus_partida_360', 'Observaciones'])
 
+        mat_p, cal_p = classify_material_and_calibre("", desc, piezas_text=f"{sk_p} {sk_c}")
+        mat_txt_p = "Galvanizado" if mat_p == 'GALV' else ("Inoxidable" if mat_p == 'INOX' else ("Aluminio" if mat_p == 'ALUMINIO' else "Decapado"))
+        mat_lbl_p = f"{mat_txt_p} {cal_p if cal_p else ''}".strip()
+
         values = [
             (i_no, "center", "@"),
             (sk_c, "center", "@"),
             (sk_p, "center", "@"),
             (desc, "left", "@"),
+            (mat_lbl_p, "center", "@"),
             (cant, "right", '#,##0 "pzas"'),
             (unid, "center", "@"),
             (pu, "right", '"$"#,##0.00'),
@@ -366,7 +374,7 @@ def generate_apertura_piezas_excel(po, id_interno, cab_info, df_partidas):
         for col_idx, (val, align, num_fmt) in enumerate(values, start=1):
             cell = ws.cell(row=curr_row, column=col_idx)
             cell.value = val
-            cell.font = Font(name="Calibri", size=9.5)
+            cell.font = Font(name="Calibri", size=9.5, bold=True if col_idx in (1, 2, 3, 5) else False, color="4338CA" if col_idx == 5 else "000000")
             cell.alignment = Alignment(horizontal=align, vertical="center")
             cell.fill = row_fill
             cell.border = thin_border
@@ -377,43 +385,43 @@ def generate_apertura_piezas_excel(po, id_interno, cab_info, df_partidas):
 
     # 5. Fila de Totales Generales
     ws.row_dimensions[curr_row].height = 24
-    ws.merge_cells(f"A{curr_row}:D{curr_row}")
+    ws.merge_cells(f"A{curr_row}:E{curr_row}")
     lbl_tot = ws[f"A{curr_row}"]
     lbl_tot.value = "TOTAL GENERAL DE PIEZAS E IMPORTE"
     lbl_tot.font = Font(name="Calibri", size=10, bold=True, color=C_SLATE_DARK)
     lbl_tot.alignment = Alignment(horizontal="center", vertical="center")
 
-    for col_idx in range(1, 5):
+    for col_idx in range(1, 6):
         ws.cell(row=curr_row, column=col_idx).fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
         ws.cell(row=curr_row, column=col_idx).border = total_border
 
-    c_tot_cant = ws.cell(row=curr_row, column=5)
-    c_tot_cant.value = f"=SUM(E8:E{curr_row-1})"
+    c_tot_cant = ws.cell(row=curr_row, column=6)
+    c_tot_cant.value = f"=SUM(F8:F{curr_row-1})"
     c_tot_cant.number_format = '#,##0 "pzas"'
     c_tot_cant.font = Font(name="Calibri", size=10, bold=True, color=C_SLATE_DARK)
     c_tot_cant.fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
     c_tot_cant.alignment = Alignment(horizontal="right", vertical="center")
     c_tot_cant.border = total_border
 
-    for col_idx in range(6, 8):
+    for col_idx in range(7, 9):
         c_b = ws.cell(row=curr_row, column=col_idx)
         c_b.fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
         c_b.border = total_border
 
-    c_tot_imp = ws.cell(row=curr_row, column=8)
-    c_tot_imp.value = f"=SUM(H8:H{curr_row-1})"
+    c_tot_imp = ws.cell(row=curr_row, column=9)
+    c_tot_imp.value = f"=SUM(I8:I{curr_row-1})"
     c_tot_imp.number_format = '"$"#,##0.00'
     c_tot_imp.font = Font(name="Calibri", size=10, bold=True, color=C_SLATE_DARK)
     c_tot_imp.fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
     c_tot_imp.alignment = Alignment(horizontal="right", vertical="center")
     c_tot_imp.border = total_border
 
-    for col_idx in range(9, 12):
+    for col_idx in range(10, 13):
         c_b = ws.cell(row=curr_row, column=col_idx)
         c_b.fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
         c_b.border = total_border
 
-    ws.auto_filter.ref = f"A7:K{curr_row-1}"
+    ws.auto_filter.ref = f"A7:L{curr_row-1}"
     ws.freeze_panes = "A8"
 
     buf = io.BytesIO()

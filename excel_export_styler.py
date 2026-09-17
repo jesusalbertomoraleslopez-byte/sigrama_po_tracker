@@ -2,14 +2,19 @@ import sys
 sys.stdout.reconfigure(encoding='utf-8')
 import io
 import datetime
+import re
 import pandas as pd
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.formatting.rule import DataBarRule
 from openpyxl.utils import get_column_letter
+from openpyxl.chart import LineChart, Reference
 
 from db_manager import get_all_pos, get_all_partidas
 from remisiones_sync import get_global_pos_tracking_summary
+from config import is_historical_completed
+from materia_prima_report import classify_material_and_calibre
+import corte_doblez_sync
 
 def build_executive_excel(df_data, df_partidas=None):
     wb = openpyxl.Workbook()
@@ -414,10 +419,13 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
     Incluye:
     1. Hoja 'Resumen_General_PO': Vista consolidada de la PO con metadatos, tarjetas de KPI ejecutivas,
        la fila de resumen con el mismo formato de la 'Tabla de todas las Órdenes', y trazabilidad de OFs y Remisiones.
-    2. Hoja 'Avance_Detalle_Piezas': Matriz de avance estación por estación por número de parte (Cortado,
-       Doblado, Entarimado, Remisionadas, Pendiente, Estatus 360°) con formato de DataBars condicionales en celdas
-       y fila de fórmulas contables totales.
-    3. Hoja 'Lista_de_Piezas_Precios': Despiece comercial con precios unitarios, importes y fechas de entrega.
+    2. Hoja 'Avance_por_OF': Avance detallado por Orden de Fabricación (OF) de Taller, con piezas programadas, cortadas,
+       dobladas y liberadas, el despiece detallado por OF y Gráfico de Avance Temporal (Tiempo en Eje X vs Piezas en Eje Y)
+       con todas las líneas de cada OF.
+    3. Hoja 'Avance_Detalle_Piezas': Matriz de avance estación por estación por número de parte (Cortado, Doblado,
+       Entarimado, Remisionadas, Pendiente, Estatus 360°) con nueva columna 'Material / Calibre' para filtrado dinámico,
+       DataBars condicionales y fórmulas contables totales.
+    4. Hoja 'Lista_de_Piezas_Precios': Despiece comercial con precios unitarios, importes y fechas de entrega.
     """
     wb = openpyxl.Workbook()
 
@@ -700,12 +708,353 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
     ws1.freeze_panes = "A4"
 
     # =========================================================================
-    # HOJA 2: DETALLE DE PIEZAS Y AVANCES POR ESTACIÓN (Corte, Doblez, Tarimas, Remisión)
+    # HOJA 2: AVANCE POR ORDEN DE FABRICACIÓN (OF) CON GRÁFICO TEMPORAL
+    # =========================================================================
+    ws_of = wb.create_sheet(title="Avance_por_OF")
+    ws_of.views.sheetView[0].showGridLines = True
+
+    # 1. Banner Principal
+    ws_of.merge_cells("A1:K1")
+    c_of_t = ws_of["A1"]
+    c_of_t.value = "INDUSTRIA SIGRAMA S.A. DE C.V.  —  AVANCE DE PRODUCCIÓN POR ORDEN DE FABRICACIÓN (OF)"
+    c_of_t.font = Font(name="Calibri", size=13, bold=True, color="FFFFFF")
+    c_of_t.fill = PatternFill(start_color=C_SLATE_DARK, end_color=C_SLATE_DARK, fill_type="solid")
+    c_of_t.alignment = Alignment(horizontal="center", vertical="center")
+    ws_of.row_dimensions[1].height = 28
+
+    matched_ofs_raw = cd_tracking.get('matched_ofs', []) if cd_tracking else []
+    real_ofs = [o for o in matched_ofs_raw if not any(x in str(o).lower() for x in ['histórica', 'sin of', 'por programar'])]
+
+    ws_of.merge_cells("A2:K2")
+    c_of_sub = ws_of["A2"]
+    c_of_sub.value = f"Orden de Compra: {po_str} | Proyecto: {proy_str} | ID Interno: {id_int_str} | Total OFs: {len(real_ofs)} | Taller de Corte y Doblez"
+    c_of_sub.font = Font(name="Calibri", size=9.5, italic=True, color="94A3B8")
+    c_of_sub.fill = PatternFill(start_color=C_SLATE_MID, end_color=C_SLATE_MID, fill_type="solid")
+    c_of_sub.alignment = Alignment(horizontal="center", vertical="center")
+    ws_of.row_dimensions[2].height = 20
+    ws_of.row_dimensions[3].height = 6
+
+    # Extraer DataFrames de OFs, Piezas y Avances
+    df_ord_po = cd_tracking.get('df_ord_po', pd.DataFrame()) if cd_tracking else pd.DataFrame()
+    df_pie_po = cd_tracking.get('df_pie_po', pd.DataFrame()) if cd_tracking else pd.DataFrame()
+    df_ava_po = cd_tracking.get('df_ava_po', pd.DataFrame()) if cd_tracking else pd.DataFrame()
+
+    if (df_ord_po is None or df_ord_po.empty or df_pie_po is None or df_pie_po.empty) and real_ofs:
+        try:
+            df_ord_all, df_pie_all, df_ava_all, _, _ = corte_doblez_sync.load_corte_doblez_databases()
+            if (df_ord_po is None or df_ord_po.empty) and not df_ord_all.empty:
+                df_ord_po = df_ord_all[df_ord_all['of_number'].isin(real_ofs)]
+            if (df_pie_po is None or df_pie_po.empty) and not df_pie_all.empty:
+                df_pie_po = df_pie_all[df_pie_all['of_number'].isin(real_ofs)]
+            if (df_ava_po is None or df_ava_po.empty) and not df_ava_all.empty:
+                df_ava_po = df_ava_all[df_ava_all['of_number'].isin(real_ofs)]
+        except Exception as e_load:
+            print(f"[EXCEL-OF] Error cargando DB corte y doblez: {e_load}")
+
+    # Tabla 1: Resumen de OFs
+    headers_of_tab = [
+        ("#", 6, "center", C_SLATE_DARK),
+        ("Orden de Fabricación (OF)", 42, "left", C_SLATE_DARK),
+        ("Material / Calibre", 24, "center", C_SLATE_DARK),
+        ("Programador", 16, "center", C_SLATE_DARK),
+        ("Fecha Carga", 14, "center", C_SLATE_DARK),
+        ("Piezas Prog.", 14, "right", "1E293B"),
+        ("🔵 Cortadas", 14, "right", C_BLUE_FAB),
+        ("🟣 Dobladas", 14, "right", C_PURPLE_OF),
+        ("🟢 Terminadas", 14, "right", C_GREEN_REM),
+        ("% Avance", 13, "right", C_GREEN_REM),
+        ("Estatus OF", 20, "center", C_SLATE_DARK),
+    ]
+
+    r_of_hdr = 4
+    ws_of.row_dimensions[r_of_hdr].height = 25
+    for col_i, (h_tit, c_w, al_h, bg_c) in enumerate(headers_of_tab, start=1):
+        c = ws_of.cell(row=r_of_hdr, column=col_i, value=h_tit)
+        c.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+        c.fill = PatternFill(start_color=bg_c, end_color=bg_c, fill_type="solid")
+        c.alignment = Alignment(horizontal=al_h, vertical="center", wrap_text=True)
+        c.border = border_red_bottom
+        ws_of.column_dimensions[get_column_letter(col_i)].width = c_w
+
+    start_of_data_r = 5
+    is_hist = is_historical_completed(id_interno=id_int_str, po=po_str) if 'is_historical_completed' in globals() else False
+
+    ofs_to_iterate = real_ofs if real_ofs else (matched_ofs_raw if matched_ofs_raw else [f"OF Pendiente ({po_str})"])
+    for idx_of, of_n in enumerate(ofs_to_iterate, start=1):
+        curr_r = start_of_data_r + idx_of - 1
+        ws_of.row_dimensions[curr_r].height = 20
+        zebra_bg = "F8FAFC" if (idx_of % 2 == 1) else "FFFFFF"
+        fill_z = PatternFill(start_color=zebra_bg, end_color=zebra_bg, fill_type="solid")
+
+        mat, cal = classify_material_and_calibre(of_n, proy_val=proy_str)
+        mat_txt = "Galvanizado" if mat == 'GALV' else ("Inoxidable" if mat == 'INOX' else ("Aluminio" if mat == 'ALUMINIO' else "Decapado"))
+        mat_lbl = f"{mat_txt} {cal if cal else ''}".strip()
+
+        ord_m = df_ord_po[df_ord_po['of_number'] == of_n] if (df_ord_po is not None and not df_ord_po.empty) else pd.DataFrame()
+        prog = str(ord_m['programador'].iloc[0]) if (not ord_m.empty and pd.notna(ord_m['programador'].iloc[0])) else "Taller"
+        f_cg = str(ord_m['fecha_carga'].iloc[0])[:10] if (not ord_m.empty and pd.notna(ord_m['fecha_carga'].iloc[0])) else "N/A"
+
+        sub_pie = df_pie_po[df_pie_po['of_number'] == of_n] if (df_pie_po is not None and not df_pie_po.empty) else pd.DataFrame()
+        c_prog = float(sub_pie['cantidad'].sum()) if not sub_pie.empty else (float(cd_tracking.get('total_programado', 0) or 0) if len(ofs_to_iterate) == 1 else 0.0)
+
+        sub_ava = df_ava_po[df_ava_po['of_number'] == of_n] if (df_ava_po is not None and not df_ava_po.empty) else pd.DataFrame()
+        if not sub_ava.empty:
+            sub_ava_copy = sub_ava.copy()
+            sub_ava_copy['_area_lc'] = sub_ava_copy['area'].astype(str).str.lower()
+            c_cort = float(sub_ava_copy[sub_ava_copy['_area_lc'] == 'corte']['cantidad'].sum())
+            c_dobl = float(sub_ava_copy[sub_ava_copy['_area_lc'] == 'doblez']['cantidad'].sum())
+            c_term = float(sub_ava_copy[sub_ava_copy['_area_lc'].isin(['liberado', 'empaque'])]['cantidad'].sum())
+        elif is_hist or (cd_tracking and cd_tracking.get('pct_global_fabricacion', 0) >= 100):
+            c_cort = c_prog
+            c_dobl = c_prog
+            c_term = c_prog
+        else:
+            c_cort, c_dobl, c_term = 0.0, 0.0, 0.0
+
+        pct_of = (c_term / c_prog) if c_prog > 0 else (1.0 if (c_cort >= c_prog and c_prog > 0) else 0.0)
+        pct_of = min(1.0, max(0.0, pct_of))
+
+        if pct_of >= 1.0 or is_hist:
+            st_of = "🟢 100% Terminada"
+            fg_st, bg_st = "15803D", "DCFCE7"
+        elif c_cort > 0 or c_dobl > 0 or c_term > 0:
+            st_of = f"🔵 En Proceso ({pct_of*100:.0f}%)"
+            fg_st, bg_st = "1D4ED8", "DBEAFE"
+        else:
+            st_of = "⚪ Registrada"
+            fg_st, bg_st = "64748B", "F1F5F9"
+
+        r_vals = [
+            (idx_of, "center", "#,##0", Font(name="Calibri", size=9.5, bold=True, color="475569"), fill_z),
+            (of_n, "left", "@", Font(name="Calibri", size=9.5, bold=True, color="1E293B"), fill_z),
+            (mat_lbl, "center", "@", Font(name="Calibri", size=9.5, color="2563EB"), fill_z),
+            (prog, "center", "@", Font(name="Calibri", size=9, color="334155"), fill_z),
+            (f_cg, "center", "@", Font(name="Calibri", size=9, color="334155"), fill_z),
+            (c_prog, "right", "#,##0", Font(name="Calibri", size=9.5, bold=True, color="0F172A"), PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")),
+            (c_cort, "right", "#,##0", Font(name="Calibri", size=9.5, color="1E3A8A"), fill_z),
+            (c_dobl, "right", "#,##0", Font(name="Calibri", size=9.5, color="312E81"), fill_z),
+            (c_term, "right", "#,##0", Font(name="Calibri", size=9.5, color="064E3B"), fill_z),
+            (pct_of, "right", "0.0%", Font(name="Calibri", size=9.5, bold=True, color=fg_st), fill_z),
+            (st_of, "center", "@", Font(name="Calibri", size=9, bold=True, color=fg_st), PatternFill(start_color=bg_st, end_color=bg_st, fill_type="solid"))
+        ]
+        for c_i, (v, al, nf, fnt, fll) in enumerate(r_vals, start=1):
+            cell = ws_of.cell(row=curr_r, column=c_i, value=v)
+            cell.alignment = Alignment(horizontal=al, vertical="center")
+            cell.number_format = nf
+            cell.border = border_data
+            if fnt: cell.font = fnt
+            if fll: cell.fill = fll
+
+    end_of_data_r = start_of_data_r + len(ofs_to_iterate) - 1
+
+    # Fila de Totales de OFs
+    tot_of_r = end_of_data_r + 1
+    ws_of.row_dimensions[tot_of_r].height = 24
+    ws_of.merge_cells(f"A{tot_of_r}:E{tot_of_r}")
+    c_tot_of = ws_of[f"A{tot_of_r}"]
+    c_tot_of.value = "TOTALES DE FABRICACIÓN EN PLANTA"
+    c_tot_of.font = Font(name="Calibri", size=10, bold=True, color=C_SLATE_DARK)
+    c_tot_of.alignment = Alignment(horizontal="center", vertical="center")
+    for col_k in range(1, 6):
+        ws_of.cell(row=tot_of_r, column=col_k).fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+        ws_of.cell(row=tot_of_r, column=col_k).border = border_total
+
+    tot_cols_of = [
+        (6, f"=SUM(F{start_of_data_r}:F{end_of_data_r})", '#,##0 "pzas"', "0F172A", "F1F5F9"),
+        (7, f"=SUM(G{start_of_data_r}:G{end_of_data_r})", '#,##0 "pzas"', "1D4ED8", "EFF6FF"),
+        (8, f"=SUM(H{start_of_data_r}:H{end_of_data_r})", '#,##0 "pzas"', "4338CA", "EEF2FF"),
+        (9, f"=SUM(I{start_of_data_r}:I{end_of_data_r})", '#,##0 "pzas"', "15803D", "DCFCE7"),
+        (10, f"=I{tot_of_r}/F{tot_of_r}", "0.0%", "15803D", "DCFCE7"),
+        (11, "", "@", "0F172A", "F1F5F9"),
+    ]
+    for col_i, form, nf, fg, bg in tot_cols_of:
+        c = ws_of.cell(row=tot_of_r, column=col_i)
+        if form: c.value = form
+        c.number_format = nf
+        c.font = Font(name="Calibri", size=10, bold=True, color=fg)
+        c.fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
+        c.alignment = Alignment(horizontal="right" if nf != "@" else "center", vertical="center")
+        c.border = border_total
+
+    # Sección 2: Gráfico de Avance Temporal por OF (Tiempo vs Piezas)
+    chart_sec_r = tot_of_r + 3
+    ws_of.merge_cells(f"A{chart_sec_r}:K{chart_sec_r}")
+    c_ch_h = ws_of[f"A{chart_sec_r}"]
+    c_ch_h.value = "📈 GRÁFICO DE AVANCE DE FABRICACIÓN EN EL TIEMPO POR ORDEN DE FABRICACIÓN (OF)"
+    c_ch_h.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    c_ch_h.fill = PatternFill(start_color=C_BLUE_FAB, end_color=C_BLUE_FAB, fill_type="solid")
+    c_ch_h.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws_of.row_dimensions[chart_sec_r].height = 24
+
+    # Construir tabla pivote temporal
+    has_chart_data = False
+    if df_ava_po is not None and not df_ava_po.empty and 'timestamp' in df_ava_po.columns:
+        df_ava_clean = df_ava_po.dropna(subset=['timestamp']).copy()
+        if not df_ava_clean.empty:
+            df_ava_clean['timestamp'] = pd.to_datetime(df_ava_clean['timestamp'], errors='coerce')
+            df_ava_clean = df_ava_clean.dropna(subset=['timestamp']).sort_values('timestamp')
+            if not df_ava_clean.empty:
+                df_ava_clean['fecha_str'] = df_ava_clean['timestamp'].dt.strftime('%d/%m %H:%M')
+                piv = df_ava_clean.groupby(['fecha_str', 'of_number'])['cantidad'].sum().unstack(fill_value=0)
+                piv_cum = piv.cumsum().reset_index()
+                if not piv_cum.empty and len(piv_cum.columns) > 1:
+                    has_chart_data = True
+
+    if has_chart_data:
+        t_hdr_r = chart_sec_r + 2
+        ws_of.cell(row=t_hdr_r, column=1, value="Tiempo (Fecha/Hora)").font = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
+        ws_of.cell(row=t_hdr_r, column=1).fill = PatternFill(start_color=C_SLATE_DARK, end_color=C_SLATE_DARK, fill_type="solid")
+        ws_of.cell(row=t_hdr_r, column=1).alignment = Alignment(horizontal="center")
+        ws_of.cell(row=t_hdr_r, column=1).border = border_data
+
+        active_ofs_chart = [col for col in piv_cum.columns if col != 'fecha_str']
+        for c_i, of_col in enumerate(active_ofs_chart, start=2):
+            m_short = re.search(r'OF\s*\d+', str(of_col), re.IGNORECASE)
+            short_t = m_short.group(0) if m_short else str(of_col)[:12]
+            mat_c, cal_c = classify_material_and_calibre(str(of_col))
+            if cal_c: short_t += f" ({cal_c})"
+            
+            c = ws_of.cell(row=t_hdr_r, column=c_i, value=short_t)
+            c.font = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
+            c.fill = PatternFill(start_color=C_SLATE_DARK, end_color=C_SLATE_DARK, fill_type="solid")
+            c.alignment = Alignment(horizontal="right")
+            c.border = border_data
+            ws_of.column_dimensions[get_column_letter(c_i)].width = 16
+
+        t_start_d = t_hdr_r + 1
+        for r_idx, row_d in piv_cum.iterrows():
+            curr_t_r = t_start_d + r_idx
+            c_f = ws_of.cell(row=curr_t_r, column=1, value=str(row_d['fecha_str']))
+            c_f.alignment = Alignment(horizontal="center")
+            c_f.border = border_data
+            for c_i, of_col in enumerate(active_ofs_chart, start=2):
+                v_p = float(row_d[of_col])
+                c_v = ws_of.cell(row=curr_t_r, column=c_i, value=v_p)
+                c_v.number_format = '#,##0'
+                c_v.alignment = Alignment(horizontal="right")
+                c_v.border = border_data
+
+        t_end_d = t_start_d + len(piv_cum) - 1
+
+        # Crear LineChart openpyxl
+        chart = LineChart()
+        chart.title = f"Avance Acumulado de Fabricación por OF en el Tiempo — PO {po_str}"
+        chart.style = 13
+        chart.y_axis.title = "Piezas Fabricadas (Acumulado)"
+        chart.x_axis.title = "Tiempo (Fecha / Hora)"
+        chart.width = 22
+        chart.height = 12
+
+        data_ref = Reference(ws_of, min_col=2, min_row=t_hdr_r, max_col=1 + len(active_ofs_chart), max_row=t_end_d)
+        cats_ref = Reference(ws_of, min_col=1, min_row=t_start_d, max_row=t_end_d)
+
+        chart.add_data(data_ref, titles_from_data=True)
+        chart.set_categories(cats_ref)
+
+        chart_col_let = get_column_letter(max(3 + len(active_ofs_chart), 6))
+        ws_of.add_chart(chart, f"{chart_col_let}{chart_sec_r + 1}")
+        next_sec_r = max(t_end_d + 3, chart_sec_r + 26)
+    else:
+        ws_of.cell(row=chart_sec_r + 2, column=1, value="Las órdenes de fabricación están validadas o en proceso sin corte en vivo registrado.").font = Font(italic=True, color="64748B")
+        next_sec_r = chart_sec_r + 4
+
+    # Sección 3: Detalle de Piezas dentro de las OFs
+    ws_of.merge_cells(f"A{next_sec_r}:K{next_sec_r}")
+    c_pie_h = ws_of[f"A{next_sec_r}"]
+    c_pie_h.value = "🔩 DETALLE DE PIEZAS Y AVANCES POR ORDEN DE FABRICACIÓN (OF)"
+    c_pie_h.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    c_pie_h.fill = PatternFill(start_color=C_PURPLE_OF, end_color=C_PURPLE_OF, fill_type="solid")
+    c_pie_h.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws_of.row_dimensions[next_sec_r].height = 24
+
+    headers_pie_of = [
+        ("#", 6, "center", C_SLATE_DARK),
+        ("No. de OF", 38, "left", C_SLATE_DARK),
+        ("Nido", 10, "center", C_SLATE_DARK),
+        ("No. Pieza / SKU", 22, "left", C_SLATE_DARK),
+        ("Descripción / Nombre", 32, "left", C_SLATE_DARK),
+        ("Material / Calibre", 22, "center", C_SLATE_DARK),
+        ("Cant. Prog.", 13, "right", "1E293B"),
+        ("🔵 Cortadas", 13, "right", C_BLUE_FAB),
+        ("🟣 Dobladas", 13, "right", C_PURPLE_OF),
+        ("🟢 Liberadas", 13, "right", C_GREEN_REM),
+        ("Ruta Operativa", 28, "left", C_SLATE_DARK),
+    ]
+
+    r_pie_h = next_sec_r + 1
+    ws_of.row_dimensions[r_pie_h].height = 25
+    for c_i, (h_t, w_c, al_c, bg_c) in enumerate(headers_pie_of, start=1):
+        c = ws_of.cell(row=r_pie_h, column=c_i, value=h_t)
+        c.font = Font(name="Calibri", size=9.5, bold=True, color="FFFFFF")
+        c.fill = PatternFill(start_color=bg_c, end_color=bg_c, fill_type="solid")
+        c.alignment = Alignment(horizontal=al_c, vertical="center", wrap_text=True)
+        c.border = border_red_bottom
+
+    r_start_pie = r_pie_h + 1
+    if df_pie_po is not None and not df_pie_po.empty:
+        for idx_p, (_, r_pie) in enumerate(df_pie_po.iterrows(), start=1):
+            curr_p_r = r_start_pie + idx_p - 1
+            ws_of.row_dimensions[curr_p_r].height = 19
+            z_bg = "F8FAFC" if (idx_p % 2 == 1) else "FFFFFF"
+            fill_p = PatternFill(start_color=z_bg, end_color=z_bg, fill_type="solid")
+
+            of_p = str(r_pie.get('of_number', '')).strip()
+            nido_p = str(r_pie.get('nido', '')).strip()
+            no_p = str(r_pie.get('no_pieza', '')).strip()
+            nom_p = str(r_pie.get('nombre_pieza', '')).strip()
+            cant_p = float(r_pie.get('cantidad', 0) or 0)
+            ruta_p = str(r_pie.get('ruta', '')).strip()
+
+            mat_p, cal_p = classify_material_and_calibre(of_p, nom_p, piezas_text=no_p)
+            mat_txt_p = "Galvanizado" if mat_p == 'GALV' else ("Inoxidable" if mat_p == 'INOX' else ("Aluminio" if mat_p == 'ALUMINIO' else "Decapado"))
+            mat_lbl_p = f"{mat_txt_p} {cal_p if cal_p else ''}".strip()
+
+            sub_av_p = df_ava_po[(df_ava_po['of_number'] == of_p) & (df_ava_po['no_pieza'] == no_p)] if (df_ava_po is not None and not df_ava_po.empty) else pd.DataFrame()
+            if not sub_av_p.empty:
+                sub_av_p_copy = sub_av_p.copy()
+                sub_av_p_copy['_area_lc'] = sub_av_p_copy['area'].astype(str).str.lower()
+                p_cort = float(sub_av_p_copy[sub_av_p_copy['_area_lc'] == 'corte']['cantidad'].sum())
+                p_dobl = float(sub_av_p_copy[sub_av_p_copy['_area_lc'] == 'doblez']['cantidad'].sum())
+                p_lib  = float(sub_av_p_copy[sub_av_p_copy['_area_lc'].isin(['liberado', 'empaque'])]['cantidad'].sum())
+            elif is_hist or (cd_tracking and cd_tracking.get('pct_global_fabricacion', 0) >= 100):
+                p_cort = cant_p
+                p_dobl = cant_p
+                p_lib  = cant_p
+            else:
+                p_cort, p_dobl, p_lib = 0.0, 0.0, 0.0
+
+            p_row_vals = [
+                (idx_p, "center", "#,##0", Font(name="Calibri", size=9, bold=True, color="475569"), fill_p),
+                (of_p, "left", "@", Font(name="Calibri", size=9, color="1E293B"), fill_p),
+                (nido_p, "center", "@", Font(name="Calibri", size=9, color="334155"), fill_p),
+                (no_p, "left", "@", Font(name="Calibri", size=9, bold=True, color="2563EB"), fill_p),
+                (nom_p, "left", "@", Font(name="Calibri", size=8.5, color="334155"), fill_p),
+                (mat_lbl_p, "center", "@", Font(name="Calibri", size=9, color="4338CA"), fill_p),
+                (cant_p, "right", "#,##0", Font(name="Calibri", size=9, bold=True, color="0F172A"), fill_p),
+                (p_cort, "right", "#,##0", Font(name="Calibri", size=9, color="1E3A8A"), fill_p),
+                (p_dobl, "right", "#,##0", Font(name="Calibri", size=9, color="312E81"), fill_p),
+                (p_lib, "right", "#,##0", Font(name="Calibri", size=9, color="064E3B"), fill_p),
+                (ruta_p, "left", "@", Font(name="Calibri", size=8.5, color="64748B"), fill_p),
+            ]
+            for c_i, (v, al, nf, fnt, fll) in enumerate(p_row_vals, start=1):
+                cell = ws_of.cell(row=curr_p_r, column=c_i, value=v)
+                cell.alignment = Alignment(horizontal=al, vertical="center")
+                cell.number_format = nf
+                cell.border = border_data
+                if fnt: cell.font = fnt
+                if fll: cell.fill = fll
+    else:
+        ws_of.cell(row=r_start_pie, column=1, value="No se encontraron piezas registradas en el despiece de taller para estas OFs.").font = Font(italic=True, color="64748B")
+
+    ws_of.freeze_panes = "A5"
+
+    # =========================================================================
+    # HOJA 3: DETALLE DE PIEZAS Y AVANCES POR ESTACIÓN (Corte, Doblez, Tarimas, Remisión)
     # =========================================================================
     ws2 = wb.create_sheet(title="Avance_Detalle_Piezas")
     ws2.views.sheetView[0].showGridLines = True
 
-    ws2.merge_cells("A1:P1")
+    ws2.merge_cells("A1:Q1")
     c2_t = ws2["A1"]
     c2_t.value = "INDUSTRIA SIGRAMA S.A. DE C.V.  —  AVANCE Y TRAZABILIDAD POR PIEZA (DESPIECE 360°)"
     c2_t.font = Font(name="Calibri", size=13, bold=True, color="FFFFFF")
@@ -713,7 +1062,7 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
     c2_t.alignment = Alignment(horizontal="center", vertical="center")
     ws2.row_dimensions[1].height = 28
 
-    ws2.merge_cells("A2:P2")
+    ws2.merge_cells("A2:Q2")
     c2_sub = ws2["A2"]
     c2_sub.value = f"Orden de Compra: {po_str} | Proyecto Interno: {id_int_str} | Total Partidas: {num_partidas} | Avance en Vivo de Fabricación y Almacén"
     c2_sub.font = Font(name="Calibri", size=9.5, italic=True, color="94A3B8")
@@ -726,7 +1075,8 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
         ("#", 6, "center", C_SLATE_DARK),
         ("SKU Cliente", 18, "left", C_SLATE_DARK),
         ("SKU Planta (Clave)", 20, "left", C_SLATE_DARK),
-        ("Descripción del Producto", 38, "left", C_SLATE_DARK),
+        ("Descripción del Producto", 36, "left", C_SLATE_DARK),
+        ("Material / Calibre", 22, "center", C_SLATE_DARK),
         ("Req. (PO)", 14, "right", "1E293B"),
         ("🔵 Cortado", 14, "right", C_BLUE_FAB),
         ("🔵 % Cortado", 14, "right", C_BLUE_FAB),
@@ -763,6 +1113,13 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
             sk_c   = str(r_p.get('sku_cliente', '')).strip()
             sk_p   = str(r_p.get('clave_sku', '')).strip()
             desc   = str(r_p.get('descripcion_producto', '')).strip()
+            
+            # Clasificación de Material / Calibre para la pieza
+            ofs_p_val = str(r_p.get('ofs_asociadas', '')).strip()
+            mat_p, cal_p = classify_material_and_calibre(ofs_p_val, desc, piezas_text=f"{sk_p} {sk_c}")
+            mat_txt_p = "Galvanizado" if mat_p == 'GALV' else ("Inoxidable" if mat_p == 'INOX' else ("Aluminio" if mat_p == 'ALUMINIO' else "Decapado"))
+            mat_cell_val = f"{mat_txt_p} {cal_p if cal_p else ''}".strip()
+
             c_req  = float(r_p.get('cantidad_requerida', 0) or 0)
             c_cort = float(r_p.get('cortado', r_p.get('piezas_cortadas', 0)) or 0)
             c_dobl = float(r_p.get('doblado', r_p.get('piezas_dobladas', 0)) or 0)
@@ -786,22 +1143,23 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
                 else: st_part = "⚪ En Espera"
 
             p_vals = [
-                (i_no,     "center", "#,##0", Font(name="Calibri", size=9.5, bold=True, color="475569"), fill_zebra),
-                (sk_c,     "left",   "@",     Font(name="Calibri", size=9.5, bold=True, color="0F172A"), fill_zebra),
-                (sk_p,     "left",   "@",     Font(name="Calibri", size=9.5, bold=True, color="2563EB"), fill_zebra),
-                (desc,     "left",   "@",     Font(name="Calibri", size=9, color="334155"), fill_zebra),
-                (c_req,    "right",  '#,##0', Font(name="Calibri", size=9.5, bold=True, color="0F172A"), PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")),
-                (c_cort,   "right",  '#,##0', Font(name="Calibri", size=9.5, color="1E3A8A"), fill_zebra),
-                (pct_cort, "right",  "0.0%",  Font(name="Calibri", size=9, bold=True, color="1D4ED8"), fill_zebra),
-                (c_dobl,   "right",  '#,##0', Font(name="Calibri", size=9.5, color="312E81"), fill_zebra),
-                (pct_dobl, "right",  "0.0%",  Font(name="Calibri", size=9, bold=True, color="4338CA"), fill_zebra),
-                (c_ent,    "right",  '#,##0', Font(name="Calibri", size=9.5, color="78350F"), fill_zebra),
-                (pct_ent,  "right",  "0.0%",  Font(name="Calibri", size=9, bold=True, color="B45309"), fill_zebra),
-                (c_rem,    "right",  '#,##0', Font(name="Calibri", size=9.5, color="064E3B"), fill_zebra),
-                (pct_rem,  "right",  "0.0%",  Font(name="Calibri", size=9, bold=True, color="15803D"), fill_zebra),
-                (c_pend,   "right",  '#,##0', Font(name="Calibri", size=9.5, color="7C2D12"), fill_zebra),
-                (pct_pend, "right",  "0.0%",  Font(name="Calibri", size=9, bold=True, color="B91C1C"), fill_zebra),
-                (st_part,  "center", "@",     None, None),
+                (i_no,         "center", "#,##0", Font(name="Calibri", size=9.5, bold=True, color="475569"), fill_zebra),
+                (sk_c,         "left",   "@",     Font(name="Calibri", size=9.5, bold=True, color="0F172A"), fill_zebra),
+                (sk_p,         "left",   "@",     Font(name="Calibri", size=9.5, bold=True, color="2563EB"), fill_zebra),
+                (desc,         "left",   "@",     Font(name="Calibri", size=9, color="334155"), fill_zebra),
+                (mat_cell_val, "center", "@",     Font(name="Calibri", size=9, bold=True, color="4338CA"), fill_zebra),
+                (c_req,        "right",  '#,##0', Font(name="Calibri", size=9.5, bold=True, color="0F172A"), PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")),
+                (c_cort,       "right",  '#,##0', Font(name="Calibri", size=9.5, color="1E3A8A"), fill_zebra),
+                (pct_cort,     "right",  "0.0%",  Font(name="Calibri", size=9, bold=True, color="1D4ED8"), fill_zebra),
+                (c_dobl,       "right",  '#,##0', Font(name="Calibri", size=9.5, color="312E81"), fill_zebra),
+                (pct_dobl,     "right",  "0.0%",  Font(name="Calibri", size=9, bold=True, color="4338CA"), fill_zebra),
+                (c_ent,        "right",  '#,##0', Font(name="Calibri", size=9.5, color="78350F"), fill_zebra),
+                (pct_ent,      "right",  "0.0%",  Font(name="Calibri", size=9, bold=True, color="B45309"), fill_zebra),
+                (c_rem,        "right",  '#,##0', Font(name="Calibri", size=9.5, color="064E3B"), fill_zebra),
+                (pct_rem,      "right",  "0.0%",  Font(name="Calibri", size=9, bold=True, color="15803D"), fill_zebra),
+                (c_pend,       "right",  '#,##0', Font(name="Calibri", size=9.5, color="7C2D12"), fill_zebra),
+                (pct_pend,     "right",  "0.0%",  Font(name="Calibri", size=9, bold=True, color="B91C1C"), fill_zebra),
+                (st_part,      "center", "@",     None, None),
             ]
             for col_i, (val, al, nf, fnt, fll) in enumerate(p_vals, start=1):
                 c_cell = ws2.cell(row=curr_p_row, column=col_i)
@@ -812,8 +1170,8 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
                 if fnt: c_cell.font = fnt
                 if fll: c_cell.fill = fll
 
-            # Formato de celda para Estatus en columna 16
-            c_st_part = ws2.cell(row=curr_p_row, column=16)
+            # Formato de celda para Estatus en columna 17 (Q)
+            c_st_part = ws2.cell(row=curr_p_row, column=17)
             if "Total" in st_part:
                 c_st_part.fill = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
                 c_st_part.font = Font(name="Calibri", size=9, bold=True, color="15803D")
@@ -831,45 +1189,45 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
 
         # Data Bars nativas de Excel en las columnas de porcentaje
         rule_cort = DataBarRule(start_type="num", start_value=0, end_type="num", end_value=1.0, color="5B9BD5", showValue=None)
-        ws2.conditional_formatting.add(f"G{start_p_row}:G{end_p_row}", rule_cort)
+        ws2.conditional_formatting.add(f"H{start_p_row}:H{end_p_row}", rule_cort)
 
         rule_dobl = DataBarRule(start_type="num", start_value=0, end_type="num", end_value=1.0, color="818CF8", showValue=None)
-        ws2.conditional_formatting.add(f"I{start_p_row}:I{end_p_row}", rule_dobl)
+        ws2.conditional_formatting.add(f"J{start_p_row}:J{end_p_row}", rule_dobl)
 
         rule_ent = DataBarRule(start_type="num", start_value=0, end_type="num", end_value=1.0, color="F59E0B", showValue=None)
-        ws2.conditional_formatting.add(f"K{start_p_row}:K{end_p_row}", rule_ent)
+        ws2.conditional_formatting.add(f"L{start_p_row}:L{end_p_row}", rule_ent)
 
         rule_rem = DataBarRule(start_type="num", start_value=0, end_type="num", end_value=1.0, color="70AD47", showValue=None)
-        ws2.conditional_formatting.add(f"M{start_p_row}:M{end_p_row}", rule_rem)
+        ws2.conditional_formatting.add(f"N{start_p_row}:N{end_p_row}", rule_rem)
 
         rule_pen = DataBarRule(start_type="num", start_value=0, end_type="num", end_value=1.0, color="F87171", showValue=None)
-        ws2.conditional_formatting.add(f"O{start_p_row}:O{end_p_row}", rule_pen)
+        ws2.conditional_formatting.add(f"P{start_p_row}:P{end_p_row}", rule_pen)
 
         # Fila de Totales Generales
         tot_p_row = end_p_row + 1
         ws2.row_dimensions[tot_p_row].height = 24
-        ws2.merge_cells(f"A{tot_p_row}:D{tot_p_row}")
+        ws2.merge_cells(f"A{tot_p_row}:E{tot_p_row}")
         c_tot_lbl = ws2[f"A{tot_p_row}"]
         c_tot_lbl.value = "TOTALES GENERALES CONSOLIDADOS"
         c_tot_lbl.font = Font(name="Calibri", size=10, bold=True, color=C_SLATE_DARK)
         c_tot_lbl.alignment = Alignment(horizontal="center", vertical="center")
-        for col_k in range(1, 5):
+        for col_k in range(1, 6):
             ws2.cell(row=tot_p_row, column=col_k).fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
             ws2.cell(row=tot_p_row, column=col_k).border = border_total
 
         tot_p_cols = [
-            (5,  f"=SUM(E{start_p_row}:E{end_p_row})", '#,##0 "pzas"', "0F172A", "F1F5F9"),
-            (6,  f"=SUM(F{start_p_row}:F{end_p_row})", '#,##0 "pzas"', "1D4ED8", "EFF6FF"),
-            (7,  f"=F{tot_p_row}/E{tot_p_row}",        "0.0%",          "1D4ED8", "EFF6FF"),
-            (8,  f"=SUM(H{start_p_row}:H{end_p_row})", '#,##0 "pzas"', "4338CA", "EEF2FF"),
-            (9,  f"=H{tot_p_row}/E{tot_p_row}",        "0.0%",          "4338CA", "EEF2FF"),
-            (10, f"=SUM(J{start_p_row}:J{end_p_row})", '#,##0 "pzas"', "B45309", "FEF3C7"),
-            (11, f"=J{tot_p_row}/E{tot_p_row}",        "0.0%",          "B45309", "FEF3C7"),
-            (12, f"=SUM(L{start_p_row}:L{end_p_row})", '#,##0 "pzas"', "15803D", "DCFCE7"),
-            (13, f"=L{tot_p_row}/E{tot_p_row}",        "0.0%",          "15803D", "DCFCE7"),
-            (14, f"=SUM(N{start_p_row}:N{end_p_row})", '#,##0 "pzas"', "B91C1C", "FEE2E2"),
-            (15, f"=N{tot_p_row}/E{tot_p_row}",        "0.0%",          "B91C1C", "FEE2E2"),
-            (16, "",                                   "@",             "0F172A", "F1F5F9"),
+            (6,  f"=SUM(F{start_p_row}:F{end_p_row})", '#,##0 "pzas"', "0F172A", "F1F5F9"),
+            (7,  f"=SUM(G{start_p_row}:G{end_p_row})", '#,##0 "pzas"', "1D4ED8", "EFF6FF"),
+            (8,  f"=G{tot_p_row}/F{tot_p_row}",        "0.0%",          "1D4ED8", "EFF6FF"),
+            (9,  f"=SUM(I{start_p_row}:I{end_p_row})", '#,##0 "pzas"', "4338CA", "EEF2FF"),
+            (10, f"=I{tot_p_row}/F{tot_p_row}",        "0.0%",          "4338CA", "EEF2FF"),
+            (11, f"=SUM(K{start_p_row}:K{end_p_row})", '#,##0 "pzas"', "B45309", "FEF3C7"),
+            (12, f"=K{tot_p_row}/F{tot_p_row}",        "0.0%",          "B45309", "FEF3C7"),
+            (13, f"=SUM(M{start_p_row}:M{end_p_row})", '#,##0 "pzas"', "15803D", "DCFCE7"),
+            (14, f"=M{tot_p_row}/F{tot_p_row}",        "0.0%",          "15803D", "DCFCE7"),
+            (15, f"=SUM(O{start_p_row}:O{end_p_row})", '#,##0 "pzas"', "B91C1C", "FEE2E2"),
+            (16, f"=O{tot_p_row}/F{tot_p_row}",        "0.0%",          "B91C1C", "FEE2E2"),
+            (17, "",                                   "@",             "0F172A", "F1F5F9"),
         ]
         for col_i, form, nf, fg, bg in tot_p_cols:
             c = ws2.cell(row=tot_p_row, column=col_i)
@@ -880,7 +1238,7 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
             c.alignment = Alignment(horizontal="right" if nf != "@" else "center", vertical="center")
             c.border = border_total
 
-        ws2.auto_filter.ref = f"A4:P{end_p_row}"
+        ws2.auto_filter.ref = f"A4:Q{end_p_row}"
         ws2.freeze_panes = "A5"
 
     # =========================================================================

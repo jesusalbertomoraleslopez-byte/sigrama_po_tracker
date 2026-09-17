@@ -113,7 +113,10 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
             'df_ofs': pd.DataFrame({'OF': ['Fabricación Histórica Validada']}),
             'df_laminas': pd.DataFrame(),
             'total_laminas': 0,
-            'df_nidos': pd.DataFrame()
+            'df_nidos': pd.DataFrame(),
+            'df_pie_po': pd.DataFrame(),
+            'df_ava_po': pd.DataFrame(),
+            'df_ord_po': pd.DataFrame()
         }
         
     id_int_clean = re.sub(r'[^0-9]', '', str(id_interno)) if id_interno else ""
@@ -347,7 +350,10 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
         'df_ofs': pd.DataFrame({'OF': ofs_final_list}) if ofs_final_list else pd.DataFrame(),
         'df_laminas': pd.DataFrame(laminas_summary),
         'total_laminas': total_laminas,
-        'df_nidos': df_nid_po
+        'df_nidos': df_nid_po,
+        'df_pie_po': df_pie_po,
+        'df_ava_po': df_ava_po,
+        'df_ord_po': df_ord[df_ord['of_number'].isin(matched_ofs)] if (not df_ord.empty and matched_ofs) else pd.DataFrame()
     }
 
 def get_integrated_360_summary(df_all_pos, df_all_partidas):

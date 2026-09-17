@@ -2911,9 +2911,9 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         with c_xl_f1:
                             st.markdown(f"#### 📊 Reporte Completo de Orden de Compra para Clientes (`.xlsx`)")
                             st.markdown(
-                                "Informe ejecutivo en Excel listo para entregar al cliente. Contiene la **Ficha General de la PO** "
-                                "(resumen ejecutivo, tarjetas KPI e indicadores consolidados idénticos a la *Tabla de todas las Órdenes*) "
-                                "y la **Matriz de Avances del Detalle de Piezas** (cantidades y barras de datos por estación: Cortado, Doblado, Entarimado, Remisionadas y Pendiente)."
+                                "Informe ejecutivo en Excel listo para entregar al cliente. Contiene 4 hojas integrales: **Ficha General de la PO** "
+                                "(resumen ejecutivo y KPIs 360°), **Avance por OF** (resumen de órdenes de fabricación, detalle operativo en taller y **Gráfico de Avance Temporal Tiempo vs Piezas** con líneas por OF), "
+                                "**Avance Detalle de Piezas** (con columna **Material / Calibre** para filtrado rápido y barras de datos condicionales) y **Lista de Piezas y Precios** comerciales."
                             )
                         with c_xl_f2:
                             st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)

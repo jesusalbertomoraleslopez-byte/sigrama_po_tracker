@@ -26,28 +26,58 @@ def _get_sku_material_map():
                 p_num = str(r.get('no_pieza', '')).strip()
                 p_nom = str(r.get('nombre_pieza', '')).strip()
                 of_n  = str(r.get('of_number', '')).strip()
-                if p_num and p_num not in sku_m:
-                    sku_m[p_num] = f"{of_n} {p_nom}"
+                
+                clean_k = corte_doblez_sync.clean_pronest_piece_name(p_num)
+                norm_k  = corte_doblez_sync.normalize_sku(clean_k)
+                
+                info_str = f"{of_n} {p_nom}".strip()
+                for k in [p_num, clean_k, norm_k]:
+                    if k and k not in sku_m:
+                        sku_m[k] = info_str
         return sku_m
     except Exception:
         return {}
 
 def classify_sku_material_calibre(sk_p, sk_c, desc, ofs_str="", sku_m=None):
     """Clasifica con máxima precisión el material y calibre de un SKU consultando Pronest y OFs."""
+    # 1. Si ofs_str contiene múltiples OFs separadas por comas, clasificar cada OF individualmente para tomar la mayoría
+    of_items = [x.strip() for x in str(ofs_str).split(',') if x.strip()]
+    cal_counts = {}
+    mat_counts = {}
+    
+    for of_item in of_items:
+        m, c = classify_material_and_calibre(of_item, desc, piezas_text=f"{sk_p} {sk_c}")
+        if c: cal_counts[c] = cal_counts.get(c, 0) + 1
+        if m: mat_counts[m] = mat_counts.get(m, 0) + 1
+        
+    mat_p = max(mat_counts.items(), key=lambda x: x[1])[0] if mat_counts else None
+    cal_p = max(cal_counts.items(), key=lambda x: x[1])[0] if cal_counts else None
+    
+    # 2. Si no se obtuvo de las OFs específicas, buscar en el mapa indexado de Pronest (sku_m)
     extra = ""
-    if sku_m:
-        extra = sku_m.get(sk_p, sku_m.get(sk_c, ''))
+    if sku_m and (not cal_p or not mat_p):
+        sk_p_norm = corte_doblez_sync.normalize_sku(sk_p) if sk_p else ""
+        sk_c_norm = corte_doblez_sync.normalize_sku(sk_c) if sk_c else ""
+        extra = sku_m.get(sk_p, sku_m.get(sk_c, sku_m.get(sk_p_norm, sku_m.get(sk_c_norm, ''))))
         if not extra:
             for k, v in sku_m.items():
                 if (sk_p and (sk_p in k or k in sk_p)) or (sk_c and (sk_c in k or k in sk_c)):
                     extra = v
                     break
-    full_info = f"{ofs_str} {extra}".strip()
-    mat_p, cal_p = classify_material_and_calibre(full_info, desc, piezas_text=f"{sk_p} {sk_c} {extra}")
+        m_extra, c_extra = classify_material_and_calibre(extra, desc, piezas_text=f"{sk_p} {sk_c} {extra}")
+        if not cal_p: cal_p = c_extra
+        if not mat_p: mat_p = m_extra
+
+    # 3. Fallback a descripción y nombres de SKU si aún no hay
+    if not mat_p or not cal_p:
+        m_d, c_d = classify_material_and_calibre("", desc, piezas_text=f"{sk_p} {sk_c}")
+        if not mat_p: mat_p = m_d
+        if not cal_p: cal_p = c_d
+        
     mat_txt_p = "Galvanizado" if mat_p == 'GALV' else ("Inoxidable" if mat_p == 'INOX' else ("Aluminio" if mat_p == 'ALUMINIO' else "Decapado"))
     
     # Formatear Calibre con especificación exacta (ej. 10 GA, 12 GACR, etc.)
-    all_txt = f"{full_info} {desc} {sk_p} {sk_c}".upper()
+    all_txt = f"{ofs_str} {extra} {desc} {sk_p} {sk_c}".upper()
     cal_detail = ""
     if cal_p:
         m_num = re.search(r'\d+', cal_p)
@@ -1250,8 +1280,11 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
             desc   = str(r_p.get('descripcion_producto', '')).strip()
             
             # Clasificación de Material / Calibre para la pieza
-            ofs_p_val = str(r_p.get('ofs_asociadas', '')).strip()
-            mat_cell_val = classify_sku_material_calibre(sk_p, sk_c, desc, ofs_str=ofs_p_val, sku_m=sku_m)
+            mat_cell_val = str(r_p.get('material_calibre', '') or '').strip()
+            if not mat_cell_val or mat_cell_val in ('ND', 'nan', 'None'):
+                ofs_p_val = str(r_p.get('ofs_asociadas', '')).strip()
+                mat_cell_val = classify_sku_material_calibre(sk_p, sk_c, desc, ofs_str=ofs_p_val, sku_m=sku_m)
+
 
             c_req  = float(r_p.get('cantidad_requerida', 0) or 0)
             c_cort = float(r_p.get('cortado', r_p.get('piezas_cortadas', 0)) or 0)

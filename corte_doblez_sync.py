@@ -315,10 +315,26 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
             
             pct_cd = (c_terminado_real / cant_req * 100.0) if cant_req > 0 else 0.0
             
-            if not matched_ofs and remisiones_asoc:
+            piece_ofs = []
+            if not m_pie.empty and 'of_number' in m_pie.columns:
+                piece_ofs = [str(x).strip() for x in m_pie['of_number'].dropna().unique() if str(x).strip()]
+            if not piece_ofs and not df_ava_po.empty and '_norm_pieza' in df_ava_po.columns:
+                m_ava_p = df_ava_po[df_ava_po['_norm_pieza'].isin(valid_norms)]
+                if not m_ava_p.empty and 'of_number' in m_ava_p.columns:
+                    piece_ofs = [str(x).strip() for x in m_ava_p['of_number'].dropna().unique() if str(x).strip()]
+            if not piece_ofs and not df_tar_po.empty and '_norm_pieza' in df_tar_po.columns:
+                m_tar_p = df_tar_po[df_tar_po['_norm_pieza'].isin(valid_norms)]
+                if not m_tar_p.empty and 'of_number' in m_tar_p.columns:
+                    piece_ofs = [str(x).strip() for x in m_tar_p['of_number'].dropna().unique() if str(x).strip()]
+
+            if piece_ofs:
+                ofs_tag = ', '.join(sorted(piece_ofs))
+            elif not matched_ofs and remisiones_asoc:
                 ofs_tag = f"Fabricado (Remisión {', '.join(remisiones_asoc)})"
+            elif len(matched_ofs) == 1:
+                ofs_tag = list(matched_ofs)[0]
             else:
-                ofs_tag = ', '.join(sorted(matched_ofs)) if matched_ofs else 'Por programar OF'
+                ofs_tag = 'Por programar OF'
                 
             p_res = dict(part)
             p_res['piezas_programadas'] = prog_part

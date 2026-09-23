@@ -2627,6 +2627,17 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         
                     df_merged_360['estatus_partida_360'] = df_merged_360.apply(_calc_part_status, axis=1)
                     
+                    # ── CLASIFICACIÓN DE MATERIAL / CALIBRE PARA CADA PARTIDA ──────────
+                    from excel_export_styler import classify_sku_material_calibre, _get_sku_material_map
+                    sku_m_360 = _get_sku_material_map()
+                    def _assign_mat_360(row):
+                        sk_p = str(row.get('clave_sku', '')).strip()
+                        sk_c = str(row.get('sku_cliente', '')).strip()
+                        desc = str(row.get('descripcion_producto', '')).strip()
+                        ofs_p = str(row.get('ofs_asociadas', '')).strip()
+                        return classify_sku_material_calibre(sk_p, sk_c, desc, ofs_str=ofs_p, sku_m=sku_m_360)
+                    df_merged_360['material_calibre'] = df_merged_360.apply(_assign_mat_360, axis=1)
+                    
                     # ── BOTONES OFICIALES DE APERTURA DE PROYECTO INTERNO ──────────────
                     from apertura_proyecto import (
                         find_original_order_files,
@@ -2732,6 +2743,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                             df_to_render['sku_cliente'].astype(str).str.upper().str.contains(q_f) |
                             df_to_render['clave_sku'].astype(str).str.upper().str.contains(q_f) |
                             df_to_render['descripcion_producto'].astype(str).str.upper().str.contains(q_f) |
+                            df_to_render['material_calibre'].astype(str).str.upper().str.contains(q_f) |
                             df_to_render['item_no'].astype(str).str.contains(q_f)
                         ]
                         
@@ -2764,7 +2776,8 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                     <th style="border-bottom:2px solid #EC2024; width:40px;">#</th>
                                     <th style="border-bottom:2px solid #EC2024; text-align:left; min-width:110px;">SKU Cliente</th>
                                     <th style="border-bottom:2px solid #EC2024; text-align:left; min-width:130px;">SKU Planta</th>
-                                    <th style="border-bottom:2px solid #EC2024; text-align:left; min-width:200px;">Descripción</th>
+                                    <th style="border-bottom:2px solid #EC2024; text-align:left; min-width:180px;">Descripción</th>
+                                    <th style="border-bottom:2px solid #4F46E5; text-align:center; min-width:145px; background-color:#312E81;">Material / Calibre</th>
                                     <th style="border-bottom:2px solid #EC2024; text-align:right; width:75px;">Req. (PO)</th>
                                     <th style="border-bottom:2px solid #3B82F6; min-width:120px; background-color:#1E3A8A;">🔵 Cortado</th>
                                     <th style="border-bottom:2px solid #6366F1; min-width:120px; background-color:#312E81;">🟣 Doblado</th>
@@ -2782,6 +2795,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                             sk_c = r_bar.get('sku_cliente', '')
                             sk_p = r_bar.get('clave_sku', '')
                             desc = r_bar.get('descripcion_producto', '')
+                            mat_p_cell = str(r_bar.get('material_calibre', '')).strip()
                             c_req = float(r_bar.get('cantidad_requerida', 0) or 0)
                             base_div = c_req if c_req > 0 else 1.0
                             
@@ -2816,7 +2830,8 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 <td style="text-align:center; font-weight:bold; color:#64748B;">{i_no}</td>
                                 <td style="font-weight:600; color:#1E293B;">{sk_c}</td>
                                 <td style="font-weight:700; color:#EC2024;">{sk_p}</td>
-                                <td style="color:#475569; font-size:11.5px; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{desc}">{desc}</td>
+                                <td style="color:#475569; font-size:11.5px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{desc}">{desc}</td>
+                                <td style="text-align:center; font-weight:700; color:#4338CA; font-size:11px; white-space:nowrap; background-color:#F8FAFC;">{mat_p_cell}</td>
                                 <td style="text-align:right; font-weight:800; color:#0F172A; background-color:#F8FAFC;">{c_req:,.0f}</td>
                                 
                                 <!-- BARRA CORTADO -->
@@ -2862,7 +2877,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 <!-- ESTATUS PILL -->
                                 <td style="text-align:center;">
                                     <span class="badge" style="background-color:{b_bg}; color:{b_fg};">
-                                        {st_txt}
+                                         {st_txt}
                                     </span>
                                 </td>
                             </tr>
@@ -2878,7 +2893,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         components.html(html_table, height=calc_h, scrolling=True)
                     else:
                         cols_show_360 = [
-                            'item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto',
+                            'item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto', 'material_calibre',
                             'cantidad_requerida', 'cortado', 'doblado', 'terminado', 'entarimado',
                             'cantidad_remisionada', 'porcentaje_cumplimiento', 'cantidad_pendiente', 'estatus_partida_360'
                         ]
@@ -2889,6 +2904,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 'sku_cliente': 'SKU Cliente (Clave)',
                                 'clave_sku': 'SKU Nuestro (Planta)',
                                 'descripcion_producto': 'Descripción',
+                                'material_calibre': 'Material / Calibre',
                                 'cantidad_requerida': 'Req. (PO)',
                                 'cortado': '🔵 Cortado',
                                 'doblado': '🔵 Doblado',

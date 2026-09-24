@@ -153,24 +153,24 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
     # 1. Extracción de Partidas mediante Agrupación Espacial por Coordenadas (Y-clustering)
     # Patrón Principal: Cantidad Unidad SKU_Cliente SKU_Nuestro P_Unitario P_Total Fecha
     patron_fila_item = re.compile(
-        r'^(\d+(?:\.\d+)?)\s+'                     # 1: Cantidad (ej. 16.00)
-        r'(PIEZA|PZA|KG|METRO|JGO|LOTE|SER)\s+'   # 2: Unidad
-        r'([A-Z0-9\-_]{4,15})\s+'                 # 3: SKU Cliente (ej. ISSIV00055, SWB01431)
-        r'([A-Z0-9\-_/]{4,25})\s+'                # 4: SKU Nuestro / Planta (ej. 11-A-9836-01, PP19380-03)
-        r'([\d,]+(?:\.\d{2})?)\s+'                # 5: P. Unitario (ej. 1,089.57)
-        r'([\d,]+(?:\.\d{2})?)\s+'                # 6: P. Total (ej. 17,433.12)
-        r'(\d{1,2}/\d{1,2}/\d{4})',               # 7: Fecha Entrega (ej. 07/09/2026)
+        r'^(\d+(?:\.\d+)?)\s+'                         # 1: Cantidad (ej. 16.00)
+        r'(PIEZA|PZA|KG|METRO|JGO|LOTE|SER|PZS|PZ)\s+' # 2: Unidad
+        r'([A-Z0-9\-_]{3,20})\s+'                     # 3: SKU Cliente (ej. ISSIV00055, SWB01431, SWB00319)
+        r'([A-Z0-9\-_/]{3,30})\s+'                    # 4: SKU Nuestro / Planta (ej. 11-A-9836-01, 11-A-6014-01, PP19380-03)
+        r'([\d,]+(?:\.\d{2})?)\s+'                    # 5: P. Unitario (ej. 1,089.57)
+        r'([\d,]+(?:\.\d{2})?)'                       # 6: P. Total (ej. 17,433.12)
+        r'(?:\s+(?:/\s*/|(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})|[^\n]+))?', # 7: Fecha Entrega (opcional o / /)
         re.IGNORECASE
     )
     
     patron_fila_alt = re.compile(
         r'^(\d+(?:\.\d+)?)\s+'
-        r'(PIEZA|PZA|KG|METRO|JGO|LOTE|SER)\s+'
-        r'([A-Z0-9\-_]{4,15})\s+'
+        r'(PIEZA|PZA|KG|METRO|JGO|LOTE|SER|PZS|PZ)\s+'
+        r'([A-Z0-9\-_]{3,20})\s+'
         r'(.+?)\s+'
         r'([\d,]+(?:\.\d{2})?)\s+'
-        r'([\d,]+(?:\.\d{2})?)\s+'
-        r'(\d{1,2}/\d{1,2}/\d{4})',
+        r'([\d,]+(?:\.\d{2})?)'
+        r'(?:\s+(?:/\s*/|(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})|[^\n]+))?',
         re.IGNORECASE
     )
 
@@ -184,7 +184,7 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
             x0, y0, x1, y1, word = w[0], w[1], w[2], w[3], w[4]
             found_y = None
             for y_center in lines_by_y:
-                if abs(y_center - y0) < 4:
+                if abs(y_center - y0) < 4.5:
                     found_y = y_center
                     break
             if found_y is None:
@@ -206,7 +206,7 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
             line_text = ' '.join([w[1] for w in line_words]).strip()
             
             # Detener si llegamos al pie de página con totales
-            if any(k in line_text.upper() for k in ['SUBTOTAL:', 'IMPORTE NETO:', 'OBSERVACIONES:', 'FACTURAR A:']):
+            if any(k in line_text.upper() for k in ['SUBTOTAL:', 'IMPORTE NETO:', 'OBSERVACIONES:', 'FACTURAR A:', 'ESTE PEDIDO SERA PAGADO', 'NOTA: LA PRESENTE ORDEN']):
                 if y > 400:
                     i += 1
                     continue
@@ -222,7 +222,8 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
                 sku_nuestro = m.group(4).strip().upper()
                 pu = float(m.group(5).replace(',', ''))
                 pt = float(m.group(6).replace(',', ''))
-                f_ent = m.group(7).strip()
+                raw_f = m.group(7).strip() if m.group(7) else ''
+                f_ent = raw_f if (raw_f and not re.match(r'^/\s*/$', raw_f)) else ''
                 
                 # Buscar en la(s) siguiente(s) línea(s) la descripción del producto (Renglón 2)
                 desc_lines = []
@@ -232,14 +233,14 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
                     next_words = sorted(lines_by_y[next_y], key=lambda x: x[0])
                     next_text = ' '.join([w[1] for w in next_words]).strip()
                     
-                    if patron_fila_item.search(next_text) or patron_fila_alt.search(next_text) or any(k in next_text.upper() for k in ['SUBTOTAL:', 'OBSERVACIONES', 'FACTURAR A:', 'TOTAL']):
+                    if patron_fila_item.search(next_text) or patron_fila_alt.search(next_text) or any(k in next_text.upper() for k in ['SUBTOTAL:', 'OBSERVACIONES', 'FACTURAR A:', 'TOTAL', 'ESTE PEDIDO', 'NOTA:']):
                         break
                         
                     # Filtrar palabras que pertenezcan al cuerpo de descripción (x < 450)
                     desc_words_filtered = [w[1] for w in next_words if w[0] < 450]
                     if desc_words_filtered:
                         desc_str = ' '.join(desc_words_filtered).strip()
-                        if desc_str and desc_str.upper() not in ['FIRMA', 'COMPRADOR']:
+                        if desc_str and desc_str.upper() not in ['FIRMA', 'COMPRADOR', 'ORDENADO']:
                             desc_lines.append(desc_str)
                     j += 1
                     if len(desc_lines) >= 2:
@@ -396,45 +397,85 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
             if m_tent:
                 tiempo_entrega = m_tent.group(1).strip()
                 
+            # 2. Extracción de Totales, Comprador y Observaciones (revisando la última página del documento primero)
+            p_last = doc[-1] if len(doc) > 0 else doc[0]
+            last_blocks = p_last.get_text("blocks")
+            last_text = p_last.get_text()
+
             comprador = ""
-            amount_words = ['PESOS', 'M.N.', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA', 'MIL', 'CIEN', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS', '/100']
-            for b in blocks:
-                if 30 <= b[0] <= 160 and 475 <= b[1] <= 525:
+            for b in last_blocks:
+                if 30 <= b[0] <= 180 and 590 <= b[1] <= 660:
                     lines = [l.strip() for l in b[4].split('\n') if l.strip()]
                     for l in lines:
-                        l_upper = l.upper()
-                        is_amt = sum(1 for w in amount_words if w in l_upper) >= 2 or re.search(r'\d', l)
-                        ignored_words = ('COMPRADOR', 'FIRMA', 'DESCUENTO', 'OBSERVACIONES', 'PROVEEDOR', 'TOTAL', 'PIEZA', 'PZA', 'PIEZAS', 'PZAS', 'KG', 'METRO', 'JGO', 'LOTE', 'SER', 'CANTIDAD', 'UNIDAD', 'PRECIO', 'IMPORTE')
-                        if not is_amt and l_upper not in ignored_words and len(l.strip()) > 3:
+                        if l.upper() not in ('COMPRADOR', 'FIRMA') and len(l) > 3 and not re.search(r'\d', l):
                             comprador = l
-                            
+                            break
+            if not comprador:
+                amount_words = ['PESOS', 'M.N.', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA', 'MIL', 'CIEN', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS', '/100']
+                for b in blocks:
+                    if 30 <= b[0] <= 160 and 475 <= b[1] <= 525:
+                        lines = [l.strip() for l in b[4].split('\n') if l.strip()]
+                        for l in lines:
+                            l_upper = l.upper()
+                            is_amt = sum(1 for w in amount_words if w in l_upper) >= 2 or re.search(r'\d', l)
+                            ignored_words = ('COMPRADOR', 'FIRMA', 'DESCUENTO', 'OBSERVACIONES', 'PROVEEDOR', 'TOTAL', 'PIEZA', 'PZA', 'PIEZAS', 'PZAS', 'KG', 'METRO', 'JGO', 'LOTE', 'SER', 'CANTIDAD', 'UNIDAD', 'PRECIO', 'IMPORTE')
+                            if not is_amt and l_upper not in ignored_words and len(l.strip()) > 3:
+                                comprador = l
+                                
             ignored_words = ('COMPRADOR', 'FIRMA', 'DESCUENTO', 'OBSERVACIONES', 'PROVEEDOR', 'TOTAL', 'PIEZA', 'PZA', 'PIEZAS', 'PZAS', 'KG', 'METRO', 'JGO', 'LOTE', 'SER', 'CANTIDAD', 'UNIDAD', 'PRECIO', 'IMPORTE')
             if not comprador or comprador.upper() in ignored_words or re.search(r'\d', comprador):
                 if email_context and email_context.get('remitente') and not re.search(r'\d', str(email_context.get('remitente'))):
                     comprador = email_context.get('remitente')
                 else:
-                    comprador = "Alejandra Arellano Machado"
-                            
+                    comprador = "David Silveyra Sosa"
+                                
             observaciones = ""
-            for b in blocks:
+            for b in last_blocks:
                 x0, y0, x1, y1, text, _, _ = b
-                if 30 <= x0 <= 180 and 380 <= y0 <= 450:
-                    observaciones = ' '.join(text.split())
-                    
-            # Totales
+                if 30 <= x0 <= 220 and 500 <= y0 <= 580:
+                    lines = [l.strip() for l in text.split('\n') if l.strip()]
+                    cleaned_obs = [
+                        l for l in lines 
+                        if l.upper() not in ('OBSERVACIONES', 'DESCUENTO', 'FIRMA', 'COMPRADOR') 
+                        and not any(w in l.upper() for w in ['PESOS', 'M.N.', '/100'])
+                    ]
+                    if cleaned_obs:
+                        observaciones = ' '.join(cleaned_obs)
+                        break
+
+            if not observaciones:
+                for b in blocks:
+                    x0, y0, x1, y1, text, _, _ = b
+                    if 30 <= x0 <= 180 and 380 <= y0 <= 450:
+                        observaciones = ' '.join(text.split())
+                        
+            # Totales oficiales
             subtotal, iva, total = 0.0, 0.0, 0.0
-            for b in blocks:
+            for b in last_blocks:
                 text = b[4].strip()
                 if re.match(r'^\d{1,3}(?:,\d{3})*\.\d{2}$', text):
                     val = float(text.replace(',', ''))
                     y0 = b[1]
-                    if 390 <= y0 <= 420 and b[0] > 400:
+                    if 510 <= y0 <= 550 and b[0] > 400:
                         subtotal = val
-                    elif 405 <= y0 <= 430 and b[0] > 400:
+                    elif 530 <= y0 <= 560 and b[0] > 400:
                         iva = val
-                    elif 440 <= y0 <= 470 and b[0] > 400:
+                    elif 560 <= y0 <= 600 and b[0] > 400:
                         total = val
                         
+            if subtotal == 0.0:
+                for b in blocks:
+                    text = b[4].strip()
+                    if re.match(r'^\d{1,3}(?:,\d{3})*\.\d{2}$', text):
+                        val = float(text.replace(',', ''))
+                        y0 = b[1]
+                        if 390 <= y0 <= 420 and b[0] > 400:
+                            subtotal = val
+                        elif 405 <= y0 <= 430 and b[0] > 400:
+                            iva = val
+                        elif 440 <= y0 <= 470 and b[0] > 400:
+                            total = val
+                            
             # Asegurar cálculo de importes en partidas
             for p in all_partidas:
                 c_req = float(p.get('cantidad_requerida', 0) or 0)
@@ -449,14 +490,12 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
             if subtotal_partidas == 0.0:
                 subtotal_partidas = sum(float(p.get('cantidad_requerida', 0) or 0) * float(p.get('precio_unitario', 0) or 0) for p in all_partidas)
                 
-            if total == 0.0:
-                if subtotal_partidas > 0:
-                    total = round(subtotal_partidas, 2)
-                    subtotal = round(total / 1.16, 2) if subtotal == 0.0 else subtotal
-                    iva = round(total - subtotal, 2) if iva == 0.0 else iva
-                elif subtotal > 0:
-                    iva = subtotal * 0.16 if iva == 0.0 else iva
-                    total = round(subtotal + iva, 2)
+            if subtotal == 0.0 and subtotal_partidas > 0:
+                subtotal = round(subtotal_partidas, 2)
+            if iva == 0.0 and subtotal > 0:
+                iva = round(subtotal * 0.16, 2)
+            if total == 0.0 and subtotal > 0:
+                total = round(subtotal + iva, 2)
                 
             # Detección de ID Interno (INT-0001, INT-0059...)
             id_int_auto = ""
@@ -474,9 +513,19 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
                 f_llegada_auto = fecha_pedido
                 
             f_solic_auto = ""
-            if all_partidas and all_partidas[0].get('fecha_entrega'):
+            # Intentar detectar fecha solicitada en observaciones o pie de última página
+            m_fent = re.search(r'FECHA\s+DE\s+ENTREGA:\s*([^\n\r]+)', f"{last_text} {observaciones}", re.IGNORECASE)
+            if m_fent:
+                f_raw = m_fent.group(1).strip()
+                meses_map = {'enero':'01','febrero':'02','marzo':'03','abril':'04','mayo':'05','junio':'06','julio':'07','agosto':'08','septiembre':'09','octubre':'10','noviembre':'11','diciembre':'12'}
+                m_dm = re.search(r'(\d{1,2})[-/ ]([A-Za-z]+)[-/ ](\d{4})', f_raw)
+                if m_dm:
+                    d_s, m_s, y_s = m_dm.group(1), m_dm.group(2).lower(), m_dm.group(3)
+                    if m_s in meses_map:
+                        f_solic_auto = f"{y_s}-{meses_map[m_s]}-{int(d_s):02d}"
+            if not f_solic_auto and all_partidas and all_partidas[0].get('fecha_entrega'):
                 f_solic_auto = all_partidas[0]['fecha_entrega']
-            else:
+            if not f_solic_auto:
                 try:
                     f_solic_auto = (datetime.datetime.strptime(fecha_pedido, "%Y-%m-%d") + datetime.timedelta(days=14)).strftime("%Y-%m-%d")
                 except Exception:
@@ -536,21 +585,8 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
             
     doc.close()
     
-    # Fallback final si la PO estaba totalmente vacía
     if not all_partidas:
-        all_partidas.append({
-            'item_no': 1,
-            'sku_cliente': 'SWB01431',
-            'clave_sku': 'PP19380-03',
-            'descripcion_producto': '382 X 10H BLANK DOOR',
-            'cantidad_requerida': 32.0,
-            'unidad': 'PIEZA',
-            'precio_unitario': 385.55,
-            'precio_total': 12337.60,
-            'fecha_entrega': cabecera.get('fecha_pedido', '2026-08-18'),
-            'parcialidad': 'P1',
-            'observaciones_partida': cabecera.get('observaciones', '')
-        })
-        
+        print(f"[PDF-PARSER] Advertencia: No se encontraron partidas para {cabecera.get('po', 'PO')}")
     return cabecera, all_partidas
+
 

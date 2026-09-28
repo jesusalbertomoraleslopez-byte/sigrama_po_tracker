@@ -281,6 +281,7 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
             c_liberado = 0.0
             
             # Buscar en piezas programadas (vectorizado)
+            m_pie = pd.DataFrame()
             if not df_pie_po.empty and '_norm_pieza' in df_pie_po.columns:
                 m_pie = df_pie_po[df_pie_po['_norm_pieza'].isin(valid_norms)]
                 c_prog = float(m_pie['cantidad'].sum()) if not m_pie.empty else 0.0

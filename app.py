@@ -37,7 +37,8 @@ from db_manager import (
     get_archivos_adjuntos_por_po,
     get_todos_archivos_adjuntos,
     get_contenido_archivo_por_nombre,
-    get_contenido_archivo_por_id
+    get_contenido_archivo_por_id,
+    get_next_id_interno
 )
 from remisiones_sync import (
     get_tracking_for_po,
@@ -1307,7 +1308,7 @@ elif menu == "📬 Bandeja de Entrada OCR":
                             
                             # 1. Extraer ID Interno INT-000X desde el nombre del archivo .msg o asunto
                             m_int = re.search(r'\bINT[\s\-_]?(\d{1,4})\b', f"{f_name} {msg_info.get('subject', '')}", re.IGNORECASE)
-                            id_int_auto = f"INT-{int(m_int.group(1)):04d}" if m_int else ""
+                            id_int_auto = f"INT-{int(m_int.group(1)):04d}" if m_int else get_next_id_interno()
                             
                             # 1.1 Limpiar asunto de prefijos de respuesta (RE:, RV:, FW:) para no contaminar con POs viejas
                             clean_subj = re.sub(r'^(?:re|rv|fw|fwd):\s*', '', msg_info.get('subject', ''), flags=re.IGNORECASE).strip()
@@ -1339,12 +1340,21 @@ elif menu == "📬 Bandeja de Entrada OCR":
                             
                             found_pdf_in_msg = False
                             atts = msg_info.get('attachments', [])
-                            for att in atts:
+                            # Ordenar adjuntos para procesar primero los que parecen Órdenes de Compra oficiales
+                            sorted_atts = sorted(
+                                atts,
+                                key=lambda a: (
+                                    0 if re.search(r'\b(26\d{2}[-\s]?\d{4}|26\d{6})\b', str(a.get('filename', ''))) else 1,
+                                    0 if any(w in str(a.get('filename', '')).lower() for w in ['sigrama', 'dass', 'jmc', 'sm', 'oc']) else 1
+                                )
+                            )
+                            for att in sorted_atts:
                                 att_n = str(att.get('filename', ''))
                                 att_d = att.get('data', b'')
                                 is_pdf_file = att_n.lower().endswith('.pdf') or (isinstance(att_d, (bytes, bytearray)) and att_d.startswith(b'%PDF'))
+                                is_drawing = any(w in att_n.lower() for w in ['plano', 'drawing', 'cotizacion', 'rev.', 'rev0', 'rev1', 'rev2']) or bool(re.match(r'^(?:pp|p\d+)', att_n.lower().strip()))
                                 
-                                if is_pdf_file and not any(w in att_n.lower() for w in ['plano', 'drawing', 'cotizacion']):
+                                if is_pdf_file and not is_drawing:
                                     try:
                                         ctx_att = dict(ctx_msg)
                                         ctx_att['pdf_filename'] = att_n
@@ -1355,7 +1365,7 @@ elif menu == "📬 Bandeja de Entrada OCR":
                                         else:
                                             ctx_att['po_detectada'] = ''  # Dejar que el PDF extraiga su propio folio interno
                                         cab_m, part_m = parse_po_pdf(att_d, email_context=ctx_att)
-                                        if cab_m:
+                                        if cab_m and cab_m.get('po'):
                                             extracted_batch.append({
                                                 'cab': cab_m,
                                                 'part': part_m,
@@ -1364,6 +1374,7 @@ elif menu == "📬 Bandeja de Entrada OCR":
                                                 'pdf_file': (att_n, att_d)
                                             })
                                             found_pdf_in_msg = True
+                                            break  # PO principal encontrada y extraída con éxito
                                     except Exception as e_att:
                                         st.error(f"Error procesando {att_n}: {e_att}")
                                         

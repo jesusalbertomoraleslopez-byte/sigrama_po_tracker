@@ -532,6 +532,24 @@ def reactivar_po(po, motivo="Reactivada por usuario", usuario="Usuario", push_to
         push_db_to_github(background=True)
     return True, f"PO {po} reactivada con éxito."
 
+def get_next_id_interno():
+    """Calcula el siguiente identificador consecutivo INT-XXXX disponible en la BD."""
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id_interno FROM po_cabecera WHERE id_interno LIKE 'INT-%'")
+        rows = cur.fetchall()
+        conn.close()
+        max_num = 0
+        for r in rows:
+            val = str(r[0] or '').strip()
+            m = re.search(r'INT[\s\-_]?(\d+)', val, re.IGNORECASE)
+            if m:
+                max_num = max(max_num, int(m.group(1)))
+        return f"INT-{max_num + 1:04d}"
+    except Exception:
+        return "INT-0001"
+
 def clear_all_pos_db(usuario='Usuario'):
     """Limpia completamente todas las tablas de POs en SQLite y vacía los archivos Excel."""
     conn = get_connection()

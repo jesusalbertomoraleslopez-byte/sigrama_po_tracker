@@ -19,6 +19,13 @@ from config import (
     ESTATUS_REGISTRADA
 )
 
+if os.environ.get("GCS_BUCKET"):
+    try:
+        import gcs_sync
+        gcs_sync.sync_from_gcs()
+    except Exception as _e_init:
+        print(f"[GCS-INIT] Error syncing on import: {_e_init}")
+
 # ──────────────────────────────────────────────────────────────────────────────
 # GITHUB DB PERSISTENCE
 # Subimos po_tracker.db + archivos Excel + correos a GitHub después de cada escritura.
@@ -54,9 +61,20 @@ def _get_github_config():
 
 def push_db_to_github(background=True):
     """
-    Sube po_tracker.db, archivos Excel y correos a GitHub vía API REST.
+    Sube po_tracker.db, archivos Excel y correos a GitHub vía API REST
+    y/o a Google Cloud Storage si GCS_BUCKET está presente.
     Se ejecuta en background para no bloquear la UI de Streamlit.
     """
+    if os.environ.get("GCS_BUCKET"):
+        try:
+            import gcs_sync
+            if background:
+                threading.Thread(target=gcs_sync.push_db_to_gcs, daemon=True).start()
+            else:
+                gcs_sync.push_db_to_gcs()
+        except Exception as e_gcs:
+            print(f"[GCS-PUSH] Error respaldando en GCS: {e_gcs}")
+
     def _push():
         try:
             import urllib.request
@@ -152,10 +170,18 @@ def push_db_to_github(background=True):
 
 def pull_db_from_github():
     """
-    Descarga po_tracker.db desde GitHub si la copia local está vacía o 
-    desactualizada. Se llama al arrancar la app en Streamlit Cloud.
+    Descarga po_tracker.db desde GCS (si GCS_BUCKET está presente) o 
+    desde GitHub si la copia local está vacía o desactualizada.
     Retorna True si se descargó/actualizó, False si ya estaba al día.
     """
+    if os.environ.get("GCS_BUCKET"):
+        try:
+            import gcs_sync
+            return gcs_sync.sync_from_gcs()
+        except Exception as e_gcs:
+            print(f"[GCS-PULL] Error sincronizando desde GCS: {e_gcs}")
+            return False
+
     try:
         import urllib.request
         token, repo, user, branch = _get_github_config()
@@ -371,6 +397,14 @@ def save_archivo_adjunto(po, id_interno, nombre_archivo, tipo, contenido_bytes):
         ''', (str(po), str(id_interno), str(nombre_archivo), str(tipo).lower(), contenido_db, tamano, now_str))
         conn.commit()
         conn.close()
+
+        if os.environ.get("GCS_BUCKET"):
+            try:
+                import gcs_sync
+                threading.Thread(target=gcs_sync.push_file_to_gcs, args=(correos_dir / nombre_archivo,), daemon=True).start()
+            except Exception as e_up:
+                print(f"[GCS-UPLOAD] Error subiendo {nombre_archivo}: {e_up}")
+
         return True
     except Exception as e:
         print(f"Error guardando archivo adjunto {nombre_archivo}: {e}")

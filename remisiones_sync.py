@@ -32,17 +32,43 @@ def parse_tarimas_asociadas(raw_val):
     return [t.strip() for t in s.split(",") if t.strip()]
 
 def sync_live_remisiones_from_github():
-    """Descarga en caliente las bases de datos de remisiones y corte/doblez directamente de GitHub o local."""
+    """Descarga en caliente las bases de datos de remisiones y corte/doblez desde Google Cloud Storage (GCP) o fallback a GitHub/local."""
     import urllib.request
-    import subprocess
-    from config import get_corte_doblez_dir
+    from config import get_corte_doblez_dir, SYNC_DB_DIR
     rem_dir = get_remisiones_dir()
+    rem_dir.mkdir(parents=True, exist_ok=True)
+    ok_any = False
+
+    # 1. Intentar directamente desde Google Cloud Storage (Red GCP de producción)
+    try:
+        from google.cloud import storage
+        client = storage.Client()
+        b_rem = client.bucket("sigrama-remisiones-storage")
+        for fname in ['BD_Detalle_Tarimas.xlsx', 'BD_Datos_Generales_Remision.xlsx', 'BD_Tarimas.xlsx']:
+            blob = b_rem.blob(fname)
+            if blob.exists():
+                blob.download_to_filename(str(rem_dir / fname))
+                ok_any = True
+        
+        b_corte = client.bucket("sigrama-corte-doblez-storage")
+        blob_corte = b_corte.blob("database/sigrama_database.xlsx")
+        if blob_corte.exists():
+            for d in set([get_corte_doblez_dir(), SYNC_DB_DIR]):
+                d.mkdir(parents=True, exist_ok=True)
+                blob_corte.download_to_filename(str(d / "sigrama_database.xlsx"))
+                ok_any = True
+        if ok_any:
+            print("[PO_TRACKER] Sincronización cruzada exitosa desde GCS (sigrama-remisiones-storage & sigrama-corte-doblez-storage)")
+            return True
+    except Exception as e_gcs:
+        print(f"[PO_TRACKER] Aviso GCS cross-sync: {e_gcs}, intentando fallback...")
+
+    # 2. Fallback a GitHub si no hay acceso directo a GCS (desarrollo local)
     urls = [
         'https://raw.githubusercontent.com/jesusalbertomoraleslopez-byte/remisiones-de-materiales/main/BD_Detalle_Tarimas.xlsx',
         'https://raw.githubusercontent.com/jesusalbertomoraleslopez-byte/remisiones-de-materiales/main/BD_Datos_Generales_Remision.xlsx',
         'https://raw.githubusercontent.com/jesusalbertomoraleslopez-byte/remisiones-de-materiales/main/BD_Tarimas.xlsx'
     ]
-    ok_any = False
     for u in urls:
         fname = u.split('/')[-1]
         try:
@@ -53,20 +79,15 @@ def sync_live_remisiones_from_github():
             pass
             
     try:
-        from config import SYNC_DB_DIR
         cd_dir = get_corte_doblez_dir()
-        if (cd_dir / '.git').exists():
-            subprocess.run(['git', '-C', str(cd_dir), 'pull', 'origin', 'main'], capture_output=True, timeout=15)
-            ok_any = True
-        else:
-            corte_url = 'https://raw.githubusercontent.com/jesusalbertomoraleslopez-byte/control-corte-doblez/main/sigrama_database.xlsx'
-            for d in set([cd_dir, SYNC_DB_DIR]):
-                try:
-                    d.mkdir(parents=True, exist_ok=True)
-                    urllib.request.urlretrieve(corte_url, d / 'sigrama_database.xlsx')
-                    ok_any = True
-                except Exception:
-                    pass
+        corte_url = 'https://raw.githubusercontent.com/jesusalbertomoraleslopez-byte/control-corte-doblez/main/sigrama_database.xlsx'
+        for d in set([cd_dir, SYNC_DB_DIR]):
+            try:
+                d.mkdir(parents=True, exist_ok=True)
+                urllib.request.urlretrieve(corte_url, d / 'sigrama_database.xlsx')
+                ok_any = True
+            except Exception:
+                pass
     except Exception:
         pass
         

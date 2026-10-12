@@ -38,7 +38,8 @@ from db_manager import (
     get_todos_archivos_adjuntos,
     get_contenido_archivo_por_nombre,
     get_contenido_archivo_por_id,
-    get_next_id_interno
+    get_next_id_interno,
+    update_po_fields
 )
 from remisiones_sync import (
     get_tracking_for_po,
@@ -850,6 +851,47 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             key=f"dl_btn_tabla_general_{datetime.date.today().strftime('%Y%m%d')}",
             help="Descargar archivo .xlsx formateado con estilos corporativos SIGRAMA, KPIs, barras de datos de Excel en celdas y desglose de partidas."
         )
+
+    # Herramienta rápida para cambiar el Proyecto / Descripción desde esta misma pantalla
+    with st.expander("✏️ Cambiar Rápidamente el Proyecto / Descripción de una Orden (PO)", expanded=False):
+        df_edit_src = df_f.iloc[::-1].reset_index(drop=True) if not df_f.empty else df_summary.iloc[::-1].reset_index(drop=True)
+        if not df_edit_src.empty:
+            qe_c1, qe_c2, qe_c3 = st.columns([2.2, 1.8, 1.0])
+            qe_opts = {}
+            qe_labels = []
+            for _, r_qe in df_edit_src.iterrows():
+                p_v = str(r_qe.get('po', '')).strip()
+                id_v = str(r_qe.get('id_interno', '') or '').strip()
+                pr_v = str(r_qe.get('proyecto', '') or 'SIN PROYECTO').strip()
+                lbl_qe = f"{id_v} — PO {p_v} ({pr_v})" if id_v else f"PO {p_v} ({pr_v})"
+                qe_opts[lbl_qe] = r_qe
+                qe_labels.append(lbl_qe)
+            with qe_c1:
+                sel_qe_lbl = st.selectbox("Orden de Compra (PO):", options=qe_labels, key="qe_tabla_select_po")
+                sel_qe_row = qe_opts[sel_qe_lbl]
+                sel_qe_po = str(sel_qe_row.get('po', '')).strip()
+            with qe_c2:
+                new_qe_proy = st.text_input(
+                    "Nueva Descripción / Proyecto:",
+                    value=str(sel_qe_row.get('proyecto', '') or '').strip(),
+                    placeholder="Ej. SOUTH VALLEY",
+                    key=f"qe_tabla_proy_{sel_qe_po}"
+                )
+            with qe_c3:
+                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("💾 Guardar Proyecto", type="primary", use_container_width=True, key=f"btn_qe_tabla_save_{sel_qe_po}"):
+                    clean_proy_val = str(new_qe_proy).strip().upper()
+                    ok_q, msg_q = update_po_fields(
+                        sel_qe_po,
+                        {'proyecto': clean_proy_val, 'texto_etiqueta': clean_proy_val},
+                        usuario="Edición Rápida Tabla"
+                    )
+                    if ok_q:
+                        st.cache_data.clear()
+                        st.toast(f"✅ Proyecto de PO {sel_qe_po} actualizado a {clean_proy_val}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg_q}")
 
     if modo_vista_general == "📊 Vista con Barras de Avance por Área (Tipo Excel)":
         import streamlit.components.v1 as components
@@ -3744,18 +3786,108 @@ elif menu == "🛠️ Mantenimiento de la App":
     st.write("---")
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PANEL DE SINCRONIZACIÓN CON GITHUB
+    # PANEL DE EDICIÓN RÁPIDA DE PROYECTO / DESCRIPCIÓN DE ORDEN (PO)
     # ─────────────────────────────────────────────────────────────────────────
-    st.subheader("☁️ Sincronización con GitHub (Persistencia en la Nube)")
-    st.caption("Respaldo automático de la base de datos y archivos de correos. Garantiza que los datos se conserven aunque el servidor de Streamlit Cloud se reinicie.")
+    st.subheader("✏️ Cambio Rápido de Descripción / Proyecto de Orden (PO)")
+    st.caption("Modifica al instante el nombre del Proyecto / Descripción, etiqueta visual, solicitante o comprador de cualquier PO y sincronízalo automáticamente con la Nube (GCS, GitHub y MicroApps).")
+
+    if not df_pos.empty:
+        # Ordenar de la más reciente (ej. INT-0080) a la más antigua para acceso rápido
+        df_pos_sorted = df_pos.iloc[::-1].reset_index(drop=True)
+        po_options_map = {}
+        po_labels_list = []
+        for _, r_po in df_pos_sorted.iterrows():
+            p_val = str(r_po.get('po', '')).strip()
+            id_int = str(r_po.get('id_interno', '') or '').strip()
+            proy_cur = str(r_po.get('proyecto', '') or 'SIN PROYECTO').strip()
+            lbl_opt = f"{id_int} — PO {p_val}  |  Proyecto actual: {proy_cur}" if id_int else f"PO {p_val}  |  Proyecto actual: {proy_cur}"
+            po_options_map[lbl_opt] = r_po
+            po_labels_list.append(lbl_opt)
+
+        sel_po_lbl = st.selectbox(
+            "🔎 Selecciona la Orden de Compra (PO) a modificar:",
+            options=po_labels_list,
+            index=0,
+            key="manten_quick_select_po"
+        )
+        sel_row = po_options_map[sel_po_lbl]
+        sel_po_folio = str(sel_row.get('po', '')).strip()
+        cur_proy = str(sel_row.get('proyecto', '') or '').strip()
+        cur_etiqueta = str(sel_row.get('texto_etiqueta', '') or '').strip()
+        cur_solic = str(sel_row.get('solicitante', '') or '').strip()
+        cur_dest = str(sel_row.get('destino', '') or '').strip()
+
+        q_col1, q_col2, q_col3 = st.columns([2, 1.5, 1.5])
+        with q_col1:
+            new_q_proy = st.text_input(
+                "🏗️ Nueva Descripción / Nombre del Proyecto:",
+                value=cur_proy,
+                placeholder="Ej. SOUTH VALLEY, PROTOTIPO, STOCK...",
+                key=f"manten_q_proy_{sel_po_folio}"
+            )
+        with q_col2:
+            new_q_solic = st.text_input(
+                "👤 Solicitante / Requisición:",
+                value=cur_solic,
+                key=f"manten_q_solic_{sel_po_folio}"
+            )
+        with q_col3:
+            new_q_dest = st.text_input(
+                "📍 Destino / Área:",
+                value=cur_dest,
+                key=f"manten_q_dest_{sel_po_folio}"
+            )
+
+        q_act_col1, q_act_col2 = st.columns([2, 1])
+        with q_act_col1:
+            sync_tag = st.checkbox(
+                "Actualizar también la etiqueta visual de la orden con el nombre del Proyecto",
+                value=True,
+                key=f"manten_q_synctag_{sel_po_folio}"
+            )
+        with q_act_col2:
+            if st.button("💾 Guardar Cambio de Proyecto", type="primary", use_container_width=True, key=f"btn_manten_q_save_{sel_po_folio}"):
+                clean_new_proy = str(new_q_proy).strip().upper()
+                fields_upd = {
+                    'proyecto': clean_new_proy,
+                    'solicitante': str(new_q_solic).strip(),
+                    'destino': str(new_q_dest).strip(),
+                }
+                if sync_tag and clean_new_proy:
+                    fields_upd['texto_etiqueta'] = clean_new_proy
+                ok_upd, msg_upd = update_po_fields(sel_po_folio, fields_upd, usuario="Mantenimiento App")
+                if ok_upd:
+                    st.cache_data.clear()
+                    st.success(f"✅ ¡Orden **{sel_row.get('id_interno', '')} (PO {sel_po_folio})** actualizada a **{clean_new_proy}** y sincronizada con GCS y GitHub!")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {msg_upd}")
+
+    st.write("---")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # PANEL DE SINCRONIZACIÓN CON GITHUB & GOOGLE CLOUD STORAGE
+    # ─────────────────────────────────────────────────────────────────────────
+    st.subheader("☁️ Sincronización con GitHub & Cloud Storage (Persistencia en la Nube)")
+    st.caption("Respaldo automático de la base de datos y archivos de correos. Garantiza que los datos se conserven aunque el servidor se reinicie.")
     
-    # Estado de la carpeta de correos
+    # Tabla de auditoría de archivos persistidos en la Base de Datos / GCS
+    df_db_files = get_todos_archivos_adjuntos()
+
+    # Estado de la carpeta de correos (priorizando catálogo de BD/GCS sobre caché local on-demand)
     CORREOS_DIR = Path("data/correos")
     CORREOS_DIR.mkdir(parents=True, exist_ok=True)
     correos_files = [f for f in CORREOS_DIR.iterdir() if f.is_file() and f.suffix.lower() in ('.msg', '.pdf')] if CORREOS_DIR.exists() else []
-    msg_count  = sum(1 for f in correos_files if f.suffix.lower() == '.msg')
-    pdf_count  = sum(1 for f in correos_files if f.suffix.lower() == '.pdf')
-    total_size = sum(f.stat().st_size for f in correos_files) / 1024
+    if not df_db_files.empty:
+        tipos_lower = df_db_files['tipo'].astype(str).str.lower()
+        nombres_lower = df_db_files['nombre_archivo'].astype(str).str.lower()
+        msg_count  = int(((tipos_lower == 'msg') | nombres_lower.str.endswith('.msg')).sum())
+        pdf_count  = int(((tipos_lower == 'pdf') | nombres_lower.str.endswith('.pdf')).sum())
+        total_size = float(pd.to_numeric(df_db_files['tamano_bytes'], errors='coerce').fillna(0).sum()) / 1024.0
+    else:
+        msg_count  = sum(1 for f in correos_files if f.suffix.lower() == '.msg')
+        pdf_count  = sum(1 for f in correos_files if f.suffix.lower() == '.pdf')
+        total_size = sum(f.stat().st_size for f in correos_files) / 1024.0
 
     gh_c1, gh_c2, gh_c3, gh_c4 = st.columns(4)
     with gh_c1:
@@ -3763,12 +3895,10 @@ elif menu == "🛠️ Mantenimiento de la App":
     with gh_c2:
         st.metric("📄 PDFs guardados", pdf_count)
     with gh_c3:
-        st.metric("💾 Tamaño Total Correos", f"{total_size:.1f} KB")
+        st.metric("💾 Tamaño Total Correos", f"{total_size:,.1f} KB")
     with gh_c4:
         st.metric("🗄️ BD SQLite", f"{db_size_kb:.1f} KB")
 
-    # Tabla de auditoría de archivos persistidos en la Base de Datos
-    df_db_files = get_todos_archivos_adjuntos()
     if not df_db_files.empty:
         st.markdown(f"##### 🗄️ Archivos Respaldados en Base de Datos & GitHub ({len(df_db_files)} archivos)")
         disp_files = df_db_files[['po', 'id_interno', 'nombre_archivo', 'tipo', 'tamano_bytes', 'fecha_subida']].copy()

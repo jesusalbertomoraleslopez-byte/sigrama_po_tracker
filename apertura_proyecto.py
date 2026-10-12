@@ -85,7 +85,7 @@ def find_original_order_files(po, id_interno):
     msg_bytes, msg_name = None, None
     pdf_bytes, pdf_name = None, None
     
-    # 1. Cabecera DB
+    # 1. Cabecera DB (con descarga bajo demanda desde GCS si no está aún en disco)
     try:
         df_cab, _ = db_manager.get_po_by_folio(po_str)
         if df_cab.empty:
@@ -93,17 +93,17 @@ def find_original_order_files(po, id_interno):
         if not df_cab.empty:
             r = df_cab.iloc[0]
             if r.get('archivo_correo'):
-                p = correos_dir / str(r['archivo_correo'])
-                if p.exists():
-                    msg_name = p.name
-                    with open(p, 'rb') as f:
-                        msg_bytes = f.read()
+                fn_c = str(r['archivo_correo']).strip()
+                b_c = db_manager._resolve_correo_bytes(fn_c)
+                if b_c:
+                    msg_name = fn_c
+                    msg_bytes = b_c
             if r.get('archivo_pdf'):
-                p = correos_dir / str(r['archivo_pdf'])
-                if p.exists():
-                    pdf_name = p.name
-                    with open(p, 'rb') as f:
-                        pdf_bytes = f.read()
+                fn_p = str(r['archivo_pdf']).strip()
+                b_p = db_manager._resolve_correo_bytes(fn_p)
+                if b_p:
+                    pdf_name = fn_p
+                    pdf_bytes = b_p
     except Exception as e:
         print(f"[WARN] find_original_order_files cabecera: {e}")
 
@@ -128,28 +128,33 @@ def find_original_order_files(po, id_interno):
     except Exception as e:
         print(f"[WARN] find_original_order_files po_archivos_adjuntos: {e}")
 
-    # 3. Disco data/correos/
+    # 3. Disco data/correos/ o índice en memoria GCS
+    candidate_names = []
     if correos_dir.exists():
-        for f in sorted(correos_dir.iterdir()):
-            fn = f.name
-            low = fn.lower()
-            m_po = (po_str in fn) or (po_nodash in fn)
-            m_id = (f"INT {id_clean}" in fn) or (f"INT_{id_clean}" in fn) or (f"INT{id_clean}" in fn) or (f"INT 0{id_clean}" in fn)
-            
-            if low.endswith('.msg') and not msg_bytes and (m_po or m_id):
+        candidate_names.extend([f.name for f in sorted(correos_dir.iterdir()) if f.is_file()])
+    try:
+        import gcs_sync
+        for bname in sorted(gcs_sync._KNOWN_CORREO_BLOBS):
+            if bname not in candidate_names:
+                candidate_names.append(bname)
+    except Exception:
+        pass
+
+    for fn in candidate_names:
+        low = fn.lower()
+        m_po = (po_str in fn) or (po_nodash in fn)
+        m_id = bool(id_clean) and ((f"INT {id_clean}" in fn) or (f"INT_{id_clean}" in fn) or (f"INT{id_clean}" in fn) or (f"INT 0{id_clean}" in fn))
+        
+        if low.endswith('.msg') and not msg_bytes and (m_po or m_id):
+            b = db_manager._resolve_correo_bytes(fn)
+            if b:
                 msg_name = fn
-                try:
-                    with open(f, 'rb') as fp:
-                        msg_bytes = fp.read()
-                except Exception:
-                    pass
-            if low.endswith('.pdf') and not pdf_bytes and (m_po or m_id):
+                msg_bytes = b
+        if low.endswith('.pdf') and not pdf_bytes and (m_po or m_id):
+            b = db_manager._resolve_correo_bytes(fn)
+            if b:
                 pdf_name = fn
-                try:
-                    with open(f, 'rb') as fp:
-                        pdf_bytes = fp.read()
-                except Exception:
-                    pass
+                pdf_bytes = b
 
     return msg_bytes, msg_name, pdf_bytes, pdf_name
 

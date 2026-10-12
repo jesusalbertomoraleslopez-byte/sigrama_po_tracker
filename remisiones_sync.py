@@ -1,4 +1,7 @@
 import pandas as pd
+import time
+import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from config import (
     get_remisiones_dir,
@@ -9,6 +12,15 @@ from config import (
     is_historical_completed,
     get_historical_qty_override
 )
+
+_LAST_CROSS_SYNC_TS = 0.0
+_CROSS_SYNC_TTL_SEC = 45.0
+
+_REM_CACHE = {
+    "mtimes": None,
+    "dfs": None,
+    "tarima_to_remision": {}
+}
 
 def normalize_po(po_val):
     """Normaliza folios de PO eliminando prefijos, guiones, barras y espacios."""
@@ -31,39 +43,66 @@ def parse_tarimas_asociadas(raw_val):
     s = s.replace("[", "").replace("]", "").replace("'", "").replace('"', "")
     return [t.strip() for t in s.split(",") if t.strip()]
 
-def sync_live_remisiones_from_github():
-    """Descarga en caliente las bases de datos de remisiones y corte/doblez desde Google Cloud Storage (GCP) o fallback a GitHub/local."""
+def _download_if_newer(blob, local_path: Path) -> bool:
+    """Descarga un blob de GCS únicamente si no existe localmente o si cambió en la nube."""
+    try:
+        blob.reload()
+        remote_ts = blob.updated.timestamp() if blob.updated else 0.0
+        if local_path.exists() and local_path.stat().st_size > 0:
+            local_ts = local_path.stat().st_mtime
+            if local_ts >= remote_ts - 1.0:
+                return True
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        blob.download_to_filename(str(local_path))
+        return True
+    except Exception:
+        return False
+
+def sync_live_remisiones_from_github(force: bool = False):
+    """Descarga en caliente las bases de datos de remisiones y corte/doblez desde Google Cloud Storage (GCP) con TTL de 45s y verificación de timestamp."""
+    global _LAST_CROSS_SYNC_TS
+    now = time.time()
+    if not force and (now - _LAST_CROSS_SYNC_TS) < _CROSS_SYNC_TTL_SEC:
+        return True
+
     import urllib.request
     from config import get_corte_doblez_dir, SYNC_DB_DIR
     rem_dir = get_remisiones_dir()
     rem_dir.mkdir(parents=True, exist_ok=True)
     ok_any = False
 
-    # 1. Intentar directamente desde Google Cloud Storage (Red GCP de producción)
+    # 1. Intentar directamente desde Google Cloud Storage en paralelo (Red GCP de producción)
     try:
-        from google.cloud import storage
-        client = storage.Client()
-        b_rem = client.bucket("sigrama-remisiones-storage")
-        for fname in ['BD_Detalle_Tarimas.xlsx', 'BD_Datos_Generales_Remision.xlsx', 'BD_Tarimas.xlsx']:
-            blob = b_rem.blob(fname)
-            if blob.exists():
-                blob.download_to_filename(str(rem_dir / fname))
-                ok_any = True
-        
-        b_corte = client.bucket("sigrama-corte-doblez-storage")
-        blob_corte = b_corte.blob("database/sigrama_database.xlsx")
-        if blob_corte.exists():
-            for d in set([get_corte_doblez_dir(), SYNC_DB_DIR]):
-                d.mkdir(parents=True, exist_ok=True)
-                blob_corte.download_to_filename(str(d / "sigrama_database.xlsx"))
-                ok_any = True
-        if ok_any:
-            print("[PO_TRACKER] Sincronización cruzada exitosa desde GCS (sigrama-remisiones-storage & sigrama-corte-doblez-storage)")
-            return True
+        import gcs_sync
+        client = gcs_sync.get_storage_client()
+        if client is not None:
+            b_rem = client.bucket("sigrama-remisiones-storage")
+            b_corte = client.bucket("sigrama-corte-doblez-storage")
+            cd_dir = get_corte_doblez_dir()
+            cd_dir.mkdir(parents=True, exist_ok=True)
+
+            tasks = [
+                (b_rem.blob('BD_Detalle_Tarimas.xlsx'), rem_dir / 'BD_Detalle_Tarimas.xlsx'),
+                (b_rem.blob('BD_Datos_Generales_Remision.xlsx'), rem_dir / 'BD_Datos_Generales_Remision.xlsx'),
+                (b_rem.blob('BD_Tarimas.xlsx'), rem_dir / 'BD_Tarimas.xlsx'),
+                (b_corte.blob('database/sigrama_database.xlsx'), cd_dir / 'sigrama_database.xlsx'),
+            ]
+            with ThreadPoolExecutor(max_workers=4) as ex:
+                results = list(ex.map(lambda t: _download_if_newer(t[0], t[1]), tasks))
+            if any(results):
+                if SYNC_DB_DIR != cd_dir and (cd_dir / 'sigrama_database.xlsx').exists():
+                    try:
+                        import shutil
+                        SYNC_DB_DIR.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(cd_dir / 'sigrama_database.xlsx', SYNC_DB_DIR / 'sigrama_database.xlsx')
+                    except Exception:
+                        pass
+                _LAST_CROSS_SYNC_TS = time.time()
+                return True
     except Exception as e_gcs:
         print(f"[PO_TRACKER] Aviso GCS cross-sync: {e_gcs}, intentando fallback...")
 
-    # 2. Fallback a GitHub si no hay acceso directo a GCS (desarrollo local)
+    # 2. Fallback a GitHub si no hay acceso directo a GCS
     urls = [
         'https://raw.githubusercontent.com/jesusalbertomoraleslopez-byte/remisiones-de-materiales/main/BD_Detalle_Tarimas.xlsx',
         'https://raw.githubusercontent.com/jesusalbertomoraleslopez-byte/remisiones-de-materiales/main/BD_Datos_Generales_Remision.xlsx',
@@ -91,23 +130,62 @@ def sync_live_remisiones_from_github():
     except Exception:
         pass
         
+    if ok_any:
+        _LAST_CROSS_SYNC_TS = time.time()
     return ok_any
 
 def load_remisiones_databases():
-    """Carga las bases de datos relevantes de la app de Remisiones."""
+    """Carga las bases de datos relevantes de la app de Remisiones con caché en memoria invalidado por mtime."""
+    sync_live_remisiones_from_github(force=False)
     rem_dir = get_remisiones_dir()
     
     file_rem = rem_dir / 'BD_Datos_Generales_Remision.xlsx'
     file_det = rem_dir / 'BD_Detalle_Tarimas.xlsx'
     file_tar = rem_dir / 'BD_Tarimas.xlsx'
     
+    mtimes = (
+        file_rem.stat().st_mtime if file_rem.exists() else 0.0,
+        file_det.stat().st_mtime if file_det.exists() else 0.0,
+        file_tar.stat().st_mtime if file_tar.exists() else 0.0,
+    )
+    if _REM_CACHE["mtimes"] == mtimes and _REM_CACHE["dfs"] is not None:
+        return _REM_CACHE["dfs"]
+        
     df_rem = pd.read_excel(file_rem) if file_rem.exists() else pd.DataFrame()
     df_det = pd.read_excel(file_det) if file_det.exists() else pd.DataFrame()
     df_tar = pd.read_excel(file_tar) if file_tar.exists() else pd.DataFrame()
     
+    if not df_det.empty:
+        if 'PO' in df_det.columns:
+            df_det['_po_str'] = df_det['PO'].fillna('').astype(str)
+            df_det['norm_po'] = df_det['_po_str'].apply(normalize_po)
+        if 'Proyecto' in df_det.columns:
+            df_det['_proy_str'] = df_det['Proyecto'].fillna('').astype(str)
+        if 'SKU' in df_det.columns:
+            sku_s = df_det['SKU'].fillna('').astype(str).str.strip()
+            df_det['_c_norm'] = sku_s.apply(normalize_sku)
+            df_det['_c_clean'] = sku_s.apply(lambda x: normalize_sku(clean_pronest_piece_name(x)))
+            df_det['_c_first'] = sku_s.apply(lambda x: normalize_sku(x.split()[0]) if x else "")
+        
+    tarima_to_remision = {}
+    if not df_rem.empty and 'Tarimas_Asociadas' in df_rem.columns:
+        for _, r in df_rem.iterrows():
+            folio_r = str(r.get('Folio_Remision', r.get('ID_Remision', ''))).strip()
+            fecha_s = str(r.get('Fecha_Hora_Salida', '')).strip()
+            receptor = str(r.get('Nombre_Receptor', '')).strip()
+            raw_t = r.get('Tarimas_Asociadas', '')
+            for t_id in parse_tarimas_asociadas(raw_t):
+                tarima_to_remision.setdefault(t_id, []).append({
+                    'folio_remision': folio_r,
+                    'fecha_salida': fecha_s,
+                    'receptor': receptor
+                })
+                
+    _REM_CACHE["mtimes"] = mtimes
+    _REM_CACHE["dfs"] = (df_rem, df_det, df_tar)
+    _REM_CACHE["tarima_to_remision"] = tarima_to_remision
     return df_rem, df_det, df_tar
 
-import re
 
 def clean_pronest_piece_name(p):
     s = str(p).strip()
@@ -120,6 +198,19 @@ def normalize_sku(s):
         return ""
     return re.sub(r'[^A-Z0-9]', '', str(s).upper())
 
+def _fast_sku_match(t_norm, t_first, c_norm, c_clean, c_first):
+    if not t_norm or not c_norm:
+        return False
+    if t_norm == c_norm or t_norm == c_clean:
+        return True
+    if t_first and c_first and t_first == c_first:
+        return True
+    if len(c_norm) >= 6 and t_norm.startswith(c_norm):
+        return True
+    if len(t_norm) >= 6 and c_norm.startswith(t_norm):
+        return True
+    return False
+
 def sku_matches(target_sku, candidate_piece):
     if not target_sku or not candidate_piece:
         return False
@@ -129,26 +220,10 @@ def sku_matches(target_sku, candidate_piece):
     c_norm = normalize_sku(c_str)
     if not t_norm or not c_norm:
         return False
-    if t_norm == c_norm:
-        return True
     c_clean = normalize_sku(clean_pronest_piece_name(c_str))
-    if t_norm == c_clean:
-        return True
-        
-    # Extraer primer token si contiene espacios (e.g. '11-A-6014-01 UNPAINTED ...')
-    t_first = normalize_sku(t_str.split()[0])
-    c_first = normalize_sku(c_str.split()[0])
-    if t_first and c_first and t_first == c_first:
-        return True
-        
-    # Coincidencia de prefijo (para strings de al menos 6 caracteres alfanuméricos)
-    # Ejemplo: '11-B-9208-01 TRTO' -> '11B920801TRTO' vs '11B920801'
-    if len(c_norm) >= 6 and t_norm.startswith(c_norm):
-        return True
-    if len(t_norm) >= 6 and c_norm.startswith(t_norm):
-        return True
-        
-    return False
+    t_first = normalize_sku(t_str.split()[0]) if t_str else ""
+    c_first = normalize_sku(c_str.split()[0]) if c_str else ""
+    return _fast_sku_match(t_norm, t_first, c_norm, c_clean, c_first)
 
 def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
     """Calcula el estatus de remisión/envío para cada partida y global de una PO dada."""
@@ -216,18 +291,21 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
     # 1. Filtrar registros de Detalle_Tarimas asociados a esta PO (búsqueda normalizada y flexible)
     df_det_po = pd.DataFrame()
     if not df_det.empty:
-        mask_match = pd.Series([False] * len(df_det))
+        mask_match = pd.Series([False] * len(df_det), index=df_det.index)
         if 'PO' in df_det.columns:
-            df_det['norm_po'] = df_det['PO'].apply(normalize_po)
-            mask_match = mask_match | (df_det['norm_po'] == po_norm) | (df_det['norm_po'].str.contains(po_norm, regex=False, na=False)) | (df_det['PO'].astype(str).str.contains(po_str, regex=False, na=False))
+            if 'norm_po' not in df_det.columns:
+                df_det['norm_po'] = df_det['PO'].apply(normalize_po)
+            po_col = df_det['_po_str'] if '_po_str' in df_det.columns else df_det['PO'].astype(str)
+            mask_match = mask_match | (df_det['norm_po'] == po_norm) | (df_det['norm_po'].str.contains(po_norm, regex=False, na=False)) | (po_col.str.contains(po_str, regex=False, na=False))
         if 'Proyecto' in df_det.columns and id_int_num is not None:
             pat = rf'\b(?:PO|INT|OC)?\s*0*{id_int_num}\b'
-            mask_match = mask_match | df_det['Proyecto'].astype(str).str.contains(pat, regex=True, case=False, na=False)
-        df_det_po = df_det[mask_match].copy()
+            proy_col = df_det['_proy_str'] if '_proy_str' in df_det.columns else df_det['Proyecto'].astype(str)
+            mask_match = mask_match | proy_col.str.contains(pat, regex=True, case=False, na=False)
+        df_det_po = df_det[mask_match]
         
-    # Mapeo de Tarimas a Folios de Remisión
-    tarima_to_remision = {}
-    if not df_rem.empty and 'Tarimas_Asociadas' in df_rem.columns:
+    # Mapeo de Tarimas a Folios de Remisión (desde caché O(1) si está disponible)
+    tarima_to_remision = _REM_CACHE.get("tarima_to_remision") or {}
+    if not tarima_to_remision and not df_rem.empty and 'Tarimas_Asociadas' in df_rem.columns:
         for _, r in df_rem.iterrows():
             folio_r = str(r.get('Folio_Remision', r.get('ID_Remision', ''))).strip()
             fecha_s = str(r.get('Fecha_Hora_Salida', '')).strip()
@@ -243,6 +321,7 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
                     'fecha_salida': fecha_s,
                     'receptor': receptor
                 })
+
                 
     # 2. Si df_partidas viene vacío, sintetizar partidas desde Detalle_Tarimas si existen
     if df_partidas.empty and not df_det_po.empty and 'SKU' in df_det_po.columns:
@@ -264,6 +343,22 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
             })
         df_partidas = pd.DataFrame(synth_list)
 
+    # Pre-extraer tuplas de df_det_po una sola vez por PO para comparación ultrarrápida sin regex
+    det_po_tuples = []
+    if not df_det_po.empty and 'SKU' in df_det_po.columns:
+        has_c = '_c_norm' in df_det_po.columns
+        for _, d_row in df_det_po.iterrows():
+            if has_c:
+                cn, cc, cf = d_row['_c_norm'], d_row['_c_clean'], d_row['_c_first']
+            else:
+                raw_p = str(d_row.get('SKU', '')).strip()
+                cn = normalize_sku(raw_p)
+                cc = normalize_sku(clean_pronest_piece_name(raw_p))
+                cf = normalize_sku(raw_p.split()[0]) if raw_p else ""
+            t_id = str(d_row.get('ID_Tarima', '')).strip()
+            c_pzas = float(d_row.get('Cantidad', 0) or 0)
+            det_po_tuples.append((cn, cc, cf, t_id, c_pzas))
+
     partidas_enriched = []
     total_requerido = 0.0
     total_remisionado = 0.0
@@ -282,45 +377,43 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
             cant_rem = 0.0
             rem_folios_partida = set()
             
-            if not df_det_po.empty and 'SKU' in df_det_po.columns:
-                # Coincidencia flexible por SKU Planta, SKU Cliente o Descripción (garantizando retorno booleano)
-                match_det = df_det_po[df_det_po['SKU'].apply(lambda p: bool(
-                    sku_matches(sku, p) or 
-                    (bool(sku_cli) and sku_matches(sku_cli, p)) or
-                    (bool(desc_prod) and sku_matches(desc_prod, p))
-                ))]
+            if det_po_tuples:
+                t_targets = []
+                for s_cand in (sku, sku_cli, desc_prod):
+                    if s_cand:
+                        tn = normalize_sku(s_cand)
+                        tf = normalize_sku(s_cand.split()[0]) if s_cand else ""
+                        if tn:
+                            t_targets.append((tn, tf))
                 
-                for _, d_row in match_det.iterrows():
-                    t_id = str(d_row.get('ID_Tarima', '')).strip()
-                    c_piezas = float(d_row.get('Cantidad', 0) or 0)
-                    cant_entarimada += c_piezas
-                    
-                    rem_infos = tarima_to_remision.get(t_id, [])
-                    if rem_infos:
-                        cant_rem += c_piezas
-                        for info in rem_infos:
-                            rem_folios_partida.add(info['folio_remision'])
-                            remisiones_asociadas_set.add(info['folio_remision'])
+                for cn, cc, cf, t_id, c_piezas in det_po_tuples:
+                    if any(_fast_sku_match(tn, tf, cn, cc, cf) for tn, tf in t_targets):
+                        cant_entarimada += c_piezas
+                        rem_infos = tarima_to_remision.get(t_id, [])
+                        if rem_infos:
+                            cant_rem += c_piezas
+                            for info in rem_infos:
+                                rem_folios_partida.add(info['folio_remision'])
+                                remisiones_asociadas_set.add(info['folio_remision'])
+                                historial_envios.append({
+                                    'SKU': sku,
+                                    'Descripción': part.get('descripcion_producto', ''),
+                                    'Cantidad Enviada': c_piezas,
+                                    'ID Tarima': t_id,
+                                    'Folio Remisión': info['folio_remision'],
+                                    'Fecha Salida': info['fecha_salida'],
+                                    'Receptor': info['receptor']
+                                })
+                        else:
                             historial_envios.append({
                                 'SKU': sku,
                                 'Descripción': part.get('descripcion_producto', ''),
                                 'Cantidad Enviada': c_piezas,
                                 'ID Tarima': t_id,
-                                'Folio Remisión': info['folio_remision'],
-                                'Fecha Salida': info['fecha_salida'],
-                                'Receptor': info['receptor']
+                                'Folio Remisión': 'En Almacén (Entarimado sin remisión)',
+                                'Fecha Salida': 'Pendiente de Salida',
+                                'Receptor': 'Planta Sigrama'
                             })
-                    else:
-                        # Tarima armada pero aún no remisionada formalmente
-                        historial_envios.append({
-                            'SKU': sku,
-                            'Descripción': part.get('descripcion_producto', ''),
-                            'Cantidad Enviada': c_piezas,
-                            'ID Tarima': t_id,
-                            'Folio Remisión': 'En Almacén (Entarimado sin remisión)',
-                            'Fecha Salida': 'Pendiente de Salida',
-                            'Receptor': 'Planta Sigrama'
-                        })
                         
             cant_entarimada = max(cant_entarimada, cant_rem)
             total_remisionado += cant_rem
@@ -376,7 +469,7 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
     if df_all_pos.empty:
         return pd.DataFrame()
         
-    # Pre-cargar bases de datos una sola vez para máxima velocidad (evita leer archivos 75 veces)
+    # Pre-cargar bases de datos una sola vez para máxima velocidad (evita leer archivos 94 veces)
     dbs_rem = load_remisiones_databases()
     
     dbs_cd = None
@@ -387,10 +480,19 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
     except Exception:
         pass
         
+    # Pre-agrupar partidas por PO en un diccionario O(1)
+    partidas_by_po = {}
+    if not df_all_partidas.empty and 'po' in df_all_partidas.columns:
+        df_p_tmp = df_all_partidas.copy()
+        df_p_tmp['_po_key'] = df_p_tmp['po'].astype(str).str.strip()
+        for k, grp in df_p_tmp.groupby('_po_key', sort=False):
+            partidas_by_po[k] = grp.drop(columns=['_po_key'])
+        
+    empty_df = pd.DataFrame()
     for _, po_row in df_all_pos.iterrows():
         po_folio = str(po_row.get('po', '')).strip()
         id_int_val = str(po_row.get('id_interno', '')).strip()
-        partidas_po = df_all_partidas[df_all_partidas['po'].astype(str).str.strip() == po_folio] if not df_all_partidas.empty else pd.DataFrame()
+        partidas_po = partidas_by_po.get(po_folio, empty_df)
         
         # 1. Seguimiento en Remisiones y Almacén PT
         tracking = get_tracking_for_po(po_folio, partidas_po, id_interno=id_int_val, dbs=dbs_rem)
@@ -402,10 +504,10 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
         ofs_str = "Sin OF"
         if get_corte_doblez_tracking_for_po and dbs_cd is not None:
             try:
-                # skip_sku_fallback=True evita la búsqueda cara por SKU (solo necesaria en Ficha 360°)
+                # skip_sku_fallback=True + rem_trk_info=tracking evita recalcular remisiones y búsquedas redundantes
                 cd_trk = get_corte_doblez_tracking_for_po(
                     po_folio, partidas_po, id_interno=id_int_val,
-                    dbs=dbs_cd, skip_sku_fallback=True, rem_dbs=dbs_rem
+                    dbs=dbs_cd, skip_sku_fallback=True, rem_dbs=dbs_rem, rem_trk_info=tracking
                 )
                 tot_fab = float(cd_trk.get('total_fabricado', cd_trk.get('total_terminado_planta', 0.0)) or 0.0)
                 tot_prog = float(cd_trk.get('total_programado', 0.0) or 0.0)

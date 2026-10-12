@@ -527,20 +527,26 @@ with st.sidebar:
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
     if st.button("🔄 Sincronizar Planta en Vivo", use_container_width=True, key="btn_sync_sidebar_live"):
         from remisiones_sync import sync_live_remisiones_from_github
-        with st.spinner("Sincronizando con Almacén y Taller..."):
-            sync_live_remisiones_from_github()
+        with st.spinner("Sincronizando con Almacén y Taller (GCP Cloud Storage)..."):
+            try:
+                import gcs_sync
+                gcs_sync.sync_from_gcs(force=True)
+            except Exception:
+                pass
+            sync_live_remisiones_from_github(force=True)
         st.cache_data.clear()
-        st.toast("✅ ¡Datos actualizados desde GitHub en tiempo real!")
+        st.toast("✅ ¡Datos actualizados desde Cloud Storage en tiempo real!")
         st.rerun()
     
     if st.button("☁️ Guardar Respaldo en Nube", use_container_width=True, key="btn_manual_gh_backup"):
-        with st.spinner("Subiendo base de datos a GitHub..."):
+        with st.spinner("Subiendo base de datos a Cloud Storage y GitHub..."):
+            export_sync_to_excel()
             push_db_to_github(background=False)
-        st.toast("✅ Base de datos respaldada en GitHub correctamente.")
+        st.toast("✅ Base de datos respaldada en Cloud Storage y GitHub correctamente.")
 
-    # Mostrar notificación si la BD fue restaurada desde GitHub en este arranque
+    # Mostrar notificación si la BD fue restaurada desde la nube en este arranque
     if st.session_state.get('db_restored_from_github'):
-        st.success("☁️ BD restaurada desde GitHub")
+        st.success("☁️ BD sincronizada con la nube")
         st.session_state['db_restored_from_github'] = False
         
     # Botón de Cerrar Sesión
@@ -598,9 +604,9 @@ else:
     """, unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=45)
 def get_cached_global_pos_summary():
-    """Cachea el cálculo de la matriz de todas las órdenes por 2 minutos para carga instantánea."""
+    """Cachea el cálculo de la matriz de todas las órdenes por 45 segundos para carga instantánea."""
     df_p = get_all_pos()
     df_pt = get_all_partidas()
     return get_global_pos_tracking_summary(df_p, df_pt)
@@ -624,7 +630,12 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
         if st.button("🔄 Sincronizar en Vivo", type="primary", use_container_width=True, key="btn_sync_tabla_general", help="Actualiza avances de taller, tarimas y remisiones en tiempo real"):
             with st.spinner("Sincronizando con Planta y Remisiones..."):
                 from remisiones_sync import sync_live_remisiones_from_github
-                sync_live_remisiones_from_github()
+                try:
+                    import gcs_sync
+                    gcs_sync.sync_from_gcs(force=True)
+                except Exception:
+                    pass
+                sync_live_remisiones_from_github(force=True)
                 st.cache_data.clear()
             st.toast("✅ ¡Datos de Planta y Remisiones sincronizados con éxito!")
             st.rerun()

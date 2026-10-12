@@ -3,6 +3,7 @@ import pandas as pd
 import datetime
 import shutil
 import os
+import re
 import base64
 import json
 import threading
@@ -27,9 +28,9 @@ if os.environ.get("GCS_BUCKET"):
         print(f"[GCS-INIT] Error syncing on import: {_e_init}")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# GITHUB DB PERSISTENCE
-# Subimos po_tracker.db + archivos Excel + correos a GitHub después de cada escritura.
-# Esto garantiza que Streamlit Cloud nunca pierda datos al reiniciarse.
+# GITHUB & GCS DB PERSISTENCE
+# Subimos po_tracker.db + archivos Excel a GCS (y opcionalmente a GitHub) después de cada escritura.
+# Los archivos binarios pesados (.msg/.pdf) residen exclusivamente en GCS (gs://sigrama-po-tracker-storage/data/correos/).
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _get_github_config():
@@ -61,15 +62,15 @@ def _get_github_config():
 
 def push_db_to_github(background=True):
     """
-    Sube po_tracker.db, archivos Excel y correos a GitHub vía API REST
-    y/o a Google Cloud Storage si GCS_BUCKET está presente.
-    Se ejecuta en background para no bloquear la UI de Streamlit.
+    Sube po_tracker.db y archivos Excel a Google Cloud Storage (y réplica cruzada a Remisiones)
+    y a GitHub vía API REST si hay token configurado.
+    Se ejecuta en background para no bloquear la UI de Streamlit (0ms bloqueo).
     """
     if os.environ.get("GCS_BUCKET"):
         try:
             import gcs_sync
             if background:
-                threading.Thread(target=gcs_sync.push_db_to_gcs, daemon=True).start()
+                gcs_sync.push_db_to_gcs_async()
             else:
                 gcs_sync.push_db_to_gcs()
         except Exception as e_gcs:
@@ -80,7 +81,6 @@ def push_db_to_github(background=True):
             import urllib.request
             token, repo, user, branch = _get_github_config()
             if not token or not repo:
-                print("[GH-PUSH] Advertencia: No se encontró GITHUB_TOKEN configurado.")
                 return
             
             api_base = f"https://api.github.com/repos/{repo}/contents"
@@ -90,19 +90,14 @@ def push_db_to_github(background=True):
                 "Content-Type": "application/json"
             }
             
+            # Solo respaldar en GitHub la BD compacta (~440 KB) y los Excels maestros.
+            # Los correos (.msg/.pdf, >200 MB) se almacenan exclusivamente en GCS.
             files_to_push = [
                 SQLITE_DB_PATH,
                 EXCEL_CABECERA_PATH,
                 EXCEL_REQ_PATH,
                 EXCEL_PARTIDAS_DETALLE_PATH,
             ]
-            
-            # Agregar archivos de data/correos/ si existen
-            correos_dir = SQLITE_DB_PATH.parent / 'correos'
-            if correos_dir.exists():
-                for correo_file in sorted(correos_dir.iterdir()):
-                    if correo_file.is_file() and correo_file.suffix.lower() in ('.msg', '.pdf'):
-                        files_to_push.append(correo_file)
             
             for local_path in files_to_push:
                 if not local_path.exists():
@@ -233,10 +228,18 @@ def pull_db_from_github():
 
 
 
+_db_initialized = False
+
 def get_connection():
-    return sqlite3.connect(str(SQLITE_DB_PATH), check_same_thread=False)
+    conn = sqlite3.connect(str(SQLITE_DB_PATH), check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
 
 def init_db():
+    global _db_initialized
+    if _db_initialized and SQLITE_DB_PATH.exists():
+        return
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -312,7 +315,19 @@ def init_db():
     if 'sku_cliente' not in columns:
         cursor.execute("ALTER TABLE po_partidas ADD COLUMN sku_cliente TEXT DEFAULT ''")
     
-    # 3. Tabla de Archivos Adjuntos (.msg y .pdf persistidos en BLOB)
+    # 3. Tabla de Historial de Auditoría
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS po_historial (
+        id_log INTEGER PRIMARY KEY AUTOINCREMENT,
+        po TEXT,
+        fecha_hora TEXT,
+        usuario TEXT,
+        accion TEXT,
+        detalle TEXT
+    )
+    ''')
+    
+    # 4. Tabla de Archivos Adjuntos (metadatos en SQLite; binarios en GCS / data/correos)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS po_archivos_adjuntos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -326,84 +341,65 @@ def init_db():
     )
     ''')
     
+    # 5. Índices compuestos para consultas O(1)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_cabecera_id_interno ON po_cabecera(id_interno)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_cabecera_estatus ON po_cabecera(estatus_general)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_partidas_po ON po_partidas(po)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_partidas_sku ON po_partidas(clave_sku)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_partidas_sku_cli ON po_partidas(sku_cliente)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_historial_po ON po_historial(po)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_adjuntos_po ON po_archivos_adjuntos(po)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_adjuntos_nombre ON po_archivos_adjuntos(nombre_archivo)")
+    
     conn.commit()
     conn.close()
-    
-    # Reconstruir en disco los archivos almacenados en la BD si faltan en data/correos/
-    reconstruct_correos_on_disk()
+    _db_initialized = True
 
 def reconstruct_correos_on_disk():
     """
-    Restaura en disco (data/correos/) todos los correos y PDFs
-    que están guardados en la tabla po_archivos_adjuntos de SQLite.
-    Esto garantiza que tras cualquier reinicio del servidor de Streamlit Cloud,
-    los archivos vuelvan a aparecer inmediatamente en disco.
+    Mantenida por compatibilidad. Con la arquitectura desacoplada en GCS,
+    los archivos de correo se descargan bajo demanda vía download_correo_from_gcs().
     """
-    try:
-        correos_dir = DATA_DIR / 'correos'
-        correos_dir.mkdir(parents=True, exist_ok=True)
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT nombre_archivo, contenido FROM po_archivos_adjuntos WHERE contenido IS NOT NULL")
-        rows = cursor.fetchall()
-        conn.close()
-        
-        restored = 0
-        for nombre, contenido in rows:
-            if not nombre or not contenido:
-                continue
-            dest = correos_dir / nombre
-            if not dest.exists() or dest.stat().st_size == 0:
-                with open(dest, 'wb') as f:
-                    f.write(contenido)
-                restored += 1
-        if restored > 0:
-            print(f"[RECONSTRUCT] Se restauraron {restored} archivos de correo en data/correos/ desde la base de datos.")
-    except Exception as e:
-        print(f"[RECONSTRUCT] Error reconstruyendo correos: {e}")
+    pass
 
 def save_archivo_adjunto(po, id_interno, nombre_archivo, tipo, contenido_bytes):
     """
-    Guarda el archivo binario (.msg o .pdf) dentro de la base de datos SQLite.
-    Al estar dentro de SQLite, viaja con po_tracker.db a GitHub y NUNCA se pierde.
+    Guarda el archivo binario (.msg o .pdf) en data/correos/ y lo sube asíncronamente a GCS.
+    En SQLite solo almacena el registro de metadatos (contenido = NULL) para mantener
+    po_tracker.db ultra-ligera (~440 KB).
     """
     if not nombre_archivo or not contenido_bytes:
         return False
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     tamano = len(contenido_bytes)
     try:
-        # Siempre guardar en disco data/correos/
         correos_dir = DATA_DIR / 'correos'
         correos_dir.mkdir(parents=True, exist_ok=True)
-        with open(correos_dir / nombre_archivo, 'wb') as f:
+        local_file = correos_dir / nombre_archivo
+        with open(local_file, 'wb') as f:
             f.write(contenido_bytes)
             
-        # Para evitar que po_tracker.db supere el límite de 100MB de GitHub,
-        # los archivos mayores a 500KB residen en data/correos/ y en SQLite se guarda NULL en el BLOB
-        contenido_db = contenido_bytes if tamano <= 500000 else None
-        
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO po_archivos_adjuntos (po, id_interno, nombre_archivo, tipo, contenido, tamano_bytes, fecha_subida)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, NULL, ?, ?)
             ON CONFLICT(nombre_archivo) DO UPDATE SET
                 po=excluded.po,
                 id_interno=excluded.id_interno,
                 tipo=excluded.tipo,
-                contenido=excluded.contenido,
+                contenido=NULL,
                 tamano_bytes=excluded.tamano_bytes,
                 fecha_subida=excluded.fecha_subida
-        ''', (str(po), str(id_interno), str(nombre_archivo), str(tipo).lower(), contenido_db, tamano, now_str))
+        ''', (str(po), str(id_interno), str(nombre_archivo), str(tipo).lower(), tamano, now_str))
         conn.commit()
         conn.close()
 
-        if os.environ.get("GCS_BUCKET"):
-            try:
-                import gcs_sync
-                threading.Thread(target=gcs_sync.push_file_to_gcs, args=(correos_dir / nombre_archivo,), daemon=True).start()
-            except Exception as e_up:
-                print(f"[GCS-UPLOAD] Error subiendo {nombre_archivo}: {e_up}")
+        try:
+            import gcs_sync
+            gcs_sync.push_correo_to_gcs_async(local_file)
+        except Exception as e_up:
+            print(f"[GCS-UPLOAD] Error subiendo {nombre_archivo}: {e_up}")
 
         return True
     except Exception as e:
@@ -430,8 +426,27 @@ def get_todos_archivos_adjuntos():
     conn.close()
     return df
 
+def _resolve_correo_bytes(fn, fb=None):
+    """Obtiene los bytes de un correo desde caché local en disco o descarga bajo demanda desde GCS."""
+    if fb is not None:
+        return fb
+    if not fn:
+        return None
+    disk_p = DATA_DIR / 'correos' / fn
+    if disk_p.exists() and disk_p.stat().st_size > 0:
+        try:
+            with open(disk_p, 'rb') as f:
+                return f.read()
+        except Exception:
+            pass
+    try:
+        import gcs_sync
+        return gcs_sync.download_correo_from_gcs(fn)
+    except Exception:
+        return None
+
 def get_contenido_archivo_por_nombre(nombre_archivo):
-    """Obtiene el binario de un archivo por su nombre, con respaldo desde data/correos si no está en BLOB."""
+    """Obtiene el binario de un archivo por su nombre, con descarga on-demand desde GCS si no está en disco."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT nombre_archivo, tipo, contenido FROM po_archivos_adjuntos WHERE nombre_archivo = ?", (str(nombre_archivo),))
@@ -439,16 +454,18 @@ def get_contenido_archivo_por_nombre(nombre_archivo):
     conn.close()
     if row:
         fn, ft, fb = row[0], row[1], row[2]
-        if fb is None:
-            disk_p = DATA_DIR / 'correos' / fn
-            if disk_p.exists():
-                with open(disk_p, 'rb') as f:
-                    fb = f.read()
+        fb = _resolve_correo_bytes(fn, fb)
         return fn, ft, fb
+    # Fallback directo si el archivo existe en disco/GCS aunque no esté en la tabla
+    fn_str = str(nombre_archivo)
+    fb_direct = _resolve_correo_bytes(fn_str, None)
+    if fb_direct:
+        ext = Path(fn_str).suffix.lower().lstrip('.')
+        return fn_str, ext, fb_direct
     return None, None, None
 
 def get_contenido_archivo_por_id(id_archivo):
-    """Obtiene el binario de un archivo por su ID, con respaldo desde data/correos si no está en BLOB."""
+    """Obtiene el binario de un archivo por su ID, con descarga on-demand desde GCS si no está en disco."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT nombre_archivo, tipo, contenido FROM po_archivos_adjuntos WHERE id = ?", (int(id_archivo),))
@@ -456,11 +473,7 @@ def get_contenido_archivo_por_id(id_archivo):
     conn.close()
     if row:
         fn, ft, fb = row[0], row[1], row[2]
-        if fb is None:
-            disk_p = DATA_DIR / 'correos' / fn
-            if disk_p.exists():
-                with open(disk_p, 'rb') as f:
-                    fb = f.read()
+        fb = _resolve_correo_bytes(fn, fb)
         return fn, ft, fb
     return None, None, None
 
@@ -880,7 +893,9 @@ def get_all_pos():
     ''', conn)
     conn.close()
     if not df.empty and 'total' in df.columns:
-        df['total'] = df.apply(lambda r: float(r['calc_total']) if (float(r.get('total', 0) or 0) == 0.0 and float(r.get('calc_total', 0) or 0) > 0) else float(r.get('total', 0) or 0), axis=1)
+        tot_s = pd.to_numeric(df['total'], errors='coerce').fillna(0.0)
+        calc_s = pd.to_numeric(df['calc_total'], errors='coerce').fillna(0.0)
+        df['total'] = tot_s.where((tot_s != 0.0) | (calc_s <= 0.0), calc_s)
     return df
 
 def get_po_by_folio(po_folio):
@@ -894,10 +909,10 @@ def get_po_by_folio(po_folio):
     conn.close()
     
     if not df_part.empty:
-        df_part['precio_total'] = df_part.apply(
-            lambda r: float(r['precio_total']) if float(r.get('precio_total', 0) or 0) > 0 else round(float(r.get('cantidad_requerida', 0) or 0) * float(r.get('precio_unitario', 0) or 0), 2),
-            axis=1
-        )
+        pt_s = pd.to_numeric(df_part['precio_total'], errors='coerce').fillna(0.0)
+        cant_s = pd.to_numeric(df_part['cantidad_requerida'], errors='coerce').fillna(0.0)
+        pu_s = pd.to_numeric(df_part['precio_unitario'], errors='coerce').fillna(0.0)
+        df_part['precio_total'] = pt_s.where(pt_s > 0.0, (cant_s * pu_s).round(2))
         
     if not df_cab.empty:
         cur_tot = float(df_cab.iloc[0].get('total', 0) or 0)
@@ -921,20 +936,35 @@ def get_po_history(po_folio):
     return df
 
 def export_sync_to_excel():
+    """
+    Exporta po_cabecera y po_partidas a los Excels maestros de comunicación inter-MicroApps:
+    - BD_POs_Cabecera.xlsx (con ID_Interno, Cliente_Facturar_A y Estatus_General para Remisiones y Corte/Doblez)
+    - BD_Requerimientos_POs.xlsx (con ID_Interno, SKU_Cliente y Descripcion para Remisiones)
+    - BD_Partidas_Detalle_POs.xlsx
+    """
     conn = get_connection()
     df_cab = pd.read_sql_query('SELECT * FROM po_cabecera', conn)
     df_part = pd.read_sql_query('SELECT * FROM po_partidas', conn)
     conn.close()
     
-    cab_cols = ['PO', 'Fecha_Pedido', 'Proyecto', 'Solicitante', 'Requisicion', 'Destino', 'Texto_Etiqueta', 'Color_Fondo', 'Color_Texto']
+    cab_cols = [
+        'PO', 'ID_Interno', 'Fecha_Pedido', 'Fecha_Llegada', 'Fecha_Solicitada',
+        'Proyecto', 'Solicitante', 'Requisicion', 'Destino', 'Cliente_Facturar_A',
+        'Estatus_General', 'Texto_Etiqueta', 'Color_Fondo', 'Color_Texto'
+    ]
     df_cab_rem = pd.DataFrame()
     if not df_cab.empty:
         df_cab_rem['PO'] = df_cab['po']
-        df_cab_rem['Fecha_Pedido'] = df_cab['fecha_pedido']
-        df_cab_rem['Proyecto'] = df_cab['proyecto']
-        df_cab_rem['Solicitante'] = df_cab['solicitante']
-        df_cab_rem['Requisicion'] = df_cab['requisicion']
-        df_cab_rem['Destino'] = df_cab['destino']
+        df_cab_rem['ID_Interno'] = df_cab.get('id_interno', pd.Series([''] * len(df_cab))).fillna('')
+        df_cab_rem['Fecha_Pedido'] = df_cab['fecha_pedido'].fillna('')
+        df_cab_rem['Fecha_Llegada'] = df_cab.get('fecha_llegada', pd.Series([''] * len(df_cab))).fillna('')
+        df_cab_rem['Fecha_Solicitada'] = df_cab.get('fecha_solicitada', pd.Series([''] * len(df_cab))).fillna('')
+        df_cab_rem['Proyecto'] = df_cab['proyecto'].fillna('')
+        df_cab_rem['Solicitante'] = df_cab['solicitante'].fillna('')
+        df_cab_rem['Requisicion'] = df_cab['requisicion'].fillna('')
+        df_cab_rem['Destino'] = df_cab['destino'].fillna('')
+        df_cab_rem['Cliente_Facturar_A'] = df_cab.get('cliente_facturar_a', pd.Series([''] * len(df_cab))).fillna('INDUSTRIA SIGRAMA S.A. DE C.V.')
+        df_cab_rem['Estatus_General'] = df_cab.get('estatus_general', pd.Series(['Registrada'] * len(df_cab))).fillna('Registrada')
         df_cab_rem['Texto_Etiqueta'] = df_cab['texto_etiqueta'].fillna('')
         df_cab_rem['Color_Fondo'] = df_cab['color_fondo'].fillna('#EC2024')
         df_cab_rem['Color_Texto'] = df_cab['color_texto'].fillna('#FFFFFF')
@@ -943,13 +973,22 @@ def export_sync_to_excel():
     
     df_cab_rem.to_excel(EXCEL_CABECERA_PATH, index=False)
     
-    req_cols = ['PO', 'SKU', 'Fecha_Entrega', 'Cantidad_Requerida', 'Parcialidad']
+    # Mapa rápido PO -> ID_Interno para enriquecer Requerimientos
+    po_to_id_int = {}
+    if not df_cab.empty and 'po' in df_cab.columns and 'id_interno' in df_cab.columns:
+        po_to_id_int = dict(zip(df_cab['po'].astype(str), df_cab['id_interno'].fillna('').astype(str)))
+        
+    req_cols = ['PO', 'ID_Interno', 'SKU', 'SKU_Cliente', 'Descripcion', 'Fecha_Entrega', 'Cantidad_Requerida', 'Unidad', 'Parcialidad']
     df_req_rem = pd.DataFrame()
     if not df_part.empty:
         df_req_rem['PO'] = df_part['po']
-        df_req_rem['SKU'] = df_part['clave_sku']
-        df_req_rem['Fecha_Entrega'] = df_part['fecha_entrega']
-        df_req_rem['Cantidad_Requerida'] = df_part['cantidad_requerida']
+        df_req_rem['ID_Interno'] = df_part['po'].astype(str).map(lambda x: po_to_id_int.get(x, ''))
+        df_req_rem['SKU'] = df_part['clave_sku'].fillna('')
+        df_req_rem['SKU_Cliente'] = df_part.get('sku_cliente', pd.Series([''] * len(df_part))).fillna('')
+        df_req_rem['Descripcion'] = df_part.get('descripcion_producto', pd.Series([''] * len(df_part))).fillna('')
+        df_req_rem['Fecha_Entrega'] = df_part['fecha_entrega'].fillna('')
+        df_req_rem['Cantidad_Requerida'] = df_part['cantidad_requerida'].fillna(0)
+        df_req_rem['Unidad'] = df_part.get('unidad', pd.Series(['PIEZA'] * len(df_part))).fillna('PIEZA')
         df_req_rem['Parcialidad'] = df_part['parcialidad'].fillna('P1')
     else:
         df_req_rem = pd.DataFrame(columns=req_cols)
@@ -971,3 +1010,4 @@ def export_sync_to_excel():
             shutil.copy2(EXCEL_REQ_PATH, SYNC_DB_DIR / 'BD_Requerimientos_POs.xlsx')
         except Exception as e:
             pass
+

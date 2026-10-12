@@ -38,13 +38,27 @@ def sku_matches(s1, s2):
         
     return False
 
+_CD_CACHE = {
+    "mtime": None,
+    "dfs": None
+}
+
 def load_corte_doblez_databases():
-    """Carga las bases de datos relevantes de la app de Corte y Doblez."""
+    """Carga las bases de datos relevantes de la app de Corte y Doblez con caché en memoria invalidado por mtime."""
+    try:
+        from remisiones_sync import sync_live_remisiones_from_github
+        sync_live_remisiones_from_github(force=False)
+    except Exception:
+        pass
     cd_dir = get_corte_doblez_dir()
     excel_path = cd_dir / 'sigrama_database.xlsx'
     
     if not excel_path.exists():
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        
+    mtime = excel_path.stat().st_mtime
+    if _CD_CACHE["mtime"] == mtime and _CD_CACHE["dfs"] is not None:
+        return _CD_CACHE["dfs"]
         
     try:
         xl = pd.ExcelFile(excel_path)
@@ -53,17 +67,35 @@ def load_corte_doblez_databases():
         df_ava = xl.parse('avances') if 'avances' in xl.sheet_names else pd.DataFrame()
         df_tar = xl.parse('tarimas') if 'tarimas' in xl.sheet_names else pd.DataFrame()
         df_nid = xl.parse('nidos') if 'nidos' in xl.sheet_names else pd.DataFrame()
+        
+        if not df_ord.empty and 'of_number' in df_ord.columns:
+            df_ord['_of_str'] = df_ord['of_number'].fillna('').astype(str).str.strip()
+            df_ord['_po_str'] = df_ord.get('po', pd.Series([''] * len(df_ord))).fillna('').astype(str).str.strip()
+            df_ord['_norm_po'] = df_ord['_po_str'].apply(normalize_po)
+            df_ord['_norm_of'] = df_ord['_of_str'].apply(normalize_po)
+            df_ord['_comb_txt'] = (df_ord['_of_str'] + ' ' + df_ord['_po_str'] + ' ' + df_ord.get('proyecto', pd.Series([''] * len(df_ord))).fillna('').astype(str).str.strip()).str.upper()
+        if not df_pie.empty and 'no_pieza' in df_pie.columns:
+            df_pie['_norm_pieza'] = df_pie['no_pieza'].apply(lambda x: normalize_sku(clean_pronest_piece_name(x)))
+        if not df_ava.empty and 'no_pieza' in df_ava.columns:
+            df_ava['_norm_pieza'] = df_ava['no_pieza'].apply(lambda x: normalize_sku(clean_pronest_piece_name(x)))
+            df_ava['_area_lc'] = df_ava['area'].astype(str).str.lower()
+        if not df_tar.empty and 'no_pieza' in df_tar.columns:
+            df_tar['_norm_pieza'] = df_tar['no_pieza'].apply(lambda x: normalize_sku(clean_pronest_piece_name(x)))
+            
+        _CD_CACHE["mtime"] = mtime
+        _CD_CACHE["dfs"] = (df_ord, df_pie, df_ava, df_tar, df_nid)
         return df_ord, df_pie, df_ava, df_tar, df_nid
     except Exception as e:
         print(f'Error loading Corte y Doblez DB: {e}')
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None, skip_sku_fallback=False, rem_dbs=None):
+def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None, skip_sku_fallback=False, rem_dbs=None, rem_trk_info=None):
     """Calcula el avance de manufactura en planta (Corte, Doblez, Liberado) para una PO.
     
     Args:
         skip_sku_fallback: Si True, omite el fallback lento de búsqueda por SKU (usar en resúmenes globales).
         rem_dbs: Bases de datos de remisiones pre-cargadas (para evitar releer archivos en el fallback).
+        rem_trk_info: Resultado pre-calculado de get_tracking_for_po (evita recalcular remisiones).
     """
     if dbs is not None:
         df_ord, df_pie, df_ava, df_tar, df_nid = dbs
@@ -121,31 +153,33 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
         
     id_int_clean = re.sub(r'[^0-9]', '', str(id_interno)) if id_interno else ""
     id_int_num = int(id_int_clean) if id_int_clean else None
+    id_pat = re.compile(rf'\b(PO|INT|OC)?\s*0*{id_int_num}\b') if id_int_num is not None else None
     
     # 1. Encontrar OFs relacionadas con esta PO
     matched_ofs = set()
     if not df_ord.empty and 'of_number' in df_ord.columns:
+        has_pre = '_of_str' in df_ord.columns
         for _, o_row in df_ord.iterrows():
-            of_num = str(o_row.get('of_number', '')).strip()
-            po_field = str(o_row.get('po', '')).strip()
-            proy_field = str(o_row.get('proyecto', '')).strip()
-            comb_txt = f"{of_num} {po_field} {proy_field}".upper()
+            if has_pre:
+                of_num = o_row['_of_str']
+                po_field_norm = o_row['_norm_po']
+                of_norm = o_row['_norm_of']
+                comb_txt = o_row['_comb_txt']
+            else:
+                of_num = str(o_row.get('of_number', '')).strip()
+                po_field_norm = normalize_po(str(o_row.get('po', '')).strip())
+                of_norm = normalize_po(of_num)
+                comb_txt = f"{of_num} {o_row.get('po', '')} {o_row.get('proyecto', '')}".upper()
             
             # Coincidencia por PO directa
-            m_by_po = (po_field and normalize_po(po_field) == po_norm) or \
-                      (po_norm and po_norm in normalize_po(of_num)) or \
+            m_by_po = (po_field_norm and po_field_norm == po_norm) or \
+                      (po_norm and po_norm in of_norm) or \
                       (po_str and po_str in of_num)
                       
             # Coincidencia por ID Interno flexible (ej. 47 en PO 047, INT-0047, etc.)
-            m_by_id = False
-            if id_int_num is not None:
-                pat = rf'\b(PO|INT|OC)?\s*0*{id_int_num}\b'
-                if re.search(pat, comb_txt):
-                    m_by_id = True
+            m_by_id = bool(id_pat and id_pat.search(comb_txt))
                     
             # Inteligencia Operativa: Caso específico OF 83 (P4-P5-P6 Cal. 12 CLOUD)
-            # En la captura de planta fue ingresada con PO 26083235 por error de dedo, pero sus 30 SKUs
-            # y 552 piezas corresponden al paquete de producción CLOUD de PO 2608-3425 (INT-0047).
             if '00083' in of_num:
                 if po_norm in ('26083425', 'PO047', 'INT0047', '047', '47'):
                     m_by_po = True
@@ -155,28 +189,37 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
             if m_by_po or m_by_id:
                 matched_ofs.add(of_num)
                 
+    # Pre-calcular normas de todas las partidas de esta PO una sola vez (O(M))
+    partida_norms_list = []
+    all_po_norms = set()
+    if df_partidas is not None and not df_partidas.empty:
+        for _, part in df_partidas.iterrows():
+            sku = str(part.get('clave_sku', '')).strip().upper()
+            sku_cli = str(part.get('sku_cliente', '')).strip().upper()
+            v_norms = {
+                n for n in [
+                    normalize_sku(sku),
+                    normalize_sku(sku_cli),
+                    normalize_sku(clean_pronest_piece_name(sku)),
+                    normalize_sku(clean_pronest_piece_name(sku_cli)),
+                ] if n
+            }
+            partida_norms_list.append((part, sku, sku_cli, v_norms))
+            all_po_norms.update(v_norms)
+
     # 1.1 Si no hubo coincidencia por PO, rastreo por SKU (solo cuando no viene de resumen global)
-    # Este fallback es caro (~0.5s/PO) – solo activarlo en llamadas individuales desde Ficha 360°
-    if not matched_ofs and not df_partidas.empty and not df_pie.empty and not skip_sku_fallback:
-        from remisiones_sync import get_tracking_for_po as get_rem_tracking
-        rem_trk_chk = get_rem_tracking(po_str, df_partidas, id_interno=id_interno, dbs=rem_dbs)
-        has_remisiones = float(rem_trk_chk.get('total_remisionado', 0) or 0) > 0 or len(rem_trk_chk.get('remisiones_asociadas', [])) > 0
+    if not matched_ofs and all_po_norms and not df_pie.empty and not skip_sku_fallback:
+        if rem_trk_info is None:
+            from remisiones_sync import get_tracking_for_po as get_rem_tracking
+            rem_trk_info = get_rem_tracking(po_str, df_partidas, id_interno=id_interno, dbs=rem_dbs)
+        has_remisiones = float(rem_trk_info.get('total_remisionado', 0) or 0) > 0 or len(rem_trk_info.get('remisiones_asociadas', [])) > 0
         
-        # Solo vincular OFs por SKU si la PO ya fue enviada o si el proyecto coincide
-        if has_remisiones:
-            po_skus = []
-            for _, p_row in df_partidas.iterrows():
-                k1 = str(p_row.get('clave_sku', '')).strip().upper()
-                k2 = str(p_row.get('sku_cliente', '')).strip().upper()
-                if k1: po_skus.append(k1)
-                if k2: po_skus.append(k2)
-                
-            for _, pie_r in df_pie.iterrows():
-                pie_n = str(pie_r.get('no_pieza', '')).strip().upper()
-                if any(sku_matches(ps, pie_n) for ps in po_skus):
-                    of_n = str(pie_r.get('of_number', '')).strip()
-                    if of_n:
-                        matched_ofs.add(of_n)
+        if has_remisiones and '_norm_pieza' in df_pie.columns:
+            m_pie_fb = df_pie[df_pie['_norm_pieza'].isin(all_po_norms)]
+            for of_n in m_pie_fb['of_number'].dropna().unique():
+                s_of = str(of_n).strip()
+                if s_of:
+                    matched_ofs.add(s_of)
                 
     # 2. Filtrar piezas, avances y nidos de esas OFs
     df_pie_po = df_pie[df_pie['of_number'].isin(matched_ofs)] if not df_pie.empty and matched_ofs else pd.DataFrame()
@@ -184,9 +227,21 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
     df_tar_po = df_tar[df_tar['of_number'].isin(matched_ofs)] if not df_tar.empty and matched_ofs else pd.DataFrame()
     df_nid_po = df_nid[df_nid['of_number'].isin(matched_ofs)] if not df_nid.empty and matched_ofs else pd.DataFrame()
     
-    # Filtrar a los nidos específicos donde se anidaron estas piezas si son OFs de lote compartido
-    if not df_pie_po.empty and 'nido' in df_pie_po.columns and not df_nid_po.empty:
-        m_nested_nidos = df_pie_po[df_pie_po['no_pieza'].apply(lambda p: any(sku_matches(str(pr.get('clave_sku', '')), p) or sku_matches(str(pr.get('sku_cliente', '')), p) for _, pr in df_partidas.iterrows()))]
+    # Pre-normalizar columnas para matching vectorizado solo si aún no existen en caché
+    if not df_pie_po.empty and 'no_pieza' in df_pie_po.columns and '_norm_pieza' not in df_pie_po.columns:
+        df_pie_po = df_pie_po.copy()
+        df_pie_po['_norm_pieza'] = df_pie_po['no_pieza'].apply(lambda x: normalize_sku(clean_pronest_piece_name(x)))
+    if not df_ava_po.empty and 'no_pieza' in df_ava_po.columns and '_norm_pieza' not in df_ava_po.columns:
+        df_ava_po = df_ava_po.copy()
+        df_ava_po['_norm_pieza'] = df_ava_po['no_pieza'].apply(lambda x: normalize_sku(clean_pronest_piece_name(x)))
+        df_ava_po['_area_lc'] = df_ava_po['area'].astype(str).str.lower()
+    if not df_tar_po.empty and 'no_pieza' in df_tar_po.columns and '_norm_pieza' not in df_tar_po.columns:
+        df_tar_po = df_tar_po.copy()
+        df_tar_po['_norm_pieza'] = df_tar_po['no_pieza'].apply(lambda x: normalize_sku(clean_pronest_piece_name(x)))
+
+    # Filtrar a los nidos específicos donde se anidaron estas piezas (usando all_po_norms en O(1))
+    if not df_pie_po.empty and 'nido' in df_pie_po.columns and not df_nid_po.empty and all_po_norms:
+        m_nested_nidos = df_pie_po[df_pie_po['_norm_pieza'].isin(all_po_norms)]
         if not m_nested_nidos.empty:
             valid_nidos = set(m_nested_nidos['nido'].dropna().unique())
             df_nid_calc = df_nid_po[df_nid_po['nido'].isin(valid_nidos)]
@@ -224,9 +279,10 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
                 'nidos_cortados': len(grp)
             })
             
-    # Consulta cruzada con Remisiones para inferencia causal inteligente
-    from remisiones_sync import get_tracking_for_po as get_rem_tracking
-    rem_trk_info = get_rem_tracking(po_str, df_partidas, id_interno=id_interno, dbs=rem_dbs)
+    # Consulta cruzada con Remisiones (reutiliza rem_trk_info si ya fue calculado)
+    if rem_trk_info is None:
+        from remisiones_sync import get_tracking_for_po as get_rem_tracking
+        rem_trk_info = get_rem_tracking(po_str, df_partidas, id_interno=id_interno, dbs=rem_dbs)
     df_partidas_rem = rem_trk_info.get('df_partidas', pd.DataFrame())
     remisiones_asoc = rem_trk_info.get('remisiones_asociadas', [])
     
@@ -241,6 +297,46 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
             if sku_c_k:
                 rem_map[sku_c_k] = max(rem_map.get(sku_c_k, 0.0), c_rem_val)
                 
+    # Pre-indexar cantidades y OFs por _norm_pieza en diccionarios O(1)
+    pie_qty = {}
+    pie_ofs = {}
+    if not df_pie_po.empty and '_norm_pieza' in df_pie_po.columns:
+        for _, r in df_pie_po.iterrows():
+            np_k = r['_norm_pieza']
+            if not np_k:
+                continue
+            pie_qty[np_k] = pie_qty.get(np_k, 0.0) + float(r.get('cantidad', 0) or 0.0)
+            of_v = str(r.get('of_number', '')).strip()
+            if of_v:
+                pie_ofs.setdefault(np_k, set()).add(of_v)
+
+    ava_qty = {}
+    ava_ofs = {}
+    if not df_ava_po.empty and '_norm_pieza' in df_ava_po.columns:
+        for _, r in df_ava_po.iterrows():
+            np_k = r['_norm_pieza']
+            if not np_k:
+                continue
+            ar = r['_area_lc']
+            q = float(r.get('cantidad', 0) or 0.0)
+            d_ar = ava_qty.setdefault(np_k, {})
+            d_ar[ar] = d_ar.get(ar, 0.0) + q
+            of_v = str(r.get('of_number', '')).strip()
+            if of_v:
+                ava_ofs.setdefault(np_k, set()).add(of_v)
+
+    tar_qty = {}
+    tar_ofs = {}
+    if not df_tar_po.empty and '_norm_pieza' in df_tar_po.columns:
+        for _, r in df_tar_po.iterrows():
+            np_k = r['_norm_pieza']
+            if not np_k:
+                continue
+            tar_qty[np_k] = tar_qty.get(np_k, 0.0) + float(r.get('cantidad', 0) or 0.0)
+            of_v = str(r.get('of_number', '')).strip()
+            if of_v:
+                tar_ofs.setdefault(np_k, set()).add(of_v)
+
     partidas_cd = []
     total_req_cd = 0.0
     total_programado = 0.0
@@ -248,103 +344,73 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
     total_doblado = 0.0
     total_terminado = 0.0
     
-    # Pre-normalizar columnas para matching vectorizado (limpiando prefijos de Pronest como '02.-')
-    if not df_pie_po.empty and 'no_pieza' in df_pie_po.columns:
-        df_pie_po = df_pie_po.copy()
-        df_pie_po['_norm_pieza'] = df_pie_po['no_pieza'].apply(lambda x: normalize_sku(clean_pronest_piece_name(x)))
-    if not df_ava_po.empty and 'no_pieza' in df_ava_po.columns:
-        df_ava_po = df_ava_po.copy()
-        df_ava_po['_norm_pieza'] = df_ava_po['no_pieza'].apply(lambda x: normalize_sku(clean_pronest_piece_name(x)))
-        df_ava_po['_area_lc'] = df_ava_po['area'].astype(str).str.lower()
-    if not df_tar_po.empty and 'no_pieza' in df_tar_po.columns:
-        df_tar_po = df_tar_po.copy()
-        df_tar_po['_norm_pieza'] = df_tar_po['no_pieza'].apply(lambda x: normalize_sku(clean_pronest_piece_name(x)))
-    
-    if not df_partidas.empty:
-        for _, part in df_partidas.iterrows():
-            sku = str(part.get('clave_sku', '')).strip().upper()
-            sku_cli = str(part.get('sku_cliente', '')).strip().upper()
-            cant_req = float(part.get('cantidad_requerida', 0) or 0)
-            total_req_cd += cant_req
-            
-            # Normalizar SKUs para matching rápido
-            sku_norm = normalize_sku(sku)
-            sku_cli_norm = normalize_sku(sku_cli)
-            sku_clean1 = normalize_sku(clean_pronest_piece_name(sku))
-            sku_clean2 = normalize_sku(clean_pronest_piece_name(sku_cli))
-            valid_norms = {n for n in [sku_norm, sku_cli_norm, sku_clean1, sku_clean2] if n}
-            
-            c_prog = 0.0
-            c_corte = 0.0
-            c_doblez = 0.0
-            c_rebabeo = 0.0
-            c_liberado = 0.0
-            
-            # Buscar en piezas programadas (vectorizado)
-            m_pie = pd.DataFrame()
-            if not df_pie_po.empty and '_norm_pieza' in df_pie_po.columns:
-                m_pie = df_pie_po[df_pie_po['_norm_pieza'].isin(valid_norms)]
-                c_prog = float(m_pie['cantidad'].sum()) if not m_pie.empty else 0.0
+    for part, sku, sku_cli, valid_norms in partida_norms_list:
+        cant_req = float(part.get('cantidad_requerida', 0) or 0)
+        total_req_cd += cant_req
+        
+        c_prog = sum(pie_qty.get(n, 0.0) for n in valid_norms)
+        c_corte = 0.0
+        c_doblez = 0.0
+        c_rebabeo = 0.0
+        c_liberado = 0.0
+        for n in valid_norms:
+            d_ar = ava_qty.get(n)
+            if d_ar:
+                c_corte += d_ar.get('corte', 0.0)
+                c_doblez += d_ar.get('doblez', 0.0)
+                c_rebabeo += d_ar.get('rebabeo', 0.0)
+                c_liberado += d_ar.get('liberado', 0.0) + d_ar.get('empaque', 0.0)
                 
-            # Buscar en avances por área (vectorizado)
-            if not df_ava_po.empty and '_norm_pieza' in df_ava_po.columns:
-                m_ava = df_ava_po[df_ava_po['_norm_pieza'].isin(valid_norms)]
-                if not m_ava.empty:
-                    c_corte = float(m_ava[m_ava['_area_lc'] == 'corte']['cantidad'].sum())
-                    c_doblez = float(m_ava[m_ava['_area_lc'] == 'doblez']['cantidad'].sum())
-                    c_rebabeo = float(m_ava[m_ava['_area_lc'] == 'rebabeo']['cantidad'].sum())
-                    c_liberado = float(m_ava[m_ava['_area_lc'].isin(['liberado', 'empaque'])]['cantidad'].sum())
-                    
-            if c_liberado == 0.0 and not df_tar_po.empty and '_norm_pieza' in df_tar_po.columns:
-                m_tar = df_tar_po[df_tar_po['_norm_pieza'].isin(valid_norms)]
-                c_liberado = float(m_tar['cantidad'].sum()) if not m_tar.empty else 0.0
-                
-            # REGLA DE INTELIGENCIA OPERATIVA: Si ya está remisionada, estuvo fabricada al 100%
-            c_rem_part = max(rem_map.get(sku, 0.0), rem_map.get(sku_cli, 0.0), float(part.get('cantidad_remisionada', 0) or 0))
-            if c_rem_part > 0:
-                c_corte = max(c_corte, c_rem_part)
-                c_doblez = max(c_doblez, c_rem_part)
-                c_terminado_real = max(c_liberado, c_doblez, c_rebabeo, c_corte, c_rem_part)
-            else:
-                c_terminado_real = max(c_liberado, c_doblez, c_rebabeo, c_corte)
+        if c_liberado == 0.0:
+            c_liberado = sum(tar_qty.get(n, 0.0) for n in valid_norms)
             
-            prog_part = c_prog if c_prog > 0 else c_terminado_real
-            total_programado += min(cant_req, prog_part)
-            total_cortado += min(cant_req, c_corte)
-            total_doblado += min(cant_req, c_doblez)
-            total_terminado += min(cant_req, c_terminado_real)
-            
-            pct_cd = (c_terminado_real / cant_req * 100.0) if cant_req > 0 else 0.0
-            
-            piece_ofs = []
-            if not m_pie.empty and 'of_number' in m_pie.columns:
-                piece_ofs = [str(x).strip() for x in m_pie['of_number'].dropna().unique() if str(x).strip()]
-            if not piece_ofs and not df_ava_po.empty and '_norm_pieza' in df_ava_po.columns:
-                m_ava_p = df_ava_po[df_ava_po['_norm_pieza'].isin(valid_norms)]
-                if not m_ava_p.empty and 'of_number' in m_ava_p.columns:
-                    piece_ofs = [str(x).strip() for x in m_ava_p['of_number'].dropna().unique() if str(x).strip()]
-            if not piece_ofs and not df_tar_po.empty and '_norm_pieza' in df_tar_po.columns:
-                m_tar_p = df_tar_po[df_tar_po['_norm_pieza'].isin(valid_norms)]
-                if not m_tar_p.empty and 'of_number' in m_tar_p.columns:
-                    piece_ofs = [str(x).strip() for x in m_tar_p['of_number'].dropna().unique() if str(x).strip()]
+        # REGLA DE INTELIGENCIA OPERATIVA: Si ya está remisionada, estuvo fabricada al 100%
+        c_rem_part = max(rem_map.get(sku, 0.0), rem_map.get(sku_cli, 0.0), float(part.get('cantidad_remisionada', 0) or 0))
+        if c_rem_part > 0:
+            c_corte = max(c_corte, c_rem_part)
+            c_doblez = max(c_doblez, c_rem_part)
+            c_terminado_real = max(c_liberado, c_doblez, c_rebabeo, c_corte, c_rem_part)
+        else:
+            c_terminado_real = max(c_liberado, c_doblez, c_rebabeo, c_corte)
+        
+        prog_part = c_prog if c_prog > 0 else c_terminado_real
+        total_programado += min(cant_req, prog_part)
+        total_cortado += min(cant_req, c_corte)
+        total_doblado += min(cant_req, c_doblez)
+        total_terminado += min(cant_req, c_terminado_real)
+        
+        pct_cd = (c_terminado_real / cant_req * 100.0) if cant_req > 0 else 0.0
+        
+        piece_ofs_set = set()
+        for n in valid_norms:
+            if n in pie_ofs:
+                piece_ofs_set.update(pie_ofs[n])
+        if not piece_ofs_set:
+            for n in valid_norms:
+                if n in ava_ofs:
+                    piece_ofs_set.update(ava_ofs[n])
+        if not piece_ofs_set:
+            for n in valid_norms:
+                if n in tar_ofs:
+                    piece_ofs_set.update(tar_ofs[n])
 
-            if piece_ofs:
-                ofs_tag = ', '.join(sorted(piece_ofs))
-            elif not matched_ofs and remisiones_asoc:
-                ofs_tag = f"Fabricado (Remisión {', '.join(remisiones_asoc)})"
-            elif len(matched_ofs) == 1:
-                ofs_tag = list(matched_ofs)[0]
-            else:
-                ofs_tag = 'Por programar OF'
-                
-            p_res = dict(part)
-            p_res['piezas_programadas'] = prog_part
-            p_res['piezas_cortadas'] = c_corte
-            p_res['piezas_dobladas'] = c_doblez
-            p_res['piezas_terminadas_planta'] = c_terminado_real
-            p_res['pct_avance_fabricacion'] = round(min(100.0, pct_cd), 1)
-            p_res['ofs_asociadas'] = ofs_tag
-            partidas_cd.append(p_res)
+        if piece_ofs_set:
+            ofs_tag = ', '.join(sorted(piece_ofs_set))
+        elif not matched_ofs and remisiones_asoc:
+            ofs_tag = f"Fabricado (Remisión {', '.join(remisiones_asoc)})"
+        elif len(matched_ofs) == 1:
+            ofs_tag = list(matched_ofs)[0]
+        else:
+            ofs_tag = 'Por programar OF'
+            
+        p_res = dict(part)
+        p_res['piezas_programadas'] = prog_part
+        p_res['piezas_cortadas'] = c_corte
+        p_res['piezas_dobladas'] = c_doblez
+        p_res['piezas_terminadas_planta'] = c_terminado_real
+        p_res['pct_avance_fabricacion'] = round(min(100.0, pct_cd), 1)
+        p_res['ofs_asociadas'] = ofs_tag
+        partidas_cd.append(p_res)
             
     pct_global_cd = (total_terminado / total_req_cd * 100.0) if total_req_cd > 0 else 0.0
     
@@ -375,22 +441,36 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
 
 def get_integrated_360_summary(df_all_pos, df_all_partidas):
     """Genera la Matriz de Control 360 combinando Requerimiento Maestro + Corte y Doblez + Remisiones."""
-    from remisiones_sync import get_tracking_for_po
+    from remisiones_sync import get_tracking_for_po, load_remisiones_databases
     
     matrix = []
     if df_all_pos.empty:
         return pd.DataFrame()
         
+    dbs_rem = load_remisiones_databases()
+    dbs_cd = load_corte_doblez_databases()
+    
+    partidas_by_po = {}
+    if not df_all_partidas.empty and 'po' in df_all_partidas.columns:
+        df_p_tmp = df_all_partidas.copy()
+        df_p_tmp['_po_key'] = df_p_tmp['po'].astype(str).str.strip()
+        for k, grp in df_p_tmp.groupby('_po_key', sort=False):
+            partidas_by_po[k] = grp.drop(columns=['_po_key'])
+            
+    empty_df = pd.DataFrame()
     for _, po_row in df_all_pos.iterrows():
         po_folio = str(po_row.get('po', '')).strip()
         id_int_val = str(po_row.get('id_interno', '')).strip()
-        partidas_po = df_all_partidas[df_all_partidas['po'].astype(str).str.strip() == po_folio] if not df_all_partidas.empty else pd.DataFrame()
+        partidas_po = partidas_by_po.get(po_folio, empty_df)
         
         # 1. Trazabilidad con Remisiones
-        trk_rem = get_tracking_for_po(po_folio, partidas_po, id_interno=id_int_val)
+        trk_rem = get_tracking_for_po(po_folio, partidas_po, id_interno=id_int_val, dbs=dbs_rem)
         
-        # 2. Trazabilidad con Corte y Doblez
-        trk_cd = get_corte_doblez_tracking_for_po(po_folio, trk_rem['df_partidas'], id_interno=id_int_val)
+        # 2. Trazabilidad con Corte y Doblez (reutilizando trk_rem)
+        trk_cd = get_corte_doblez_tracking_for_po(
+            po_folio, trk_rem['df_partidas'], id_interno=id_int_val,
+            dbs=dbs_cd, skip_sku_fallback=True, rem_dbs=dbs_rem, rem_trk_info=trk_rem
+        )
         
         tot_req = trk_rem['total_requerido']
         tot_fab = trk_cd['total_terminado_planta']

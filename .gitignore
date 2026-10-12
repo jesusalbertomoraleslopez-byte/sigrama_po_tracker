@@ -24,3 +24,9 @@ Thumbs.db
 
 # Streamlit Secrets (NUNCA subir a GitHub - contiene tokens)
 .streamlit/secrets.toml
+
+# Binarios pesados de correos y PDFs (almacenados en GCS gs://sigrama-po-tracker-storage/data/correos/)
+data/correos/*
+*.db-wal
+*.db-shm
+

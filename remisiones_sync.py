@@ -10,6 +10,7 @@ from config import (
     ESTATUS_PARCIAL,
     ESTATUS_COMPLETADA,
     is_historical_completed,
+    is_status_only_completed,
     get_historical_qty_override
 )
 
@@ -664,7 +665,7 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
             pct_cumpl = 100.0
             pct_fab = 100.0
             ofs_str = "Validación Histórica"
-        elif tot_rem >= tot_req and tot_req > 0:
+        elif (tot_rem >= tot_req and tot_req > 0) or is_status_only_completed(id_int_val):
             st_360 = "🟢 Remisionada Total (100%)"
             st_cat = "Remisionada Total"
         elif tot_rem > 0:

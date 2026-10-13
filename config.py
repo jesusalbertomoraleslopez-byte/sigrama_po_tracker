@@ -99,6 +99,20 @@ HISTORICAL_COMPLETED_POS = {
     '26031039', '26031839', '26031893'
 }
 
+# Órdenes confirmadas como terminadas, entarimadas y remisionadas: solo se fuerza el ESTATUS
+# a "Remisionada Total"; los conteos de piezas (fabricadas/entarimadas/remisionadas) no se alteran.
+STATUS_ONLY_COMPLETED_INTS = {
+    'INT-0003', 'INT-0012', 'INT-0026', 'INT-0027', 'INT-0028',
+    'INT-0063', 'INT-0064', 'INT-0066', 'INT-0067', 'INT-0070',
+    'INT-0072', 'INT-0073'
+}
+
+def is_status_only_completed(id_interno=""):
+    """True si la orden debe mostrarse con estatus Remisionada Total sin modificar sus piezas."""
+    import re
+    digits = re.sub(r'[^0-9]', '', str(id_interno or ''))
+    return bool(digits) and f"INT-{int(digits):04d}" in STATUS_ONLY_COMPLETED_INTS
+
 # Cantidad específica entregada para órdenes con artículos cancelados respecto a la PO original
 HISTORICAL_QTY_OVERRIDE = {
     'INT-0007': 1403.0,

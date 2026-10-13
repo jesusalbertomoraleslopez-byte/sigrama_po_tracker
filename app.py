@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 from config import (
+    is_status_only_completed,
     PRIMARY_COLOR,
     SECONDARY_COLOR,
     ESTATUS_COLORS,
@@ -2380,7 +2381,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 estatus_360 = "🚫 Cancelada Formalmente"
                 estatus_color = "#EF4444"
                 tot_pend_env = 0.0
-            elif tot_rem >= tot_req and tot_req > 0:
+            elif (tot_rem >= tot_req and tot_req > 0) or is_status_only_completed(cab_info.get('id_interno', '')):
                 estatus_360 = "Remisionada Total (100%)"
                 estatus_color = "#10B981"
             elif tot_rem > 0:

@@ -2361,7 +2361,10 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
             
             # Consultar ambas aplicaciones con Folio PO e ID Interno
             rem_tracking = get_tracking_for_po(sel_po, df_partidas_po, id_interno=id_int_txt)
-            cd_tracking = get_corte_doblez_tracking_for_po(sel_po, df_partidas_po, id_interno=id_int_txt)
+            cd_tracking = get_corte_doblez_tracking_for_po(
+                sel_po, rem_tracking.get('df_partidas', df_partidas_po),
+                id_interno=id_int_txt, rem_trk_info=rem_tracking
+            )
             
             tot_req = float(rem_tracking.get('total_requerido', 0.0) or 0.0)
             tot_fab = float(cd_tracking.get('total_fabricado', cd_tracking.get('total_terminado_planta', 0.0)) or 0.0)

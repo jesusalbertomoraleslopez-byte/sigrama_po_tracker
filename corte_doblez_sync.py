@@ -364,8 +364,13 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
         if c_liberado == 0.0:
             c_liberado = sum(tar_qty.get(n, 0.0) for n in valid_norms)
             
-        # REGLA DE INTELIGENCIA OPERATIVA: Si ya está remisionada, estuvo fabricada al 100%
-        c_rem_part = max(rem_map.get(sku, 0.0), rem_map.get(sku_cli, 0.0), float(part.get('cantidad_remisionada', 0) or 0))
+        # REGLA DE INTELIGENCIA OPERATIVA: Si ya está entarimada en Almacén PT o remisionada, ya fue fabricada en planta
+        c_rem_part = max(
+            rem_map.get(sku, 0.0),
+            rem_map.get(sku_cli, 0.0),
+            float(part.get('cantidad_remisionada', 0) or 0),
+            float(part.get('cantidad_entarimada', 0) or 0)
+        )
         if c_rem_part > 0:
             c_corte = max(c_corte, c_rem_part)
             c_doblez = max(c_doblez, c_rem_part)
@@ -374,12 +379,18 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
             c_terminado_real = max(c_liberado, c_doblez, c_rebabeo, c_corte)
         
         prog_part = c_prog if c_prog > 0 else c_terminado_real
-        total_programado += min(cant_req, prog_part)
-        total_cortado += min(cant_req, c_corte)
-        total_doblado += min(cant_req, c_doblez)
-        total_terminado += min(cant_req, c_terminado_real)
-        
-        pct_cd = (c_terminado_real / cant_req * 100.0) if cant_req > 0 else 0.0
+        if cant_req > 0:
+            total_programado += min(cant_req, prog_part)
+            total_cortado += min(cant_req, c_corte)
+            total_doblado += min(cant_req, c_doblez)
+            total_terminado += min(cant_req, c_terminado_real)
+            pct_cd = (c_terminado_real / cant_req * 100.0)
+        else:
+            total_programado += prog_part
+            total_cortado += c_corte
+            total_doblado += c_doblez
+            total_terminado += c_terminado_real
+            pct_cd = 100.0 if c_terminado_real > 0 else 0.0
         
         piece_ofs_set = set()
         for n in valid_norms:

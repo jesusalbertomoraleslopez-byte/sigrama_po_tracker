@@ -153,7 +153,7 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
     # 1. Extracción de Partidas mediante Agrupación Espacial por Coordenadas (Y-clustering)
     # Patrón Principal: Cantidad Unidad SKU_Cliente SKU_Nuestro P_Unitario P_Total Fecha
     patron_fila_item = re.compile(
-        r'^(\d+(?:\.\d+)?)\s+'                         # 1: Cantidad (ej. 16.00)
+        r'^([\d,]+(?:\.\d+)?)\s+'                      # 1: Cantidad (ej. 16.00 o 1,008.00)
         r'(PIEZA|PZA|KG|METRO|JGO|LOTE|SER|PZS|PZ)\s+' # 2: Unidad
         r'([A-Z0-9\-_]{3,20})\s+'                     # 3: SKU Cliente (ej. ISSIV00055, SWB01431, SWB00319)
         r'([A-Z0-9\-_/]{3,30})\s+'                    # 4: SKU Nuestro / Planta (ej. 11-A-9836-01, 11-A-6014-01, PP19380-03)
@@ -164,7 +164,7 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
     )
     
     patron_fila_alt = re.compile(
-        r'^(\d+(?:\.\d+)?)\s+'
+        r'^([\d,]+(?:\.\d+)?)\s+'
         r'(PIEZA|PZA|KG|METRO|JGO|LOTE|SER|PZS|PZ)\s+'
         r'([A-Z0-9\-_]{3,20})\s+'
         r'(.+?)\s+'
@@ -266,7 +266,7 @@ def parse_po_pdf(pdf_bytes_or_path, email_context=None):
     # Fallback si el clustering espacial estricto no encontró partidas:
     if not all_partidas:
         patron_fb = re.compile(
-            r'(\d+(?:\.\d+)?)\s+'
+            r'([\d,]+(?:\.\d+)?)\s+'
             r'(PIEZA|PZA|KG|METRO|JGO|LOTE|SER|PZS|PZ)\s+'
             r'([A-Z0-9\-_]{3,20})\s+'
             r'([A-Z0-9\-_/]{3,25})'

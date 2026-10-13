@@ -23,16 +23,11 @@ _REM_CACHE = {
 }
 
 def normalize_po(po_val):
-    """Normaliza folios de PO eliminando prefijos, guiones, barras y espacios."""
+    """Normaliza folios de PO eliminando prefijos (PO, P0, OC), guiones, barras y espacios."""
     if not po_val or pd.isna(po_val):
         return ""
     s = str(po_val).strip().upper()
-    if s.startswith("PO "):
-        s = s[3:].strip()
-    elif s.startswith("PO-"):
-        s = s[3:].strip()
-    elif s.startswith("PO"):
-        s = s[2:].strip()
+    s = re.sub(r'^(?:PO|P0|OC)[\s\-_]*', '', s)
     return s.replace("-", "").replace(" ", "").replace("/", "").replace("_", "")
 
 def parse_tarimas_asociadas(raw_val):
@@ -190,7 +185,8 @@ def load_remisiones_databases():
 def clean_pronest_piece_name(p):
     s = str(p).strip()
     s = re.sub(r'^\d+[\.\-_]\s*', '', s)
-    s = re.sub(r'[\-_]\s*\(\d+[-/]\d+[-/]\d+\).*$', '', s)
+    s = re.sub(r'[\-_]?\s*\(\d+[-/][A-Za-z0-9]+[-/]\d+\).*$', '', s)
+    s = re.sub(r'[\s\-_]+TRT[O0][\s\-_0-9]*$', '', s, flags=re.IGNORECASE)
     return s.strip()
 
 def normalize_sku(s):
@@ -203,11 +199,9 @@ def _fast_sku_match(t_norm, t_first, c_norm, c_clean, c_first):
         return False
     if t_norm == c_norm or t_norm == c_clean:
         return True
-    if t_first and c_first and t_first == c_first:
+    if t_first and (t_first == c_first or t_first == c_clean):
         return True
-    if len(c_norm) >= 6 and t_norm.startswith(c_norm):
-        return True
-    if len(t_norm) >= 6 and c_norm.startswith(t_norm):
+    if c_first and t_norm == c_first:
         return True
     return False
 
@@ -288,20 +282,35 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
     id_int_clean = re.sub(r'[^0-9]', '', str(id_interno)) if id_interno else ""
     id_int_num = int(id_int_clean) if id_int_clean else None
     
-    # 1. Filtrar registros de Detalle_Tarimas asociados a esta PO (búsqueda normalizada y flexible)
+    # 1. Filtrar registros de Detalle_Tarimas asociados a esta PO (búsqueda normalizada y sin contaminación entre POs hermanas)
     df_det_po = pd.DataFrame()
     if not df_det.empty:
-        mask_match = pd.Series([False] * len(df_det), index=df_det.index)
+        mask_po = pd.Series([False] * len(df_det), index=df_det.index)
         if 'PO' in df_det.columns:
             if 'norm_po' not in df_det.columns:
                 df_det['norm_po'] = df_det['PO'].apply(normalize_po)
             po_col = df_det['_po_str'] if '_po_str' in df_det.columns else df_det['PO'].astype(str)
-            mask_match = mask_match | (df_det['norm_po'] == po_norm) | (df_det['norm_po'].str.contains(po_norm, regex=False, na=False)) | (po_col.str.contains(po_str, regex=False, na=False))
+            mask_po = (df_det['norm_po'] == po_norm) | (df_det['norm_po'].str.contains(po_norm, regex=False, na=False)) | (po_col.str.contains(po_str, regex=False, na=False))
+        mask_proy = pd.Series([False] * len(df_det), index=df_det.index)
         if 'Proyecto' in df_det.columns and id_int_num is not None:
             pat = rf'\b(?:PO|INT|OC)?\s*0*{id_int_num}\b'
             proy_col = df_det['_proy_str'] if '_proy_str' in df_det.columns else df_det['Proyecto'].astype(str)
-            mask_match = mask_match | proy_col.str.contains(pat, regex=True, case=False, na=False)
-        df_det_po = df_det[mask_match]
+            mask_proy = proy_col.str.contains(pat, regex=True, case=False, na=False)
+            if 'norm_po' in df_det.columns:
+                # Si la fila ya tiene un folio de PO explícito que corresponde a OTRA PO válida en el catálogo
+                # (distinta del comodín histórico 26020711), no mezclarla con POs hermanas que comparten el mismo INT-XXXX
+                known_pos = _REM_CACHE.get("known_pos_norm")
+                if known_pos is None:
+                    try:
+                        from db_manager import get_all_pos
+                        known_pos = {normalize_po(x) for x in get_all_pos()['po'].astype(str) if normalize_po(x) and normalize_po(x) != '26020711'}
+                        _REM_CACHE["known_pos_norm"] = known_pos
+                    except Exception:
+                        known_pos = set()
+                if known_pos:
+                    is_other_valid_po = df_det['norm_po'].isin(known_pos - {po_norm})
+                    mask_proy = mask_proy & (~is_other_valid_po)
+        df_det_po = df_det[mask_po | mask_proy]
         
     # Mapeo de Tarimas a Folios de Remisión (desde caché O(1) si está disponible)
     tarima_to_remision = _REM_CACHE.get("tarima_to_remision") or {}
@@ -347,29 +356,77 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
     det_po_tuples = []
     if not df_det_po.empty and 'SKU' in df_det_po.columns:
         has_c = '_c_norm' in df_det_po.columns
-        for _, d_row in df_det_po.iterrows():
+        for det_i, (_, d_row) in enumerate(df_det_po.iterrows()):
+            raw_p = str(d_row.get('SKU', '')).strip()
             if has_c:
                 cn, cc, cf = d_row['_c_norm'], d_row['_c_clean'], d_row['_c_first']
             else:
-                raw_p = str(d_row.get('SKU', '')).strip()
                 cn = normalize_sku(raw_p)
                 cc = normalize_sku(clean_pronest_piece_name(raw_p))
                 cf = normalize_sku(raw_p.split()[0]) if raw_p else ""
             t_id = str(d_row.get('ID_Tarima', '')).strip()
             c_pzas = float(d_row.get('Cantidad', 0) or 0)
-            det_po_tuples.append((cn, cc, cf, t_id, c_pzas))
+            d_desc = str(d_row.get('Descripcion', '') or '').strip()
+            d_norm_po = str(d_row.get('norm_po', '') or normalize_po(d_row.get('PO', ''))).strip()
+            is_direct_po = (d_norm_po == po_norm) or (po_norm and po_norm in d_norm_po)
+            det_po_tuples.append((det_i, cn, cc, cf, t_id, c_pzas, raw_p, d_desc, is_direct_po))
 
     partidas_enriched = []
     total_requerido = 0.0
     total_remisionado = 0.0
     remisiones_asociadas_set = set()
     historial_envios = []
+    matched_det_indices = set()
     
     if not df_partidas.empty:
-        for _, part in df_partidas.iterrows():
+        # Pre-identificar qué filas de df_partidas coinciden con cada det_i para no duplicar cuando una PO repite el mismo SKU
+        part_rows = [dict(r) for _, r in df_partidas.iterrows()]
+        det_to_parts = {}
+        part_to_dets = {p_i: [] for p_i in range(len(part_rows))}
+        if det_po_tuples:
+            for p_i, part in enumerate(part_rows):
+                sku = str(part.get('clave_sku', '')).strip().upper()
+                sku_cli = str(part.get('sku_cliente', '')).strip().upper()
+                t_targets = []
+                for s_cand in (sku, sku_cli):
+                    if s_cand:
+                        tn = normalize_sku(s_cand)
+                        tf = normalize_sku(clean_pronest_piece_name(s_cand))
+                        if tn:
+                            t_targets.append((tn, tf))
+                for det_i, cn, cc, cf, t_id, c_pzas, raw_p, d_desc, is_direct_po in det_po_tuples:
+                    if any(_fast_sku_match(tn, tf, cn, cc, cf) for tn, tf in t_targets):
+                        part_to_dets[p_i].append(det_i)
+                        det_to_parts.setdefault(det_i, []).append(p_i)
+
+        # Asignar cantidades de cada registro de tarima sin duplicar entre renglones con el mismo SKU
+        alloc_by_part_det = {p_i: [] for p_i in range(len(part_rows))}
+        part_rem_need = {p_i: float(part_rows[p_i].get('cantidad_requerida', 0) or 0) for p_i in range(len(part_rows))}
+        for det_i, cn, cc, cf, t_id, c_pzas, raw_p, d_desc, is_direct_po in det_po_tuples:
+            matching_ps = det_to_parts.get(det_i, [])
+            if not matching_ps:
+                continue
+            matched_det_indices.add(det_i)
+            if len(matching_ps) == 1:
+                p_target = matching_ps[0]
+                alloc_by_part_det[p_target].append((t_id, c_pzas))
+                part_rem_need[p_target] = max(0.0, part_rem_need[p_target] - c_pzas)
+            else:
+                rem_qty = c_pzas
+                for idx_m, p_target in enumerate(matching_ps):
+                    if rem_qty <= 0:
+                        break
+                    if idx_m == len(matching_ps) - 1:
+                        take_q = rem_qty
+                    else:
+                        take_q = min(rem_qty, part_rem_need[p_target])
+                    if take_q > 0:
+                        alloc_by_part_det[p_target].append((t_id, take_q))
+                        part_rem_need[p_target] = max(0.0, part_rem_need[p_target] - take_q)
+                        rem_qty -= take_q
+
+        for p_i, part in enumerate(part_rows):
             sku = str(part.get('clave_sku', '')).strip().upper()
-            sku_cli = str(part.get('sku_cliente', '')).strip().upper()
-            desc_prod = str(part.get('descripcion_producto', '')).strip().upper()
             cant_req = float(part.get('cantidad_requerida', 0) or 0)
             total_requerido += cant_req
             
@@ -377,43 +434,33 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
             cant_rem = 0.0
             rem_folios_partida = set()
             
-            if det_po_tuples:
-                t_targets = []
-                for s_cand in (sku, sku_cli, desc_prod):
-                    if s_cand:
-                        tn = normalize_sku(s_cand)
-                        tf = normalize_sku(s_cand.split()[0]) if s_cand else ""
-                        if tn:
-                            t_targets.append((tn, tf))
-                
-                for cn, cc, cf, t_id, c_piezas in det_po_tuples:
-                    if any(_fast_sku_match(tn, tf, cn, cc, cf) for tn, tf in t_targets):
-                        cant_entarimada += c_piezas
-                        rem_infos = tarima_to_remision.get(t_id, [])
-                        if rem_infos:
-                            cant_rem += c_piezas
-                            for info in rem_infos:
-                                rem_folios_partida.add(info['folio_remision'])
-                                remisiones_asociadas_set.add(info['folio_remision'])
-                                historial_envios.append({
-                                    'SKU': sku,
-                                    'Descripción': part.get('descripcion_producto', ''),
-                                    'Cantidad Enviada': c_piezas,
-                                    'ID Tarima': t_id,
-                                    'Folio Remisión': info['folio_remision'],
-                                    'Fecha Salida': info['fecha_salida'],
-                                    'Receptor': info['receptor']
-                                })
-                        else:
-                            historial_envios.append({
-                                'SKU': sku,
-                                'Descripción': part.get('descripcion_producto', ''),
-                                'Cantidad Enviada': c_piezas,
-                                'ID Tarima': t_id,
-                                'Folio Remisión': 'En Almacén (Entarimado sin remisión)',
-                                'Fecha Salida': 'Pendiente de Salida',
-                                'Receptor': 'Planta Sigrama'
-                            })
+            for t_id, c_piezas in alloc_by_part_det.get(p_i, []):
+                cant_entarimada += c_piezas
+                rem_infos = tarima_to_remision.get(t_id, [])
+                if rem_infos:
+                    cant_rem += c_piezas
+                    for info in rem_infos:
+                        rem_folios_partida.add(info['folio_remision'])
+                        remisiones_asociadas_set.add(info['folio_remision'])
+                        historial_envios.append({
+                            'SKU': sku,
+                            'Descripción': part.get('descripcion_producto', ''),
+                            'Cantidad Enviada': c_piezas,
+                            'ID Tarima': t_id,
+                            'Folio Remisión': info['folio_remision'],
+                            'Fecha Salida': info['fecha_salida'],
+                            'Receptor': info['receptor']
+                        })
+                else:
+                    historial_envios.append({
+                        'SKU': sku,
+                        'Descripción': part.get('descripcion_producto', ''),
+                        'Cantidad Enviada': c_piezas,
+                        'ID Tarima': t_id,
+                        'Folio Remisión': 'En Almacén (Entarimado sin remisión)',
+                        'Fecha Salida': 'Pendiente de Salida',
+                        'Receptor': 'Planta Sigrama'
+                    })
                         
             cant_entarimada = max(cant_entarimada, cant_rem)
             total_remisionado += cant_rem
@@ -435,6 +482,73 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
             p_dict['estatus_partida'] = st_item
             p_dict['remisiones_folios'] = ', '.join(sorted(rem_folios_partida)) if rem_folios_partida else ('Tarima Armada (Sin Remisión)' if cant_entarimada > 0 else 'Sin envío')
             partidas_enriched.append(p_dict)
+
+    # 2.5 Incorporar registros de tarima en Almacén/Remisiones asignados explícitamente a esta PO (ej. PO 2609-3599 / INT-069)
+    # cuyo SKU no estaba listado en las partidas originales del PDF de esta PO
+    unmatched_by_sku = {}
+    for det_i, cn, cc, cf, t_id, c_pzas, raw_p, d_desc, is_direct_po in det_po_tuples:
+        if det_i not in matched_det_indices and is_direct_po and c_pzas > 0:
+            sku_key = clean_pronest_piece_name(raw_p).upper() or raw_p.upper()
+            unmatched_by_sku.setdefault(sku_key, []).append((t_id, c_pzas, d_desc))
+
+    for extra_sku, extra_items in unmatched_by_sku.items():
+        cant_ent_extra = 0.0
+        cant_rem_extra = 0.0
+        extra_rem_folios = set()
+        extra_t_ids = []
+        first_desc = next((d for _, _, d in extra_items if d), f"Material {extra_sku}")
+        for t_id, c_piezas, _ in extra_items:
+            cant_ent_extra += c_piezas
+            if t_id and t_id not in extra_t_ids:
+                extra_t_ids.append(t_id)
+            rem_infos = tarima_to_remision.get(t_id, [])
+            if rem_infos:
+                cant_rem_extra += c_piezas
+                for info in rem_infos:
+                    extra_rem_folios.add(info['folio_remision'])
+                    remisiones_asociadas_set.add(info['folio_remision'])
+                    historial_envios.append({
+                        'SKU': extra_sku,
+                        'Descripción': f"{first_desc} (Tarima {t_id})",
+                        'Cantidad Enviada': c_piezas,
+                        'ID Tarima': t_id,
+                        'Folio Remisión': info['folio_remision'],
+                        'Fecha Salida': info['fecha_salida'],
+                        'Receptor': info['receptor']
+                    })
+            else:
+                historial_envios.append({
+                    'SKU': extra_sku,
+                    'Descripción': f"{first_desc} (Tarima {t_id})",
+                    'Cantidad Enviada': c_piezas,
+                    'ID Tarima': t_id,
+                    'Folio Remisión': 'En Almacén (Entarimado sin remisión)',
+                    'Fecha Salida': 'Pendiente de Salida',
+                    'Receptor': 'Planta Sigrama'
+                })
+        cant_ent_extra = max(cant_ent_extra, cant_rem_extra)
+        total_remisionado += cant_rem_extra
+        t_list_str = ', '.join(extra_t_ids[:3])
+        partidas_enriched.append({
+            'po': po_str,
+            'item_no': len(partidas_enriched) + 1,
+            'sku_cliente': f"TARIMA {t_list_str}" if t_list_str else "ALMACÉN PT",
+            'clave_sku': extra_sku,
+            'descripcion_producto': f"{first_desc} (Entarimado en {t_list_str})",
+            'cantidad_requerida': 0.0,
+            'unidad': 'PIEZA',
+            'precio_unitario': 0.0,
+            'precio_total': 0.0,
+            'fecha_entrega': '—',
+            'parcialidad': 'P1',
+            'observaciones_partida': f"Entarimado en Almacén bajo PO {po_str} ({t_list_str})",
+            'cantidad_entarimada': cant_ent_extra,
+            'cantidad_remisionada': cant_rem_extra,
+            'cantidad_pendiente': 0.0,
+            'porcentaje_cumplimiento': 100.0 if cant_rem_extra > 0 else 0.0,
+            'estatus_partida': ESTATUS_COMPLETADA if cant_rem_extra > 0 else ESTATUS_REGISTRADA,
+            'remisiones_folios': ', '.join(sorted(extra_rem_folios)) if extra_rem_folios else 'Tarima Armada (Sin Remisión)'
+        })
             
     # 3. Estatus Global de la PO
     pct_global = (total_remisionado / total_requerido * 100.0) if total_requerido > 0 else 0.0
@@ -506,7 +620,7 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
             try:
                 # skip_sku_fallback=True + rem_trk_info=tracking evita recalcular remisiones y búsquedas redundantes
                 cd_trk = get_corte_doblez_tracking_for_po(
-                    po_folio, partidas_po, id_interno=id_int_val,
+                    po_folio, tracking.get('df_partidas', partidas_po), id_interno=id_int_val,
                     dbs=dbs_cd, skip_sku_fallback=True, rem_dbs=dbs_rem, rem_trk_info=tracking
                 )
                 tot_fab = float(cd_trk.get('total_fabricado', cd_trk.get('total_terminado_planta', 0.0)) or 0.0)
@@ -521,6 +635,11 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
         tot_req = float(tracking.get('total_requerido', 0.0) or 0.0)
         tot_ent = float(tracking.get('total_entarimado', 0.0) or 0.0)
         tot_rem = float(tracking.get('total_remisionado', 0.0) or 0.0)
+        # Regla física de planta: toda pieza ya entarimada en Almacén PT fue fabricada previamente
+        if tot_ent > tot_fab:
+            tot_fab = tot_ent
+            if tot_req > 0:
+                pct_fab = round(min(100.0, tot_fab / tot_req * 100.0), 1)
         tot_pend = max(0.0, tot_req - tot_rem)
         pct_cumpl = round((tot_rem / tot_req * 100.0) if tot_req > 0 else 0.0, 1)
         

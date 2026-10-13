@@ -1780,6 +1780,45 @@ elif menu == "📬 Bandeja de Entrada OCR":
             hide_index=True
         )
         
+        # Edición rápida del Nombre del Proyecto / Descripción desde el historial
+        with st.expander("✏️ Editar Nombre del Proyecto de una Orden", expanded=False):
+            qh_opts = {}
+            qh_labels = []
+            for _, r_qh in df_hist_filtered.iterrows():
+                p_qh = str(r_qh.get('po', '')).strip()
+                id_qh = str(r_qh.get('id_interno', '') or '').strip()
+                pr_qh = str(r_qh.get('proyecto', '') or 'SIN PROYECTO').strip()
+                lbl_qh = f"{id_qh} — PO {p_qh} ({pr_qh})" if id_qh else f"PO {p_qh} ({pr_qh})"
+                qh_opts[lbl_qh] = r_qh
+                qh_labels.append(lbl_qh)
+            if qh_labels:
+                qh_c1, qh_c2, qh_c3 = st.columns([2.2, 1.8, 1.0])
+                with qh_c1:
+                    sel_qh_lbl = st.selectbox("Orden de Compra (PO):", options=qh_labels, key="qh_hist_select_po")
+                    sel_qh_po = str(qh_opts[sel_qh_lbl].get('po', '')).strip()
+                with qh_c2:
+                    new_qh_proy = st.text_input(
+                        "Nuevo Nombre del Proyecto:",
+                        value=str(qh_opts[sel_qh_lbl].get('proyecto', '') or '').strip(),
+                        placeholder="Ej. RENO 6",
+                        key=f"qh_hist_proy_{sel_qh_po}"
+                    )
+                with qh_c3:
+                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                    if st.button("💾 Guardar Proyecto", type="primary", use_container_width=True, key=f"btn_qh_hist_save_{sel_qh_po}"):
+                        clean_qh = str(new_qh_proy).strip().upper()
+                        ok_qh, msg_qh = update_po_fields(
+                            sel_qh_po,
+                            {'proyecto': clean_qh, 'texto_etiqueta': clean_qh},
+                            usuario="Edición Rápida Historial"
+                        )
+                        if ok_qh:
+                            st.cache_data.clear()
+                            st.toast(f"✅ Proyecto de PO {sel_qh_po} actualizado a {clean_qh}")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {msg_qh}")
+
         # Descarga Excel del historial de cargas
         buf_h = io.BytesIO()
         with pd.ExcelWriter(buf_h, engine='openpyxl') as writer:

@@ -177,7 +177,11 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
                       (po_str and po_str in of_num)
                       
             # Coincidencia por ID Interno flexible (ej. 47 en PO 047, INT-0047, etc.)
-            m_by_id = bool(id_pat and id_pat.search(comb_txt))
+            # - Se ignora el número de la propia OF ("OF 00032-...") para no confundirlo con INT-0032.
+            # - Si la OF ya declara una PO explícita distinta, no se reasigna por ID interno.
+            comb_txt_id = re.sub(r'\bOF\s*0*\d+', ' ', comb_txt)
+            po_explicit_other = bool(po_field_norm) and po_field_norm != po_norm
+            m_by_id = bool(id_pat and not po_explicit_other and id_pat.search(comb_txt_id))
                     
             # Inteligencia Operativa: Caso específico OF 83 (P4-P5-P6 Cal. 12 CLOUD)
             if '00083' in of_num:

@@ -88,7 +88,7 @@ HISTORICAL_COMPLETED_INTS = {
     # Órdenes terminadas, entarimadas y remisionadas (100% en todas las etapas)
     'INT-0003', 'INT-0012', 'INT-0026', 'INT-0027', 'INT-0028',
     'INT-0063', 'INT-0064', 'INT-0066', 'INT-0067', 'INT-0070',
-    'INT-0072', 'INT-0073', 'INT-0047', 'INT-0077', 'INT-0078', 'INT-0079'
+    'INT-0072', 'INT-0073', 'INT-0047', 'INT-0077', 'INT-0078', 'INT-0079', 'INT-0054'
 }
 
 HISTORICAL_COMPLETED_POS = {

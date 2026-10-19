@@ -980,7 +980,8 @@ def render_materia_prima_page():
             file_name=f"Reporte_Uso_Materia_Prima_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="btn_dl_materia_prima_excel",
-            help="Descargar archivo Excel formateado con el diseño azul de cabecera exacto a la imagen solicitada y fórmulas de totales nativas."
+            help="Descargar archivo Excel formateado con el diseño azul de cabecera exacto a la imagen solicitada y fórmulas de totales nativas.",
+            on_click="ignore"
         )
 
     # Expander para sincronizar Excel manual

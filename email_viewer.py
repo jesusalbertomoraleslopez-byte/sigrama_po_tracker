@@ -138,7 +138,8 @@ def render_email_card(msg_bytes, file_name="", key_suffix=""):
                     file_name=a_name,
                     mime="application/pdf" if a_is_pdf else "application/octet-stream",
                     key=f"dl_email_att_{key_suffix}_{i}_{a_name[:10]}",
-                    use_container_width=True
+                    use_container_width=True,
+                    on_click="ignore"
                 )
         st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
 
@@ -225,7 +226,8 @@ def render_modulo_repositorio():
                             file_name=f_name,
                             mime="application/vnd.ms-outlook",
                             use_container_width=True,
-                            key=f"dl_btn_msg_view_{selected_id}"
+                            key=f"dl_btn_msg_view_{selected_id}",
+                            on_click="ignore"
                         )
                         
                 if f_bytes:
@@ -266,7 +268,8 @@ def render_modulo_repositorio():
                             file_name=pdf_name,
                             mime="application/pdf",
                             use_container_width=True,
-                            key=f"dl_btn_pdf_view_{sel_pdf_id}"
+                            key=f"dl_btn_pdf_view_{sel_pdf_id}",
+                            on_click="ignore"
                         )
                         
                 if pdf_bytes:
@@ -304,7 +307,8 @@ def render_modulo_repositorio():
                             data=c_bytes,
                             file_name=c_name,
                             use_container_width=True,
-                            key=f"dl_btn_canc_view_{sel_c_id}"
+                            key=f"dl_btn_canc_view_{sel_c_id}",
+                            on_click="ignore"
                         )
                 if c_bytes:
                     if c_name.lower().endswith(('.png', '.jpg', '.jpeg')):

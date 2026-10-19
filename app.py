@@ -897,7 +897,8 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             file_name=f"Matriz_General_Ordenes_SIGRAMA_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"dl_btn_tabla_general_{datetime.date.today().strftime('%Y%m%d')}",
-            help="Descargar archivo .xlsx formateado con estilos corporativos SIGRAMA, KPIs, barras de datos de Excel en celdas y desglose de partidas."
+            help="Descargar archivo .xlsx formateado con estilos corporativos SIGRAMA, KPIs, barras de datos de Excel en celdas y desglose de partidas.",
+            on_click="ignore"
         )
 
     # Herramienta rápida para cambiar el Proyecto / Descripción desde esta misma pantalla
@@ -1348,7 +1349,8 @@ if menu == "📊 Dashboard Ejecutivo":
                 "📥 Descargar Matriz de Control 360° en Excel",
                 data=output_360.getvalue(),
                 file_name=f"Matriz_Control_360_SIGRAMA_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                on_click="ignore"
             )
 
 
@@ -1631,7 +1633,8 @@ elif menu == "📬 Bandeja de Entrada OCR":
             label="📥 Descargar Plantilla Oficial Excel (2 Pestañas)",
             data=template_bytes,
             file_name="Plantilla_Oficial_Orden_de_Compra_Sigrama.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            on_click="ignore"
         )
         
         st.write("---")
@@ -1876,7 +1879,8 @@ elif menu == "📬 Bandeja de Entrada OCR":
             data=buf_h.getvalue(),
             file_name=f"Historial_Cargas_POs_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="dl_intake_history"
+            key="dl_intake_history",
+            on_click="ignore"
         )
     else:
         st.info("💡 Aún no se han registrado órdenes en el sistema.")
@@ -2862,7 +2866,8 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 help="Descarga el correo en modo borrador con destinatarios de Remisiones listos. Al abrirlo en Outlook solo confirme y presione 'Enviar'. Incluye Reporte Completo de PO en Excel (.xlsx), correo original (.msg) y PO (.pdf).",
                                 use_container_width=True,
                                 type="primary",
-                                key=f"btn_dl_eml_apertura_{sel_po}"
+                                key=f"btn_dl_eml_apertura_{sel_po}",
+                                on_click="ignore"
                             )
                         with c_btn_xl:
                             st.download_button(
@@ -2872,7 +2877,8 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                 help="Descarga el reporte integral oficial en Excel (.xlsx) con Vista General de la Orden (KPIs y datos consolidados) y Avance Detallado de cada Pieza por estación.",
                                 use_container_width=True,
-                                key=f"btn_dl_xl_completo_top_{sel_po}"
+                                key=f"btn_dl_xl_completo_top_{sel_po}",
+                                on_click="ignore"
                             )
                     
                     # -------------------------------------------------------------
@@ -3096,7 +3102,8 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 type="primary",
                                 use_container_width=True,
                                 key=f"btn_dl_xl_completo_fin_{sel_po}",
-                                help="Descargar archivo Excel con Vista General de la Orden y Avance Detallado de Piezas para Clientes."
+                                help="Descargar archivo Excel con Vista General de la Orden y Avance Detallado de Piezas para Clientes.",
+                                on_click="ignore"
                             )
                 else:
                     st.info("No hay partidas registradas para esta PO.")
@@ -3519,7 +3526,8 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         file_name=f"Reporte_360_{id_int_txt if id_int_txt else 'INT'}_PO_{sel_po}.eml",
                         mime="message/rfc822",
                         type="primary",
-                        use_container_width=True
+                        use_container_width=True,
+                        on_click="ignore"
                     )
                 with b_c2:
                     st.download_button(
@@ -3527,7 +3535,8 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         data=zip_att,
                         file_name=f"Expediente_Documental_{id_int_txt if id_int_txt else 'INT'}_PO_{sel_po}.zip",
                         mime="application/zip",
-                        use_container_width=True
+                        use_container_width=True,
+                        on_click="ignore"
                     )
                     
                 d_c1, d_c2, d_c3, d_c4 = st.columns([1, 1, 1, 1])
@@ -3537,7 +3546,8 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         data=rem_pdf_att,
                         file_name=f"Remision_E0125_{id_int_txt if id_int_txt else 'INT'}.pdf",
                         mime="application/pdf",
-                        use_container_width=True
+                        use_container_width=True,
+                        on_click="ignore"
                     )
                 with d_c2:
                     st.download_button(
@@ -3545,7 +3555,8 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         data=etiq_pdf_att,
                         file_name=f"Etiquetas_Tarimas_E0125_{id_int_txt if id_int_txt else 'INT'}.pdf",
                         mime="application/pdf",
-                        use_container_width=True
+                        use_container_width=True,
+                        on_click="ignore"
                     )
                 with d_c3:
                     st.download_button(
@@ -3553,7 +3564,8 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         data=rep_pdf_att,
                         file_name=f"Reporte_PO_{sel_po}_{id_int_txt if id_int_txt else 'INT'}.pdf",
                         mime="application/pdf",
-                        use_container_width=True
+                        use_container_width=True,
+                        on_click="ignore"
                     )
                 with d_c4:
                     st.download_button(
@@ -3561,7 +3573,8 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         data=excel_po_att,
                         file_name=f"Reporte_Completo_PO_{id_int_txt if id_int_txt else 'INT'}_{sel_po}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
+                        use_container_width=True,
+                        on_click="ignore"
                     )
                     
                 import fitz

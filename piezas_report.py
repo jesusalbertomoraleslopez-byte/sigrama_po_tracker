@@ -431,7 +431,8 @@ def render_catalogo_piezas_por_proyecto():
                 file_name=f"Reporte_Piezas_{tag_file}_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
-                use_container_width=True
+                use_container_width=True,
+                on_click="ignore"
             )
         with exp_col2:
             csv_data = df_table.to_csv(index=False).encode('utf-8')
@@ -440,7 +441,8 @@ def render_catalogo_piezas_por_proyecto():
                 data=csv_data,
                 file_name=f"Reporte_Piezas_{tag_file}_{datetime.date.today().strftime('%Y%m%d')}.csv",
                 mime="text/csv",
-                use_container_width=True
+                use_container_width=True,
+                on_click="ignore"
             )
 
     # Renderizar la Tabla Interactiva con Streamlit Dataframe

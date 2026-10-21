@@ -156,41 +156,65 @@ st.markdown("""
         font-family: 'Questrial', sans-serif !important;
     }
     
-    /* Radio de navegación en sidebar estilizado (+30% tamaño de fuente) */
-    [data-testid="stSidebar"] div[role="radiogroup"] {
-        background-color: #18181B !important;
-        border: 1px solid #27272A !important;
-        border-radius: 8px !important;
-        padding: 6px !important;
-        gap: 4px !important;
+    /* Menú Lateral Estilo Google Workspace (Píldoras Material Design 3) */
+    [data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child {
+        display: none !important;
     }
-    [data-testid="stSidebar"] div[role="radiogroup"] label {
-        color: #E2E8F0 !important;
-        padding: 9px 12px !important;
-        border-radius: 6px !important;
-        transition: all 0.2s ease !important;
-        margin: 0 !important;
+    [data-testid="stSidebar"] div[role="radiogroup"] {
+        background-color: transparent !important;
+        border: none !important;
+        border-radius: 0px !important;
+        padding: 2px 0 !important;
+        gap: 3px !important;
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] > label {
+        color: #CBD5E1 !important;
+        padding: 9px 18px !important;
+        border-radius: 24px !important;
+        transition: all 0.18s ease-in-out !important;
+        margin: 1px 0 !important;
+        background: transparent !important;
+        border: 1px solid transparent !important;
+        cursor: pointer !important;
     }
     [data-testid="stSidebar"] div[role="radiogroup"] label,
     [data-testid="stSidebar"] div[role="radiogroup"] label p,
     [data-testid="stSidebar"] div[role="radiogroup"] label span,
     [data-testid="stSidebar"] div[role="radiogroup"] label div {
-        font-size: 17.5px !important;
+        font-size: 15.5px !important;
         font-family: 'Questrial', sans-serif !important;
+        font-weight: 500 !important;
         line-height: 1.35 !important;
     }
-    [data-testid="stSidebar"] div[role="radiogroup"] label:hover,
-    [data-testid="stSidebar"] div[role="radiogroup"] label:hover p,
-    [data-testid="stSidebar"] div[role="radiogroup"] label:hover span {
+    [data-testid="stSidebar"] div[role="radiogroup"] > label:hover,
+    [data-testid="stSidebar"] div[role="radiogroup"] > label:hover p,
+    [data-testid="stSidebar"] div[role="radiogroup"] > label:hover span {
         color: #FFFFFF !important;
-        background-color: rgba(236, 32, 36, 0.15) !important;
+        background-color: rgba(255, 255, 255, 0.08) !important;
+        border-radius: 24px !important;
     }
-    [data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"],
-    [data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] p,
-    [data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] span {
-        background-color: #EC2024 !important;
+    [data-testid="stSidebar"] div[role="radiogroup"] > label[data-checked="true"],
+    [data-testid="stSidebar"] div[role="radiogroup"] > label[data-checked="true"] p,
+    [data-testid="stSidebar"] div[role="radiogroup"] > label[data-checked="true"] span,
+    [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked),
+    [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p,
+    [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) span {
+        background-color: rgba(236, 32, 36, 0.22) !important;
+        border: 1px solid rgba(236, 32, 36, 0.55) !important;
         color: #FFFFFF !important;
         font-weight: 700 !important;
+        border-radius: 24px !important;
+    }
+
+    /* Botón Google Workspace 'Redactar / Nuevo' (FAB Pill) */
+    div.stButton > button[key="btn_google_fab_po"] {
+        border-radius: 20px !important;
+        padding: 10px 20px !important;
+        font-size: 14.5px !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 14px rgba(236, 32, 36, 0.35) !important;
+        border: 1px solid rgba(236, 32, 36, 0.8) !important;
+        margin-bottom: 8px !important;
     }
 
     /* Botones Oficiales - Rojo Corporativo PANTONE 485 C (#EC2024) */
@@ -527,26 +551,56 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown("<p style='font-family: \"Montserrat\", sans-serif; font-size: 11px; font-weight: 700; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;'>Menú de Navegación:</p>", unsafe_allow_html=True)
-    
-    menu = st.radio(
+    # --- NAVEGACIÓN ESTILO GOOGLE WORKSPACE ---
+    # Botón de Acción Primaria ('Redactar / Nuevo')
+    if st.button("➕ Cargar Correo", key="btn_google_fab_po", use_container_width=True, type="primary"):
+        st.session_state["google_nav_selection"] = "📬 Entrada"
+        st.rerun()
+
+    st.markdown("<p style='font-family: \"Montserrat\", sans-serif; font-size: 11px; font-weight: 700; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 10px; margin-bottom: 6px;'>Menú Principal:</p>", unsafe_allow_html=True)
+
+    GOOGLE_MENU_ITEMS = [
+        "📊 Resumen",
+        "📋 Órdenes",
+        "🔍 Trazabilidad",
+        "📦 Piezas",
+        "🏭 Láminas",
+        "📬 Entrada",
+        "📁 Archivos",
+        "✏️ Ajustes",
+        "🔄 Sincronización",
+        "📘 Ayuda",
+        "⚙️ Sistema",
+    ]
+
+    MENU_MAP = {
+        "📊 Resumen": "📊 Dashboard Ejecutivo",
+        "📋 Órdenes": "📋 Tabla de Todas las Órdenes",
+        "🔍 Trazabilidad": "🔍 Ficha de Trazabilidad 360°",
+        "📦 Piezas": "📦 Piezas por Proyecto",
+        "🏭 Láminas": "🏭 Uso de Materia Prima (Láminas)",
+        "📬 Entrada": "📬 Bandeja de Entrada OCR",
+        "📁 Archivos": "📁 Repositorio de Correos y Archivos",
+        "✏️ Ajustes": "✏️ Ajuste de PO",
+        "🔄 Sincronización": "🔄 Estado de Integración",
+        "📘 Ayuda": "📘 Manual y Arquitectura 4.0",
+        "⚙️ Sistema": "🛠️ Mantenimiento de la App",
+    }
+
+    current_sel = st.session_state.get("google_nav_selection", "📊 Resumen")
+    if current_sel not in GOOGLE_MENU_ITEMS:
+        current_sel = GOOGLE_MENU_ITEMS[0]
+    idx_default = GOOGLE_MENU_ITEMS.index(current_sel)
+
+    selected_google_item = st.radio(
         "Navegación:",
-        [
-            "📊 Dashboard Ejecutivo",
-            "🔍 Ficha de Trazabilidad 360°",
-            "📋 Tabla de Todas las Órdenes",
-            "📦 Piezas por Proyecto",
-            "🏭 Uso de Materia Prima (Láminas)",
-            "📬 Bandeja de Entrada OCR",
-            "📁 Repositorio de Correos y Archivos",
-            "✏️ Ajuste de PO",
-            "🔄 Estado de Integración",
-            "📘 Manual y Arquitectura 4.0",
-            "🛠️ Mantenimiento de la App"
-        ],
-        index=0,
+        GOOGLE_MENU_ITEMS,
+        index=idx_default,
+        key="google_sidebar_radio",
         label_visibility="collapsed"
     )
+    st.session_state["google_nav_selection"] = selected_google_item
+    menu = MENU_MAP.get(selected_google_item, "📊 Dashboard Ejecutivo")
     
     # Resumen Operativo en Vivo en Sidebar
     df_all_pos = get_all_pos()

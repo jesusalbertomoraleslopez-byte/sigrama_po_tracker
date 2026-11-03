@@ -3867,7 +3867,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         label="📥 Reporte PO (.xlsx)",
                         bg_color="#1E293B",
                         hover_color="#0F172A",
-                        key=f"dl_xl_btn_{clean_po_file}"
+                        key=f"dl_xl_btn_{sel_po}"
                     )
                     
                 import fitz

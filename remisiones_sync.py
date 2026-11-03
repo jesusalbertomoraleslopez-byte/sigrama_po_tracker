@@ -162,6 +162,13 @@ def load_remisiones_databases():
                 if 'Descripcion' in df_det.columns:
                     df_det.loc[m_582, 'Descripcion'] = 'Proyecto TORONTO'
 
+            # Prioridad de entrega Orden 30 sobre Orden 31 (Proyecto META):
+            # 12-A-6200-03 (3 pzas) en TPM-0627 se transfieren a Orden 30 (PO 2603-2836 / INT-030)
+            m_627_door = (df_det['ID_Tarima'].fillna('').astype(str).str.strip() == 'TPM-0627') & (df_det['SKU'].fillna('').astype(str).str.strip() == '12-A-6200-03')
+            if m_627_door.any():
+                df_det.loc[m_627_door, 'PO'] = 'PO 2603-2836'
+                df_det.loc[m_627_door, 'Proyecto'] = 'INT-030'
+
         if 'PO' in df_det.columns:
             df_det['_po_str'] = df_det['PO'].fillna('').astype(str)
             df_det['norm_po'] = df_det['_po_str'].apply(normalize_po)

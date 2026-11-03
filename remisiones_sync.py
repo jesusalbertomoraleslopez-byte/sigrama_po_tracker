@@ -152,6 +152,16 @@ def load_remisiones_databases():
     df_tar = pd.read_excel(file_tar) if file_tar.exists() else pd.DataFrame()
     
     if not df_det.empty:
+        # Reasignación oficial de tarimas con PO cruzada en Almacén:
+        # Tarima TPM-0582 (389 pzas de 27 partidas) pertenece 100% a la Orden 2608-3358 / INT-0057 (Proyecto TORONTO)
+        if 'ID_Tarima' in df_det.columns:
+            m_582 = (df_det['ID_Tarima'].fillna('').astype(str).str.strip() == 'TPM-0582')
+            if m_582.any():
+                df_det.loc[m_582, 'PO'] = 'PO 2608-3358'
+                df_det.loc[m_582, 'Proyecto'] = 'INT-057'
+                if 'Descripcion' in df_det.columns:
+                    df_det.loc[m_582, 'Descripcion'] = 'Proyecto TORONTO'
+
         if 'PO' in df_det.columns:
             df_det['_po_str'] = df_det['PO'].fillna('').astype(str)
             df_det['norm_po'] = df_det['_po_str'].apply(normalize_po)

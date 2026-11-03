@@ -587,6 +587,23 @@ with st.sidebar:
         "⚙️ Sistema": "🛠️ Mantenimiento de la App",
     }
 
+    # Detección de navegación directa desde URL (ej. apertura de Ficha 360° en nueva ventana)
+    qp = dict(st.query_params) if hasattr(st, "query_params") else {}
+    target_po_qp = str(qp.get("po", "")).strip()
+    target_id_qp = str(qp.get("id_interno", "")).strip()
+    qp_menu = str(qp.get("menu", "")).strip().lower()
+
+    if (qp_menu in ["trazabilidad", "traz", "ficha", "360"] or target_po_qp or target_id_qp) and not st.session_state.get("_nav_qp_handled"):
+        st.session_state["google_sidebar_radio"] = "🔍 Trazabilidad"
+        st.session_state["google_nav_selection"] = "🔍 Trazabilidad"
+        st.session_state["radio_vista_ficha_mode"] = "🔍 Ficha Detallada 360° por Orden"
+        st.session_state["sb_est_filter_360"] = "🌟 Todos los Estatus"
+        if target_po_qp:
+            st.session_state["target_po_from_link"] = target_po_qp
+        if target_id_qp:
+            st.session_state["target_id_from_link"] = target_id_qp
+        st.session_state["_nav_qp_handled"] = True
+
     current_sel = st.session_state.get("google_nav_selection", "📊 Resumen")
     if current_sel not in GOOGLE_MENU_ITEMS:
         current_sel = GOOGLE_MENU_ITEMS[0]
@@ -1059,30 +1076,100 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
 
     if modo_vista_general == "📊 Vista con Barras de Avance por Área (Tipo Excel)":
         import streamlit.components.v1 as components
+        import urllib.parse
+
+        curr_sso_user = str(st.session_state.get('usuario', 'Jesús Alberto Morales López')).strip()
+        curr_sso_role = str(st.session_state.get('rol', 'Admin')).strip()
+        curr_sso_token = "SIGRAMA_AUTH_TOKEN"
         
-        html_table = """
+        html_table = f"""
         <!DOCTYPE html>
         <html>
         <head>
         <meta charset="utf-8">
         <style>
-            body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 12px; background: transparent; }
-            .table-container { overflow-x: auto; max-height: 650px; border: 1px solid #CBD5E1; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            thead th { position: sticky; top: 0; background-color: #0F172A; color: #FFFFFF; z-index: 10; padding: 10px 8px; font-weight: 700; text-align: center; }
-            tbody tr { border-bottom: 1px solid #E2E8F0; background-color: #FFFFFF; }
-            tbody tr:hover { background-color: #F8FAFC !important; }
-            td { padding: 6px 8px; }
-            .badge { font-size: 10px; padding: 2px 7px; border-radius: 12px; font-weight: bold; display: inline-block; white-space: nowrap; }
+            body {{ margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 12px; background: transparent; }}
+            .table-container {{ overflow-x: auto; max-height: 650px; border: 1px solid #CBD5E1; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
+            table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
+            thead th {{ position: sticky; top: 0; background-color: #0F172A; color: #FFFFFF; z-index: 10; padding: 10px 8px; font-weight: 700; text-align: center; }}
+            tbody tr {{ border-bottom: 1px solid #E2E8F0; background-color: #FFFFFF; }}
+            tbody tr:hover {{ background-color: #F8FAFC !important; }}
+            td {{ padding: 6px 8px; }}
+            .badge {{ font-size: 10px; padding: 2px 7px; border-radius: 12px; font-weight: bold; display: inline-block; white-space: nowrap; }}
+            .id-link {{
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                background-color: #EFF6FF;
+                color: #1D4ED8 !important;
+                border: 1px solid #BFDBFE;
+                padding: 3px 8px;
+                border-radius: 6px;
+                font-size: 11px;
+                font-weight: 800;
+                text-decoration: none;
+                cursor: pointer;
+                transition: all 0.15s ease-in-out;
+                white-space: nowrap;
+            }}
+            .id-link:hover {{
+                background-color: #1D4ED8;
+                color: #FFFFFF !important;
+                border-color: #1D4ED8;
+                box-shadow: 0 2px 6px rgba(29, 78, 216, 0.35);
+                transform: translateY(-1px);
+            }}
+            .po-link {{
+                display: inline-flex;
+                align-items: center;
+                gap: 3px;
+                color: #EC2024 !important;
+                font-weight: 800;
+                font-size: 12px;
+                text-decoration: none;
+                cursor: pointer;
+                transition: all 0.15s ease-in-out;
+                white-space: nowrap;
+            }}
+            .po-link:hover {{
+                color: #B91C1C !important;
+                text-decoration: underline;
+                transform: translateY(-1px);
+            }}
         </style>
+        <script>
+        function openFicha360InNewTab(poVal, idVal, ssoUser, ssoRole, ssoToken) {{
+            var base = '';
+            try {{
+                if (window.top && window.top.location && window.top.location.href) {{
+                    base = window.top.location.origin + window.top.location.pathname;
+                }}
+            }} catch(e) {{}}
+            if (!base || base.indexOf('http') !== 0) {{
+                base = 'https://sigrama-po-tracker-500497385665.us-central1.run.app/';
+            }}
+            var sep = base.indexOf('?') !== -1 ? '&' : '?';
+            var params = [];
+            if (ssoUser) params.push('sso_user=' + encodeURIComponent(ssoUser));
+            if (ssoRole) params.push('sso_role=' + encodeURIComponent(ssoRole));
+            if (ssoToken) params.push('sso_token=' + encodeURIComponent(ssoToken));
+            params.push('menu=trazabilidad');
+            if (poVal) params.push('po=' + encodeURIComponent(poVal));
+            if (idVal) params.push('id_interno=' + encodeURIComponent(idVal));
+            
+            var finalUrl = base + sep + params.join('&');
+            window.open(finalUrl, '_blank');
+            return false;
+        }}
+        </script>
         </head>
         <body>
         <div class="table-container">
         <table>
             <thead>
                 <tr>
-                    <th style="border-bottom:2px solid #EC2024; width:85px; text-align:left;">ID Interno</th>
-                    <th style="border-bottom:2px solid #EC2024; width:90px; text-align:left;">PO / Folio</th>
+                    <th style="border-bottom:2px solid #EC2024; width:95px; text-align:left;" title="Haz clic en cualquier ID Interno para abrir su Ficha 360° en una nueva ventana">ID Interno ↗</th>
+                    <th style="border-bottom:2px solid #EC2024; width:95px; text-align:left;" title="Haz clic para ver Ficha 360°">PO / Folio ↗</th>
                     <th style="border-bottom:2px solid #EC2024; min-width:90px; text-align:left;">Proyecto</th>
                     <th style="border-bottom:2px solid #EC2024; width:85px; text-align:center;">Llegada</th>
                     <th style="border-bottom:2px solid #EC2024; width:88px; text-align:center; color:#FCA5A5;">F. Entrega</th>
@@ -1170,10 +1257,34 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
                 </td>
                 """
                 
+            q_params = urllib.parse.urlencode({
+                'sso_user': curr_sso_user,
+                'sso_role': curr_sso_role,
+                'sso_token': curr_sso_token,
+                'menu': 'trazabilidad',
+                'id_interno': id_i,
+                'po': po_f
+            })
+            direct_360_url = f"https://sigrama-po-tracker-500497385665.us-central1.run.app/?{q_params}"
+            js_po = po_f.replace("'", "\\'")
+            js_id = id_i.replace("'", "\\'")
+            js_user = curr_sso_user.replace("'", "\\'")
+            js_role = curr_sso_role.replace("'", "\\'")
+
             html_table += f"""
             <tr{tr_bg_style}>
-                <td style="font-weight:700; color:#0F172A;">{id_i}</td>
-                <td style="font-weight:700; color:#EC2024;">{po_f}</td>
+                <td style="text-align:left; white-space:nowrap;">
+                    <a href="{direct_360_url}" target="_blank" rel="noopener noreferrer" class="id-link" title="Abrir Ficha de Trazabilidad 360° de {id_i} en nueva ventana" onclick="return openFicha360InNewTab('{js_po}', '{js_id}', '{js_user}', '{js_role}', '{curr_sso_token}');">
+                        <span>{id_i}</span>
+                        <span style="font-size:10px; opacity:0.85;">↗</span>
+                    </a>
+                </td>
+                <td style="text-align:left; white-space:nowrap;">
+                    <a href="{direct_360_url}" target="_blank" rel="noopener noreferrer" class="po-link" title="Abrir Ficha de Trazabilidad 360° de PO {po_f} en nueva ventana" onclick="return openFicha360InNewTab('{js_po}', '{js_id}', '{js_user}', '{js_role}', '{curr_sso_token}');">
+                        <span>{po_f}</span>
+                        <span style="font-size:9.5px; opacity:0.75;">↗</span>
+                    </a>
+                </td>
                 <td style="font-weight:600; color:#334155;">{proy}</td>
                 <td style="text-align:center; color:#64748B; font-size:11px;">{f_lleg}</td>
                 <td style="text-align:center; color:#DC2626; font-size:11px; font-weight:700;">{f_ent}</td>
@@ -2531,6 +2642,26 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
             if not pos_list:
                 st.warning("⚠️ No hay órdenes con el estatus seleccionado. Mostrando todas.")
                 pos_list = df_pos['po'].tolist()
+
+            # Resolver orden objetivo si proviene de enlace directo (URL / click en ID Interno de la tabla)
+            tgt_po = st.session_state.pop("target_po_from_link", None)
+            tgt_id = st.session_state.pop("target_id_from_link", None)
+            matched_target_po = None
+            if tgt_po or tgt_id:
+                t_po_str = str(tgt_po or '').strip().upper()
+                t_id_str = str(tgt_id or '').strip().upper()
+                for _, r_match in df_pos.iterrows():
+                    r_p_val = str(r_match.get('po', '')).strip().upper()
+                    r_i_val = str(r_match.get('id_interno', '')).strip().upper()
+                    if (t_id_str and (t_id_str == r_i_val or t_id_str in r_i_val)) or (t_po_str and (t_po_str == r_p_val or t_po_str in r_p_val)):
+                        matched_target_po = r_match['po']
+                        break
+            
+            if matched_target_po is not None:
+                if matched_target_po not in pos_list:
+                    pos_list.insert(0, matched_target_po)
+                st.session_state["sb_select_po_360"] = matched_target_po
+
             def _format_po_option(p):
                 sub_df = df_pos[df_pos['po'].astype(str) == str(p)]
                 if not sub_df.empty:
@@ -2540,8 +2671,19 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     prefix = f"[{int_id}] " if int_id else ""
                     return f"{prefix}PO {p} • {proy}" if proy else f"{prefix}PO {p}"
                 return f"PO {p}"
+
+            default_po_idx = 0
+            curr_sel_in_state = st.session_state.get("sb_select_po_360")
+            if curr_sel_in_state in pos_list:
+                default_po_idx = pos_list.index(curr_sel_in_state)
                 
-            sel_po = st.selectbox("Selecciona la Orden de Compra a inspeccionar:", pos_list, format_func=_format_po_option, key="sb_select_po_360")
+            sel_po = st.selectbox(
+                "Selecciona la Orden de Compra a inspeccionar:",
+                pos_list,
+                index=default_po_idx,
+                format_func=_format_po_option,
+                key="sb_select_po_360"
+            )
             
         df_cab, df_partidas_po = get_po_by_folio(sel_po)
         

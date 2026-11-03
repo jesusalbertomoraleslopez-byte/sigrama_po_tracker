@@ -853,21 +853,25 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
     )
 
     # 2. Filtros y búsqueda
-    f1, f2, f3 = st.columns([2.3, 1.4, 1.3])
+    f1, f2, f3 = st.columns([2.0, 1.8, 1.2])
     with f1:
         q_search = st.text_input("🔍 Búsqueda rápida en todas las órdenes:", placeholder="Escribe ID, Folio, Proyecto, Comprador o Estatus...", key="search_tabla_general")
     with f2:
-        estatus_dropdown_opts = [
-            f"🌟 Todos los Estatus ({len(df_summary)})",
+        estatus_multiselect_opts = [
             f"🟢 Remisionadas Totales (100%) ({c_tot})",
             f"🔵 Parciales Enviadas ({c_parc})",
             f"🟠 En Fabricación ({c_fab})",
             f"⚪ Registradas / En Espera ({c_reg})",
-            f"⏳ Con Pendientes por Entregar ({c_pend})",
-            f"✅ Solo Activas (Excluir Canceladas) ({c_act})",
             f"🚫 Canceladas ({c_canc})"
         ]
-        sel_estatus = st.selectbox("Estatus de Entrega:", estatus_dropdown_opts, key="sb_est_tabla_general")
+        sel_estatus_multi = st.multiselect(
+            "Estatus de Entrega (Casillas de verificación):",
+            options=estatus_multiselect_opts,
+            default=estatus_multiselect_opts,
+            placeholder="Selecciona o quita estatus con las casillas...",
+            key="ms_est_tabla_general",
+            help="Selecciona o desmarca estatus para filtrar la tabla. Puedes quitar 'Remisionadas Totales' y 'Canceladas' para ver solo lo que queda pendiente."
+        )
     with f3:
         sort_opt = st.selectbox("Ordenar tabla por:", [
             "🔢 ID Interno (INT-0001, INT-0002...)",
@@ -877,18 +881,65 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             "🎯 % Avance Cumplimiento",
             "💰 Importe Total ($)"
         ], key="sb_sort_tabla_general")
-        
+
+    # 3. Casillas de verificación directas para exclusión rápida de Terminadas y Canceladas
+    c_chk1, c_chk2, c_chk3, c_chk_info = st.columns([1.3, 1.2, 1.4, 2.1])
+    with c_chk1:
+        chk_quitar_terminadas = st.checkbox(
+            "❎ Quitar Terminadas (100%)",
+            value=False,
+            key="chk_quitar_terminadas",
+            help="Oculta las órdenes que ya fueron remisionadas en su totalidad (100%)"
+        )
+    with c_chk2:
+        chk_quitar_canceladas = st.checkbox(
+            "🚫 Quitar Canceladas",
+            value=False,
+            key="chk_quitar_canceladas",
+            help="Oculta las órdenes canceladas formalmente"
+        )
+    with c_chk3:
+        chk_solo_pendientes = st.checkbox(
+            "⏳ Solo con Pendientes (> 0)",
+            value=False,
+            key="chk_solo_pendientes",
+            help="Filtra estrictamente órdenes que aún tienen piezas pendientes por entregar"
+        )
+
     df_f = df_summary.copy()
 
-    # Prioridad del filtro de estatus: si se usa la píldora se aplica; si la píldora está en "Todas", se aplica el desplegable
-    active_status_filter = None
-    if pill_sel and not pill_sel.startswith("🌟 Todas"):
-        active_status_filter = pill_sel
-    elif sel_estatus and not sel_estatus.startswith("🌟 Todos"):
-        active_status_filter = sel_estatus
+    # Aplicar filtro de Multiselect de Estatus de Entrega (Casillas de verificación)
+    if sel_estatus_multi:
+        selected_canonicals = set()
+        for opt in sel_estatus_multi:
+            opt_l = opt.lower()
+            if "remisionada" in opt_l:
+                selected_canonicals.add("Remisionada Total")
+            elif "parcial" in opt_l:
+                selected_canonicals.add("Parcial Enviada")
+            elif "fabricaci" in opt_l:
+                selected_canonicals.add("En Fabricación")
+            elif "registrada" in opt_l:
+                selected_canonicals.add("Registrada")
+            elif "cancelad" in opt_l:
+                selected_canonicals.add("Cancelada")
+        df_f = df_f[df_f['canonical_status'].isin(selected_canonicals)]
+    else:
+        df_f = df_f.iloc[0:0]
 
-    if active_status_filter:
-        s = active_status_filter.lower()
+    # Aplicar casillas de verificación de exclusión rápida
+    if chk_quitar_terminadas:
+        df_f = df_f[df_f['canonical_status'] != 'Remisionada Total']
+
+    if chk_quitar_canceladas:
+        df_f = df_f[df_f['canonical_status'] != 'Cancelada']
+
+    if chk_solo_pendientes:
+        df_f = df_f[(df_f['piezas_pendientes'] > 0) & (df_f['canonical_status'] != 'Cancelada')]
+
+    # Aplicar píldora de filtro rápido si se seleccionó una categoría específica
+    if pill_sel and not pill_sel.startswith("🌟 Todas"):
+        s = pill_sel.lower()
         if "remisionada" in s:
             df_f = df_f[df_f['canonical_status'] == 'Remisionada Total']
         elif "parcial" in s:
@@ -903,6 +954,16 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
             df_f = df_f[df_f['canonical_status'] != 'Cancelada']
         elif "cancelad" in s:
             df_f = df_f[df_f['canonical_status'] == 'Cancelada']
+
+    with c_chk_info:
+        cant_pen_vis = float(df_f['piezas_pendientes'].sum()) if not df_f.empty else 0.0
+        st.markdown(
+            f"<div style='font-size:12px; color:#475569; font-weight:600; padding-top:6px; text-align:right;'>"
+            f"Mostrando <b style='color:#0F172A;'>{len(df_f)}</b> de {len(df_summary)} órdenes "
+            f"(<b>{cant_pen_vis:,.0f}</b> pzas pendientes)"
+            f"</div>",
+            unsafe_allow_html=True
+        )
 
     if q_search:
         q = q_search.strip().lower()

@@ -401,6 +401,46 @@ components.html("""
 
 
 # ==============================================================================
+
+def render_robust_download_button(
+    data_bytes: bytes,
+    file_name: str,
+    mime_type: str,
+    label: str,
+    bg_color: str = "#EC2024",
+    hover_color: str = "#c9181c",
+    text_color: str = "#FFFFFF",
+    height: str = "42px",
+    key: str = None
+):
+    """
+    Renderiza un componente de descarga HTML con URI Base64 100% autónomo y directo en el navegador.
+    Garantiza que el archivo se descargue de forma inmediata sin depender del MediaFileManager de Streamlit,
+    eliminando errores HTTP 404 por desbalanceo de instancias en Cloud Run y sin causar recargas de la página.
+    """
+    if not data_bytes or len(data_bytes) == 0:
+        st.warning(f"⚠️ No hay contenido disponible para descargar ({file_name}).")
+        return
+
+    import base64
+    b64_str = base64.b64encode(data_bytes).decode('utf-8')
+    btn_id = f"btn_dl_{abs(hash(file_name + str(key))) % 10000000}"
+    
+    html = f"""
+    <div style="margin: 4px 0; width: 100%;">
+        <a id="{btn_id}"
+           href="data:{mime_type};base64,{b64_str}" 
+           download="{file_name}" 
+           style="display: flex; align-items: center; justify-content: center; width: 100%; min-height: {height}; box-sizing: border-box; background-color: {bg_color}; color: {text_color} !important; font-weight: 700; font-size: 14px; padding: 10px 18px; border-radius: 8px; text-decoration: none !important; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.25); transition: all 0.2s ease-in-out; text-align: center; cursor: pointer; border: none; letter-spacing: 0.3px;"
+           onmouseover="this.style.backgroundColor='{hover_color}'; this.style.transform='translateY(-1px)'; this.style.boxShadow='0 6px 12px -2px rgba(0,0,0,0.35)';" 
+           onmouseout="this.style.backgroundColor='{bg_color}'; this.style.transform='translateY(0px)'; this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.25)';">
+           {label}
+        </a>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+
 # SISTEMA DE ACCESO Y AUTENTICACIÓN (LOGIN)
 # ==============================================================================
 def check_authentication():
@@ -1023,14 +1063,14 @@ def render_tabla_todas_las_ordenes(df_pos=None, df_part=None):
         df_partidas_all = get_all_partidas()
         excel_bytes = build_executive_excel(df_f, df_partidas=df_partidas_all)
         
-        st.download_button(
-            label="📥 Descargar a Excel (.xlsx)",
-            data=excel_bytes,
+        render_robust_download_button(
+            data_bytes=excel_bytes,
             file_name=f"Matriz_General_Ordenes_SIGRAMA_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key=f"dl_btn_tabla_general_{datetime.date.today().strftime('%Y%m%d')}",
-            help="Descargar archivo .xlsx formateado con estilos corporativos SIGRAMA, KPIs, barras de datos de Excel en celdas y desglose de partidas.",
-            on_click="ignore"
+            mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            label="📊 Descargar a Excel (.xlsx)",
+            bg_color="#1E293B",
+            hover_color="#0F172A",
+            key=f"dl_btn_tabla_general_{datetime.date.today().strftime('%Y%m%d')}"
         )
 
     # Herramienta rápida para cambiar el Proyecto / Descripción desde esta misma pantalla
@@ -3115,27 +3155,24 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         
                         c_btn_eml, c_btn_xl = st.columns(2)
                         with c_btn_eml:
-                            st.download_button(
-                                label="✉️ Descargar Borrador Oficial (.eml) — Listo para Enviar",
-                                data=eml_apertura_bytes,
+                            render_robust_download_button(
+                                data_bytes=eml_apertura_bytes,
                                 file_name=f"Apertura_Proyecto_{id_int_txt}_{sel_po}.eml",
-                                mime="message/rfc822",
-                                help="Descarga el correo en modo borrador con destinatarios de Remisiones listos. Al abrirlo en Outlook solo confirme y presione 'Enviar'. Incluye Reporte Completo de PO en Excel (.xlsx), correo original (.msg) y PO (.pdf).",
-                                use_container_width=True,
-                                type="primary",
-                                key=f"btn_dl_eml_apertura_{sel_po}",
-                                on_click="ignore"
+                                mime_type="message/rfc822",
+                                label="✉️ Descargar Borrador Oficial (.eml) — Listo para Enviar",
+                                bg_color="#EC2024",
+                                hover_color="#c9181c",
+                                key=f"btn_dl_eml_apertura_{sel_po}"
                             )
                         with c_btn_xl:
-                            st.download_button(
-                                label="📊 Descargar Reporte Completo PO (.xlsx)",
-                                data=excel_reporte_completo_bytes,
+                            render_robust_download_button(
+                                data_bytes=excel_reporte_completo_bytes,
                                 file_name=f"Reporte_Completo_PO_{id_int_txt}_{sel_po}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                help="Descarga el reporte integral oficial en Excel (.xlsx) con Vista General de la Orden (KPIs y datos consolidados) y Avance Detallado de cada Pieza por estación.",
-                                use_container_width=True,
-                                key=f"btn_dl_xl_completo_top_{sel_po}",
-                                on_click="ignore"
+                                mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                label="📊 Descargar Reporte Completo PO (.xlsx)",
+                                bg_color="#1E293B",
+                                hover_color="#0F172A",
+                                key=f"btn_dl_xl_completo_top_{sel_po}"
                             )
                     
                     # -------------------------------------------------------------
@@ -3351,16 +3388,14 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                             )
                         with c_xl_f2:
                             st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
-                            st.download_button(
-                                label="📥 Descargar Reporte Completo (.xlsx)",
-                                data=excel_reporte_completo_bytes,
+                            render_robust_download_button(
+                                data_bytes=excel_reporte_completo_bytes,
                                 file_name=f"Reporte_Completo_PO_{id_int_txt}_{sel_po}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                type="primary",
-                                use_container_width=True,
-                                key=f"btn_dl_xl_completo_fin_{sel_po}",
-                                help="Descargar archivo Excel con Vista General de la Orden y Avance Detallado de Piezas para Clientes.",
-                                on_click="ignore"
+                                mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                label="📥 DESCARGAR REPORTE COMPLETO (.XLSX)",
+                                bg_color="#EC2024",
+                                hover_color="#c9181c",
+                                key=f"btn_dl_xl_completo_fin_{sel_po}"
                             )
                 else:
                     st.info("No hay partidas registradas para esta PO.")
@@ -3825,13 +3860,14 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         on_click="ignore"
                     )
                 with d_c4:
-                    st.download_button(
-                        label=f"📥 Reporte PO (.xlsx)",
-                        data=excel_po_att,
+                    render_robust_download_button(
+                        data_bytes=excel_po_att,
                         file_name=f"Reporte_Completo_PO_{id_int_txt if id_int_txt else 'INT'}_{sel_po}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        on_click="ignore"
+                        mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        label="📥 Reporte PO (.xlsx)",
+                        bg_color="#1E293B",
+                        hover_color="#0F172A",
+                        key=f"dl_xl_btn_{clean_po_file}"
                     )
                     
                 import fitz

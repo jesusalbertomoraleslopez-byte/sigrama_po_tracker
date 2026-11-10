@@ -162,12 +162,11 @@ def load_remisiones_databases():
                 if 'Descripcion' in df_det.columns:
                     df_det.loc[m_582, 'Descripcion'] = 'Proyecto TORONTO'
 
-            # Prioridad de entrega Orden 30 sobre Orden 31 (Proyecto META):
-            # 12-A-6200-03 (3 pzas) en TPM-0627 se transfieren a Orden 30 (PO 2603-2836 / INT-030)
+            # Consolidación Proyecto META: 12-A-6200-03 (3 pzas) en TPM-0627 pertenece a INT-0082 (PO 26114728)
             m_627_door = (df_det['ID_Tarima'].fillna('').astype(str).str.strip() == 'TPM-0627') & (df_det['SKU'].fillna('').astype(str).str.strip() == '12-A-6200-03')
             if m_627_door.any():
-                df_det.loc[m_627_door, 'PO'] = 'PO 2603-2836'
-                df_det.loc[m_627_door, 'Proyecto'] = 'INT-030'
+                df_det.loc[m_627_door, 'PO'] = 'PO 26114728'
+                df_det.loc[m_627_door, 'Proyecto'] = 'META'
 
         if 'PO' in df_det.columns:
             df_det['_po_str'] = df_det['PO'].fillna('').astype(str)
@@ -329,18 +328,6 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
                     is_other_valid_po = df_det['norm_po'].isin(known_pos - {po_norm})
                     mask_proy = mask_proy & (~is_other_valid_po)
         df_det_po = df_det[mask_po | mask_proy]
-        
-        # REGLA DE CONCILIACIÓN OPERATIVA: Transferencia de entregas coincidentes de órdenes META a INT-0082
-        if (po_norm == '26114728' or '0082' in str(id_interno) or id_int_clean == '82') and df_partidas is not None and not df_partidas.empty:
-            target_skus = {normalize_sku(s) for s in df_partidas['clave_sku'].dropna() if s}
-            if 'sku_cliente' in df_partidas.columns:
-                target_skus.update({normalize_sku(s) for s in df_partidas['sku_cliente'].dropna() if s})
-            origin_pos_norm = {'26032836', '26032838', '26033086', '26093658'}
-            raw_norms = df_det['SKU'].astype(str).apply(normalize_sku)
-            mask_trans = df_det['norm_po'].isin(origin_pos_norm) & raw_norms.isin(target_skus)
-            df_trans = df_det[mask_trans]
-            if not df_trans.empty:
-                df_det_po = pd.concat([df_det_po, df_trans]).drop_duplicates(subset=['ID_Tarima', 'SKU', 'Cantidad'])
         
     # Mapeo de Tarimas a Folios de Remisión (desde caché O(1) si está disponible)
     tarima_to_remision = _REM_CACHE.get("tarima_to_remision") or {}

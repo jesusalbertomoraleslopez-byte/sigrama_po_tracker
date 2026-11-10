@@ -330,6 +330,18 @@ def get_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=None):
                     mask_proy = mask_proy & (~is_other_valid_po)
         df_det_po = df_det[mask_po | mask_proy]
         
+        # REGLA DE CONCILIACIÓN OPERATIVA: Transferencia de entregas coincidentes de órdenes META a INT-0082
+        if (po_norm == '26114728' or '0082' in str(id_interno) or id_int_clean == '82') and df_partidas is not None and not df_partidas.empty:
+            target_skus = {normalize_sku(s) for s in df_partidas['clave_sku'].dropna() if s}
+            if 'sku_cliente' in df_partidas.columns:
+                target_skus.update({normalize_sku(s) for s in df_partidas['sku_cliente'].dropna() if s})
+            origin_pos_norm = {'26032836', '26032838', '26033086', '26093658'}
+            raw_norms = df_det['SKU'].astype(str).apply(normalize_sku)
+            mask_trans = df_det['norm_po'].isin(origin_pos_norm) & raw_norms.isin(target_skus)
+            df_trans = df_det[mask_trans]
+            if not df_trans.empty:
+                df_det_po = pd.concat([df_det_po, df_trans]).drop_duplicates(subset=['ID_Tarima', 'SKU', 'Cantidad'])
+        
     # Mapeo de Tarimas a Folios de Remisión (desde caché O(1) si está disponible)
     tarima_to_remision = _REM_CACHE.get("tarima_to_remision") or {}
     if not tarima_to_remision and not df_rem.empty and 'Tarimas_Asociadas' in df_rem.columns:

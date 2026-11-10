@@ -544,6 +544,18 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
 
     now_str = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
 
+    # Asegurar que cab_info sea siempre un dict plano nativo para evitar ambigüedades con pd.DataFrame o pd.Series
+    if cab_info is not None:
+        if isinstance(cab_info, pd.DataFrame):
+            cab_info = cab_info.iloc[0].to_dict() if not cab_info.empty else {}
+        elif hasattr(cab_info, 'to_dict'):
+            cab_info = cab_info.to_dict()
+        elif not isinstance(cab_info, dict):
+            try:
+                cab_info = dict(cab_info)
+            except Exception:
+                pass
+
     po_str = str(po if po is not None else "").strip()
     id_int_str = str(id_interno if id_interno is not None else "").strip()
     if not id_int_str and cab_info is not None:
@@ -1219,7 +1231,7 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
     ws2 = wb.create_sheet(title="Avance_Detalle_Piezas")
     ws2.views.sheetView[0].showGridLines = True
 
-    ws2.merge_cells("A1:Q1")
+    ws2.merge_cells("A1:S1")
     c2_t = ws2["A1"]
     c2_t.value = "INDUSTRIA SIGRAMA S.A. DE C.V.  —  AVANCE Y TRAZABILIDAD POR PIEZA (DESPIECE 360°)"
     c2_t.font = Font(name="Calibri", size=13, bold=True, color="FFFFFF")
@@ -1227,7 +1239,7 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
     c2_t.alignment = Alignment(horizontal="center", vertical="center")
     ws2.row_dimensions[1].height = 28
 
-    ws2.merge_cells("A2:Q2")
+    ws2.merge_cells("A2:S2")
     c2_sub = ws2["A2"]
     c2_sub.value = f"Orden de Compra: {po_str} | Proyecto Interno: {id_int_str} | Total Partidas: {num_partidas} | Avance en Vivo de Fabricación y Almacén"
     c2_sub.font = Font(name="Calibri", size=9.5, italic=True, color="94A3B8")
@@ -1243,6 +1255,8 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
         ("Descripción del Producto", 36, "left", C_SLATE_DARK),
         ("Material / Calibre", 22, "center", C_SLATE_DARK),
         ("Req. (PO)", 14, "right", "1E293B"),
+        ("📋 En OFs", 14, "right", C_PURPLE_OF),
+        ("📋 % En OF", 14, "right", C_PURPLE_OF),
         ("🔵 Cortado", 14, "right", C_BLUE_FAB),
         ("🔵 % Cortado", 14, "right", C_BLUE_FAB),
         ("🟣 Doblado", 14, "right", C_PURPLE_OF),
@@ -1287,6 +1301,7 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
 
 
             c_req  = float(r_p.get('cantidad_requerida', 0) or 0)
+            c_prog = float(r_p.get('programado', r_p.get('piezas_programadas', 0)) or 0)
             c_cort = float(r_p.get('cortado', r_p.get('piezas_cortadas', 0)) or 0)
             c_dobl = float(r_p.get('doblado', r_p.get('piezas_dobladas', 0)) or 0)
             c_ent  = float(r_p.get('entarimado', r_p.get('cantidad_entarimada', 0)) or 0)
@@ -1294,12 +1309,14 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
             c_pend = float(r_p.get('cantidad_pendiente', max(0.0, c_req - c_rem)) or 0)
 
             if is_hist:
+                if c_prog == 0: c_prog = c_req
                 if c_cort == 0: c_cort = c_req
                 if c_dobl == 0: c_dobl = c_req
                 if c_ent == 0:  c_ent = c_req
                 if c_rem == 0:  c_rem = c_req
                 c_pend = 0.0
 
+            pct_prog = (c_prog / c_req) if c_req > 0 else 0.0
             pct_cort = (c_cort / c_req) if c_req > 0 else 0.0
             pct_dobl = (c_dobl / c_req) if c_req > 0 else 0.0
             pct_ent  = (c_ent / c_req) if c_req > 0 else 0.0
@@ -1313,6 +1330,7 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
                 elif c_ent >= c_req and c_req > 0: st_part = "📦 Entarimado PT"
                 elif c_dobl >= c_req and c_req > 0: st_part = "🟣 Doblado Completo"
                 elif c_cort >= c_req and c_req > 0: st_part = "🔵 Cortado Completo"
+                elif c_prog >= c_req and c_req > 0: st_part = "📋 Planeado en OF"
                 else: st_part = "⚪ En Espera"
 
             p_vals = [
@@ -1322,6 +1340,8 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
                 (desc,         "left",   "@",     Font(name="Calibri", size=9, color="334155"), fill_zebra),
                 (mat_cell_val, "center", "@",     Font(name="Calibri", size=9, bold=True, color="4338CA"), fill_zebra),
                 (c_req,        "right",  '#,##0', Font(name="Calibri", size=9.5, bold=True, color="0F172A"), PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")),
+                (c_prog,       "right",  '#,##0', Font(name="Calibri", size=9.5, color="4338CA"), fill_zebra),
+                (pct_prog,     "right",  "0.0%",  Font(name="Calibri", size=9, bold=True, color="4F46E5"), fill_zebra),
                 (c_cort,       "right",  '#,##0', Font(name="Calibri", size=9.5, color="1E3A8A"), fill_zebra),
                 (pct_cort,     "right",  "0.0%",  Font(name="Calibri", size=9, bold=True, color="1D4ED8"), fill_zebra),
                 (c_dobl,       "right",  '#,##0', Font(name="Calibri", size=9.5, color="312E81"), fill_zebra),
@@ -1343,8 +1363,8 @@ def build_po_progress_excel(po, id_interno, cab_info, rem_tracking, cd_tracking,
                 if fnt: c_cell.font = fnt
                 if fll: c_cell.fill = fll
 
-            # Formato de celda para Estatus en columna 17 (Q)
-            c_st_part = ws2.cell(row=curr_p_row, column=17)
+            # Formato de celda para Estatus en columna 19 (S)
+            c_st_part = ws2.cell(row=curr_p_row, column=19)
             if "Total" in st_part:
                 c_st_part.fill = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
                 c_st_part.font = Font(name="Calibri", size=9, bold=True, color="15803D")

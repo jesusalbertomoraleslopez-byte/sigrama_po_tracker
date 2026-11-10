@@ -3034,23 +3034,26 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     # Unir información de ambas fuentes
                     df_merged_360 = df_p_rem.copy()
                     if not df_p_cd.empty and 'item_no' in df_p_cd.columns:
-                        cd_cols = [c for c in ['item_no', 'piezas_cortadas', 'piezas_dobladas', 'piezas_terminadas_planta', 'pct_avance_fabricacion', 'ofs_asociadas'] if c in df_p_cd.columns]
+                        cd_cols = [c for c in ['item_no', 'piezas_programadas', 'piezas_cortadas', 'piezas_dobladas', 'piezas_terminadas_planta', 'pct_avance_fabricacion', 'ofs_asociadas'] if c in df_p_cd.columns]
                         df_merged_360 = df_merged_360.merge(
                             df_p_cd[cd_cols],
                             on='item_no',
                             how='left'
                         ).fillna({
+                            'piezas_programadas': 0,
                             'piezas_cortadas': 0,
                             'piezas_dobladas': 0,
                             'piezas_terminadas_planta': 0,
                             'pct_avance_fabricacion': 0.0,
                             'ofs_asociadas': ''
                         })
+                        df_merged_360['programado'] = df_merged_360['piezas_programadas']
                         df_merged_360['cortado'] = df_merged_360['piezas_cortadas']
                         df_merged_360['doblado'] = df_merged_360['piezas_dobladas']
                         df_merged_360['terminado'] = df_merged_360['piezas_terminadas_planta']
                         df_merged_360['porcentaje_fabricacion'] = df_merged_360['pct_avance_fabricacion']
                     else:
+                        df_merged_360['programado'] = 0.0
                         df_merged_360['cortado'] = 0.0
                         df_merged_360['doblado'] = 0.0
                         df_merged_360['terminado'] = 0.0
@@ -3202,7 +3205,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                         ]
                         
                     if modo_vista == "📊 Vista Tipo Excel (Barras en Celdas)":
-                        st.caption("ℹ️ **Formato Excel (Barras de Datos):** La longitud de la barra en cada celda muestra el porcentaje completado respecto al **Requerido (PO)** para comparar inmediatamente el cuello de botella entre **Cortado**, **Doblado**, **Entarimado** y **Remisionado**.")
+                        st.caption("ℹ️ **Formato Excel (Barras de Datos):** La longitud de la barra en cada celda muestra el porcentaje completado respecto al **Requerido (PO)** para comparar inmediatamente el cuello de botella entre **En OFs (Planeadas)**, **Cortado**, **Doblado**, **Entarimado** y **Remisionado**.")
                         
                         import streamlit.components.v1 as components
                         
@@ -3233,6 +3236,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                     <th style="border-bottom:2px solid #EC2024; text-align:left; min-width:180px;">Descripción</th>
                                     <th style="border-bottom:2px solid #4F46E5; text-align:center; min-width:145px; background-color:#312E81;">Material / Calibre</th>
                                     <th style="border-bottom:2px solid #EC2024; text-align:right; width:75px;">Req. (PO)</th>
+                                    <th style="border-bottom:2px solid #818CF8; min-width:120px; background-color:#2E1065;">📋 En OFs</th>
                                     <th style="border-bottom:2px solid #3B82F6; min-width:120px; background-color:#1E3A8A;">🔵 Cortado</th>
                                     <th style="border-bottom:2px solid #6366F1; min-width:120px; background-color:#312E81;">🟣 Doblado</th>
                                     <th style="border-bottom:2px solid #F59E0B; min-width:120px; background-color:#78350F;">📦 Entarimado</th>
@@ -3253,12 +3257,14 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                             c_req = float(r_bar.get('cantidad_requerida', 0) or 0)
                             base_div = c_req if c_req > 0 else 1.0
                             
+                            c_prog = float(r_bar.get('programado', r_bar.get('piezas_programadas', 0)) or 0)
                             c_cort = float(r_bar.get('cortado', 0) or 0)
                             c_dobl = float(r_bar.get('doblado', 0) or 0)
                             c_ent = float(r_bar.get('entarimado', r_bar.get('cantidad_entarimada', 0)) or 0)
                             c_rem = float(r_bar.get('cantidad_remisionada', 0) or 0)
                             c_pend = float(r_bar.get('cantidad_pendiente', max(0.0, c_req - c_rem)) or 0)
                             
+                            pct_pr = min(100.0, max(0.0, (c_prog / base_div * 100.0)))
                             pct_c = min(100.0, max(0.0, (c_cort / base_div * 100.0)))
                             pct_d = min(100.0, max(0.0, (c_dobl / base_div * 100.0)))
                             pct_e = min(100.0, max(0.0, (c_ent / base_div * 100.0)))
@@ -3288,8 +3294,16 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 <td style="text-align:center; font-weight:700; color:#4338CA; font-size:11px; white-space:nowrap; background-color:#F8FAFC;">{mat_p_cell}</td>
                                 <td style="text-align:right; font-weight:800; color:#0F172A; background-color:#F8FAFC;">{c_req:,.0f}</td>
                                 
+                                <!-- BARRA EN OFs (PLANEADAS) -->
+                                <td style="background:linear-gradient(90deg, rgba(129,140,248,0.30) {pct_pr:.1f}%, transparent {pct_pr:.1f}%); border-left:1px solid #E2E8F0; border-right:1px solid #E2E8F0;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <b style="color:#4338CA; font-size:12.5px;">{c_prog:,.0f}</b>
+                                        <span style="font-size:10.5px; color:#4F46E5; font-weight:bold;">{pct_pr:.1f}%</span>
+                                    </div>
+                                </td>
+                                
                                 <!-- BARRA CORTADO -->
-                                <td style="background:linear-gradient(90deg, rgba(59,130,246,0.38) {pct_c:.1f}%, transparent {pct_c:.1f}%); border-left:1px solid #E2E8F0; border-right:1px solid #E2E8F0;">
+                                <td style="background:linear-gradient(90deg, rgba(59,130,246,0.38) {pct_c:.1f}%, transparent {pct_c:.1f}%); border-right:1px solid #E2E8F0;">
                                     <div style="display:flex; justify-content:space-between; align-items:center;">
                                         <b style="color:#1D4ED8; font-size:12.5px;">{c_cort:,.0f}</b>
                                         <span style="font-size:10.5px; color:#2563EB; font-weight:bold;">{pct_c:.1f}%</span>
@@ -3348,7 +3362,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                     else:
                         cols_show_360 = [
                             'item_no', 'sku_cliente', 'clave_sku', 'descripcion_producto', 'material_calibre',
-                            'cantidad_requerida', 'cortado', 'doblado', 'terminado', 'entarimado',
+                            'cantidad_requerida', 'programado', 'cortado', 'doblado', 'terminado', 'entarimado',
                             'cantidad_remisionada', 'porcentaje_cumplimiento', 'cantidad_pendiente', 'estatus_partida_360'
                         ]
                         
@@ -3360,6 +3374,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 'descripcion_producto': 'Descripción',
                                 'material_calibre': 'Material / Calibre',
                                 'cantidad_requerida': 'Req. (PO)',
+                                'programado': '📋 En OFs',
                                 'cortado': '🔵 Cortado',
                                 'doblado': '🔵 Doblado',
                                 'terminado': '🔵 Terminado Fab.',

@@ -12,6 +12,8 @@ def clean_pronest_piece_name(p):
     s = re.sub(r'\s+CAL\b.*$', '', s, flags=re.IGNORECASE).strip()
     # Eliminar sufijo de fecha/anidado: '-(10-08-26)', ' (10-08-26)', etc.
     s = re.sub(r'[\-_]\s*\(\d+[-/]\d+[-/]\d+\).*$', '', s).strip()
+    # Eliminar sufijo de proyecto / retrabajo: ' TRTO', ' TRTO1', ' TORONTO', ' RETR', etc.
+    s = re.sub(r'[\s\-_]+(?:TRTO\d*|TORONTO|RETR\w*|RET\b).*$', '', s, flags=re.IGNORECASE).strip()
     return s.strip()
 
 def normalize_sku(s):
@@ -189,6 +191,10 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
                     m_by_po = True
                 elif po_norm in ('26083235', 'PO055', 'INT0055', '055', '55'):
                     m_by_po = False
+                    
+            # Regla de Consolidación META: Transferencia de OFs previas a INT-0082
+            if (po_norm == '26114728' or id_int_clean == '82') and any(x in of_num for x in ('00032', '00035')):
+                m_by_po = True
                     
             if m_by_po or m_by_id:
                 matched_ofs.add(of_num)

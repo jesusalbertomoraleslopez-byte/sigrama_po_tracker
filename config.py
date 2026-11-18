@@ -107,8 +107,8 @@ HISTORICAL_COMPLETED_POS = {
 # a "Remisionada Total"; los conteos de piezas (fabricadas/entarimadas/remisionadas) no se alteran.
 STATUS_ONLY_COMPLETED_INTS = {
     'INT-0003', 'INT-0012', 'INT-0026', 'INT-0027', 'INT-0028',
-    'INT-0063', 'INT-0064', 'INT-0066', 'INT-0067', 'INT-0070',
-    'INT-0072', 'INT-0073'
+    'INT-0063', 'INT-0064', 'INT-0065', 'INT-0066', 'INT-0067', 'INT-0070',
+    'INT-0072', 'INT-0073', 'INT-0083'
 }
 
 def is_status_only_completed(id_interno=""):

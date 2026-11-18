@@ -20,7 +20,7 @@ from config import (
     ESTATUS_REGISTRADA
 )
 
-if os.environ.get("GCS_BUCKET"):
+if os.environ.get("GCS_BUCKET") or os.environ.get("K_SERVICE"):
     try:
         import gcs_sync
         gcs_sync.sync_from_gcs()
@@ -66,7 +66,7 @@ def push_db_to_github(background=True):
     y a GitHub vía API REST si hay token configurado.
     Se ejecuta en background para no bloquear la UI de Streamlit (0ms bloqueo).
     """
-    if os.environ.get("GCS_BUCKET"):
+    if os.environ.get("GCS_BUCKET") or os.environ.get("K_SERVICE"):
         try:
             import gcs_sync
             if background:
@@ -165,17 +165,15 @@ def push_db_to_github(background=True):
 
 def pull_db_from_github():
     """
-    Descarga po_tracker.db desde GCS (si GCS_BUCKET está presente) o 
-    desde GitHub si la copia local está vacía o desactualizada.
+    Descarga po_tracker.db desde GCS o desde GitHub si la copia local está vacía o desactualizada.
     Retorna True si se descargó/actualizó, False si ya estaba al día.
     """
-    if os.environ.get("GCS_BUCKET"):
-        try:
-            import gcs_sync
-            return gcs_sync.sync_from_gcs()
-        except Exception as e_gcs:
-            print(f"[GCS-PULL] Error sincronizando desde GCS: {e_gcs}")
-            return False
+    try:
+        import gcs_sync
+        if gcs_sync.sync_from_gcs():
+            return True
+    except Exception as e_gcs:
+        print(f"[GCS-PULL] Error sincronizando desde GCS: {e_gcs}")
 
     try:
         import urllib.request
@@ -198,24 +196,28 @@ def pull_db_from_github():
         except Exception:
             return False
         
-        # Verificar si la BD local tiene los mismos datos (comparar size aproximado)
         local_path = SQLITE_DB_PATH
         local_size = local_path.stat().st_size if local_path.exists() else 0
         remote_size = info.get("size", 0)
         
-        # Si la BD local ya tiene más datos que la remota, no bajar (para no pisar datos nuevos)
-        if local_size > 0 and local_size >= remote_size:
+        if local_size > 0 and local_size == remote_size:
             return False
         
         if not download_url:
             return False
         
-        # Descargar y escribir
         dl_req = urllib.request.Request(download_url, headers={"Authorization": f"token {token}"})
         with urllib.request.urlopen(dl_req, timeout=30) as dl_resp:
             db_bytes = dl_resp.read()
         
         DATA_DIR.mkdir(exist_ok=True)
+        for sfx in ("-wal", "-shm"):
+            wal_p = Path(str(local_path) + sfx)
+            if wal_p.exists():
+                try:
+                    wal_p.unlink()
+                except Exception:
+                    pass
         with open(local_path, 'wb') as f:
             f.write(db_bytes)
             
@@ -227,12 +229,11 @@ def pull_db_from_github():
         return False
 
 
-
 _db_initialized = False
 
 def get_connection():
     conn = sqlite3.connect(str(SQLITE_DB_PATH), check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA journal_mode=DELETE")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 

@@ -1,4 +1,8 @@
 import streamlit as st
+try:
+    import visor3d; visor3d.install()
+except Exception:
+    pass
 import streamlit.components.v1 as components
 import pandas as pd
 import datetime
@@ -633,7 +637,8 @@ with st.sidebar:
     target_id_qp = str(qp.get("id_interno", "")).strip()
     qp_menu = str(qp.get("menu", "")).strip().lower()
 
-    if (qp_menu in ["trazabilidad", "traz", "ficha", "360"] or target_po_qp or target_id_qp) and not st.session_state.get("_nav_qp_handled"):
+    curr_nav_key = f"{target_po_qp}|{target_id_qp}|{qp_menu}"
+    if (qp_menu in ["trazabilidad", "traz", "ficha", "360"] or target_po_qp or target_id_qp) and st.session_state.get("_nav_qp_last_key") != curr_nav_key:
         st.session_state["google_sidebar_radio"] = "🔍 Trazabilidad"
         st.session_state["google_nav_selection"] = "🔍 Trazabilidad"
         st.session_state["radio_vista_ficha_mode"] = "🔍 Ficha Detallada 360° por Orden"
@@ -642,6 +647,7 @@ with st.sidebar:
             st.session_state["target_po_from_link"] = target_po_qp
         if target_id_qp:
             st.session_state["target_id_from_link"] = target_id_qp
+        st.session_state["_nav_qp_last_key"] = curr_nav_key
         st.session_state["_nav_qp_handled"] = True
 
     current_sel = st.session_state.get("google_nav_selection", "📊 Resumen")
@@ -2690,12 +2696,22 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
             if tgt_po or tgt_id:
                 t_po_str = str(tgt_po or '').strip().upper()
                 t_id_str = str(tgt_id or '').strip().upper()
-                for _, r_match in df_pos.iterrows():
-                    r_p_val = str(r_match.get('po', '')).strip().upper()
-                    r_i_val = str(r_match.get('id_interno', '')).strip().upper()
-                    if (t_id_str and (t_id_str == r_i_val or t_id_str in r_i_val)) or (t_po_str and (t_po_str == r_p_val or t_po_str in r_p_val)):
-                        matched_target_po = r_match['po']
-                        break
+                
+                # 1. Si se especificó una PO concreta en el enlace, buscar primero la PO exacta
+                if t_po_str:
+                    for _, r_match in df_pos.iterrows():
+                        r_p_val = str(r_match.get('po', '')).strip().upper()
+                        if t_po_str == r_p_val or t_po_str.replace('-', '') == r_p_val.replace('-', ''):
+                            matched_target_po = r_match['po']
+                            break
+                            
+                # 2. Si no se especificó PO o no se encontró, buscar por ID Interno
+                if matched_target_po is None and t_id_str:
+                    for _, r_match in df_pos.iterrows():
+                        r_i_val = str(r_match.get('id_interno', '')).strip().upper()
+                        if t_id_str == r_i_val or t_id_str in r_i_val:
+                            matched_target_po = r_match['po']
+                            break
             
             if matched_target_po is not None:
                 if matched_target_po not in pos_list:
@@ -2768,7 +2784,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                 estatus_360 = "🚫 Cancelada Formalmente"
                 estatus_color = "#EF4444"
                 tot_pend_env = 0.0
-            elif (tot_rem >= tot_req and tot_req > 0) or is_status_only_completed(cab_info.get('id_interno', '')):
+            elif (tot_rem >= tot_req and tot_req > 0) or is_status_only_completed(cab_info.get('id_interno', '')) or est_gen_360 == 'Remisionada Total':
                 estatus_360 = "Remisionada Total (100%)"
                 estatus_color = "#10B981"
             elif tot_rem > 0:
@@ -3224,6 +3240,15 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                             td { padding: 6px 8px; }
                             .badge { font-size: 10.5px; padding: 3px 8px; border-radius: 12px; font-weight: bold; display: inline-block; white-space: nowrap; }
                         </style>
+                        <script>
+                        function openV3D(sku) {
+                            var w = 1050, h = 720;
+                            var l = Math.max(0, (screen.width - w) / 2), t = Math.max(0, (screen.height - h) / 2);
+                            window.open('https://sigrama-calidad-prototipos-500497385665.us-central1.run.app/?fullscreen=cad&sku=' + encodeURIComponent(sku),
+                                'visor3d_sigrama', 'popup=yes,width=' + w + ',height=' + h + ',left=' + l + ',top=' + t + ',resizable=yes,scrollbars=no');
+                            return false;
+                        }
+                        </script>
                         </head>
                         <body>
                         <div class="table-container">
@@ -3232,7 +3257,7 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                                 <tr>
                                     <th style="border-bottom:2px solid #EC2024; width:40px;">#</th>
                                     <th style="border-bottom:2px solid #EC2024; text-align:left; min-width:110px;">SKU Cliente</th>
-                                    <th style="border-bottom:2px solid #EC2024; text-align:left; min-width:130px;">SKU Planta</th>
+                                    <th style="border-bottom:2px solid #EC2024; text-align:left; min-width:135px;">SKU Planta <span title="🧊 Con Ingeniería 3D disponible | ⚠️ Sin Ingeniería registrada" style="font-size:10px; cursor:help; font-weight:normal;">(🧊/⚠️)</span></th>
                                     <th style="border-bottom:2px solid #EC2024; text-align:left; min-width:180px;">Descripción</th>
                                     <th style="border-bottom:2px solid #4F46E5; text-align:center; min-width:145px; background-color:#312E81;">Material / Calibre</th>
                                     <th style="border-bottom:2px solid #EC2024; text-align:right; width:75px;">Req. (PO)</th>
@@ -3285,11 +3310,20 @@ elif menu == "🔍 Ficha de Trazabilidad 360°":
                             else:
                                 b_bg, b_fg = "#F1F5F9", "#64748B"
                                 
+                            icon_cad_p = "⚠️"
+                            color_cad_p = "#D97706"
+                            title_cad_p = "Pieza sin ingeniería registrada en Prototipos"
+                            try:
+                                import visor3d
+                                icon_cad_p, color_cad_p, title_cad_p, _ = visor3d.get_sku_badge(sk_p)
+                            except Exception:
+                                pass
+                                
                             html_table += f"""
                             <tr>
                                 <td style="text-align:center; font-weight:bold; color:#64748B;">{i_no}</td>
                                 <td style="font-weight:600; color:#1E293B;">{sk_c}</td>
-                                <td style="font-weight:700; color:#EC2024;">{sk_p}</td>
+                                <td style="font-weight:700;"><a href="#" onclick="return openV3D('{str(sk_p).strip()}')" title="{title_cad_p}" style="color:{color_cad_p}; text-decoration:underline; cursor:pointer;">{icon_cad_p} {sk_p}</a></td>
                                 <td style="color:#475569; font-size:11.5px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{desc}">{desc}</td>
                                 <td style="text-align:center; font-weight:700; color:#4338CA; font-size:11px; white-space:nowrap; background-color:#F8FAFC;">{mat_p_cell}</td>
                                 <td style="text-align:right; font-weight:800; color:#0F172A; background-color:#F8FAFC;">{c_req:,.0f}</td>

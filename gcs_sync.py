@@ -37,7 +37,10 @@ def get_storage_client():
     global _STORAGE_CLIENT
     if _STORAGE_CLIENT is None:
         from google.cloud import storage
-        _STORAGE_CLIENT = storage.Client()
+        try:
+            _STORAGE_CLIENT = storage.Client()
+        except Exception:
+            _STORAGE_CLIENT = storage.Client(project=os.environ.get("GOOGLE_CLOUD_PROJECT", "sigrama-cloud-calidad"))
     return _STORAGE_CLIENT
 
 
@@ -115,6 +118,14 @@ def sync_from_gcs(force: bool = False) -> bool:
                 b, lp = item
                 try:
                     lp.parent.mkdir(parents=True, exist_ok=True)
+                    if str(lp).endswith(".db"):
+                        for sfx in ("-wal", "-shm"):
+                            wal_p = Path(str(lp) + sfx)
+                            if wal_p.exists():
+                                try:
+                                    wal_p.unlink()
+                                except Exception:
+                                    pass
                     b.download_to_filename(str(lp))
                 except Exception as e_dl:
                     print(f"[GCS] Error descargando {b.name}: {e_dl}")

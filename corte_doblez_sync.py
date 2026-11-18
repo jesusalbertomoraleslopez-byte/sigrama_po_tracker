@@ -2,7 +2,7 @@ import pandas as pd
 import os
 import re
 from pathlib import Path
-from config import normalize_po, get_corte_doblez_dir, is_historical_completed, get_historical_qty_override
+from config import normalize_po, get_corte_doblez_dir, is_historical_completed, is_status_only_completed, get_historical_qty_override
 
 def clean_pronest_piece_name(p):
     s = str(p).strip()
@@ -156,6 +156,7 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
     id_int_clean = re.sub(r'[^0-9]', '', str(id_interno)) if id_interno else ""
     id_int_num = int(id_int_clean) if id_int_clean else None
     id_pat = re.compile(rf'\b(PO|INT|OC)?\s*0*{id_int_num}\b') if id_int_num is not None else None
+    id_int_norm = normalize_po(str(id_interno)) if id_interno else ""
     
     # 1. Encontrar OFs relacionadas con esta PO
     matched_ofs = set()
@@ -173,8 +174,8 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
                 of_norm = normalize_po(of_num)
                 comb_txt = f"{of_num} {o_row.get('po', '')} {o_row.get('proyecto', '')}".upper()
             
-            # Coincidencia por PO directa
-            m_by_po = (po_field_norm and po_field_norm == po_norm) or \
+            # Coincidencia por PO directa (o por ID Interno exacto en el campo PO)
+            m_by_po = (po_field_norm and (po_field_norm == po_norm or (id_int_norm and po_field_norm == id_int_norm))) or \
                       (po_norm and po_norm in of_norm) or \
                       (po_str and po_str in of_num)
                       
@@ -182,7 +183,7 @@ def get_corte_doblez_tracking_for_po(po_folio, df_partidas, id_interno="", dbs=N
             # - Se ignora el número de la propia OF ("OF 00032-...") para no confundirlo con INT-0032.
             # - Si la OF ya declara una PO explícita distinta, no se reasigna por ID interno.
             comb_txt_id = re.sub(r'\bOF\s*0*\d+', ' ', comb_txt)
-            po_explicit_other = bool(po_field_norm) and po_field_norm != po_norm
+            po_explicit_other = bool(po_field_norm) and po_field_norm != po_norm and (not id_int_norm or po_field_norm != id_int_norm)
             m_by_id = bool(id_pat and not po_explicit_other and id_pat.search(comb_txt_id))
                     
             # Inteligencia Operativa: Caso específico OF 83 (P4-P5-P6 Cal. 12 CLOUD)
@@ -507,7 +508,7 @@ def get_integrated_360_summary(df_all_pos, df_all_partidas):
             estatus_360 = '🟢 Remisionada Total (100%)'
             tot_fab = tot_req
             tot_env = tot_req
-        elif tot_env >= tot_req and tot_req > 0:
+        elif (tot_env >= tot_req and tot_req > 0) or is_status_only_completed(id_int_val) or est_gen == 'Remisionada Total':
             estatus_360 = '🟢 Remisionada Total (100%)'
         elif tot_env > 0:
             estatus_360 = '🟡 En Envíos Parciales'

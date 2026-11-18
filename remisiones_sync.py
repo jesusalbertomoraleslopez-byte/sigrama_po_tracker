@@ -168,6 +168,16 @@ def load_remisiones_databases():
                 df_det.loc[m_627_door, 'PO'] = 'PO 26114728'
                 df_det.loc[m_627_door, 'Proyecto'] = 'META'
 
+            # Reasignación oficial Tarimas INT-0083 (PO 26114755):
+            # En Almacén se rotularon con PO 2608-3358 pero corresponden 100% a la Orden INT-0083 (21 partidas, 31 pzas)
+            m_int83 = df_det['ID_Tarima'].fillna('').astype(str).str.strip().isin(['TPM-0695', 'TPM-0696', 'TPM-0697', 'TPM-0698'])
+            if m_int83.any():
+                df_det.loc[m_int83, 'PO'] = 'PO 26114755'
+                df_det.loc[m_int83, 'Proyecto'] = 'INT-083'
+                m_sku_fix = m_int83 & (df_det['SKU'].fillna('').astype(str).str.strip() == '11-B-9802-02TRTO')
+                if m_sku_fix.any():
+                    df_det.loc[m_sku_fix, 'SKU'] = '11-B-9208-02 TRTO'
+
         if 'PO' in df_det.columns:
             df_det['_po_str'] = df_det['PO'].fillna('').astype(str)
             df_det['norm_po'] = df_det['_po_str'].apply(normalize_po)
@@ -681,7 +691,7 @@ def get_global_pos_tracking_summary(df_all_pos, df_all_partidas):
             pct_cumpl = 100.0
             pct_fab = 100.0
             ofs_str = "Validación Histórica"
-        elif (tot_rem >= tot_req and tot_req > 0) or is_status_only_completed(id_int_val):
+        elif (tot_rem >= tot_req and tot_req > 0) or is_status_only_completed(id_int_val) or est_gen == 'Remisionada Total':
             st_360 = "🟢 Remisionada Total (100%)"
             st_cat = "Remisionada Total"
         elif tot_rem > 0:
